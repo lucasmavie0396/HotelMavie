@@ -1,0 +1,53 @@
+import { IsBoolean, IsEmail, IsInt, IsISO4217CurrencyCode, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+
+export class CreateHotelDto {
+  @IsString()
+  @MaxLength(150)
+  name: string;
+
+  @IsOptional()
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, { message: 'publicSlug so pode ter minusculas, numeros e hifens' })
+  @MaxLength(100)
+  publicSlug?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  publicEnabled?: boolean;
+
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(150)
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  address?: string;
+
+  @IsOptional()
+  @IsISO4217CurrencyCode()
+  currency?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  legalName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  taxId?: string;
+
+  @IsOptional()
+  @IsString()
+  invoiceFooter?: string;
+
+  @IsOptional()
+  @IsInt()
+  accommodationTaxRateId?: number | null;
+}

@@ -1,0 +1,278 @@
+export type UserRole = 'ADMIN' | 'MANAGER' | 'RECEPTION';
+
+export type RoomStatus = 'AVAILABLE' | 'OCCUPIED' | 'CLEANING' | 'MAINTENANCE';
+
+export type ReservationStatus = 'PENDING' | 'CONFIRMED' | 'CHECKED_IN' | 'CHECKED_OUT' | 'CANCELLED' | 'NO_SHOW';
+
+export type ReservationSource = 'DESK' | 'PHONE' | 'EMAIL' | 'ONLINE';
+
+export interface AuthUser {
+  id: number;
+  name: string;
+  email: string;
+  role: UserRole;
+  hotelId: number | null;
+}
+
+export interface Hotel {
+  id: number;
+  name: string;
+  publicSlug: string | null;
+  publicEnabled: boolean;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  currency: string;
+  legalName: string | null;
+  taxId: string | null;
+  invoiceFooter: string | null;
+  accommodationTaxRateId: number | null;
+}
+
+export interface Room {
+  id: number;
+  hotelId: number;
+  number: string;
+  type: string;
+  capacity: number;
+  pricePerNight: string;
+  status: RoomStatus;
+  floor: number | null;
+  description: string | null;
+}
+
+export interface Guest {
+  id: number;
+  hotelId: number;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  phone: string | null;
+  documentType: string | null;
+  documentNumber: string | null;
+  nationality: string | null;
+  birthDate: string | null;
+  address: string | null;
+  taxId: string | null;
+  notes: string | null;
+}
+
+export interface Reservation {
+  id: number;
+  code: string;
+  hotelId: number;
+  guestId: number;
+  roomId: number;
+  checkIn: string;
+  checkOut: string;
+  adults: number;
+  children: number;
+  status: ReservationStatus;
+  source: ReservationSource;
+  pricePerNight: string;
+  totalAmount: string;
+  notes: string | null;
+  guest: Pick<Guest, 'id' | 'firstName' | 'lastName' | 'email' | 'phone'>;
+  room: Pick<Room, 'id' | 'number' | 'type'>;
+}
+
+export interface DashboardSummary {
+  rooms: Record<RoomStatus, number>;
+  totalRooms: number;
+  inHouse: number;
+  occupancy: number;
+  arrivals: Reservation[];
+  departures: Reservation[];
+}
+
+export interface PublicRoomType {
+  type: string;
+  capacity: number;
+  pricePerNight: string;
+  description: string | null;
+  available: number;
+  nights?: number;
+  total?: string;
+}
+
+export interface PublicHotel extends Pick<Hotel, 'name' | 'publicSlug' | 'email' | 'phone' | 'address' | 'currency'> {
+  roomTypes: PublicRoomType[];
+}
+
+export type ChargeType = 'ACCOMMODATION' | 'RESTAURANT' | 'BAR' | 'EXTRA';
+export type PaymentMethod = 'CASH' | 'CARD' | 'TRANSFER' | 'MOBILE' | 'OTHER';
+export type InvoiceType = 'INVOICE' | 'INVOICE_RECEIPT' | 'CREDIT_NOTE';
+
+export interface TaxRate {
+  id: number;
+  hotelId: number;
+  name: string;
+  rate: string;
+  exemptionReason: string | null;
+  active: boolean;
+}
+
+export interface Charge {
+  id: number;
+  type: ChargeType;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  taxRate: string;
+  total: string;
+  invoiceId: number | null;
+  invoice: { id: number; fullNumber: string } | null;
+  createdAt: string;
+}
+
+export interface Payment {
+  id: number;
+  amount: string;
+  method: PaymentMethod;
+  reference: string | null;
+  createdAt: string;
+  reservation?: { id: number; code: string } | null;
+}
+
+export interface InvoiceSummary {
+  id: number;
+  fullNumber: string;
+  type: InvoiceType;
+  status: 'ISSUED' | 'CREDITED';
+  grossTotal: string;
+  issuedAt: string;
+  customerName?: string;
+  customerTaxId?: string | null;
+  currency?: string;
+  reservationId?: number | null;
+}
+
+export interface Folio {
+  charges: Charge[];
+  payments: Payment[];
+  invoices: InvoiceSummary[];
+  chargesTotal: string;
+  paymentsTotal: string;
+  balance: string;
+  pendingAccommodation: string;
+}
+
+export interface CashSession {
+  id: number;
+  registerId: number;
+  openedAt: string;
+  openingAmount: string;
+  closedAt: string | null;
+  expectedAmount: string | null;
+  countedAmount: string | null;
+  difference: string | null;
+  notes: string | null;
+  openedBy?: { name: string } | null;
+  closedBy?: { name: string } | null;
+}
+
+export interface CashRegister {
+  id: number;
+  name: string;
+  sessions: CashSession[];
+}
+
+export interface CashSessionDetail extends CashSession {
+  register: { id: number; name: string };
+  payments: Payment[];
+  movements: { id: number; type: 'IN' | 'OUT'; amount: string; description: string; createdAt: string; createdBy: { name: string } | null }[];
+  expected: string;
+}
+
+export type Outlet = 'RESTAURANT' | 'BAR';
+
+export interface ProductCategory {
+  id: number;
+  name: string;
+  outlet: Outlet | null;
+  sortOrder: number;
+}
+
+export interface Product {
+  id: number;
+  categoryId: number | null;
+  category: Pick<ProductCategory, 'id' | 'name' | 'outlet'> | null;
+  name: string;
+  sku: string | null;
+  unit: string;
+  price: string;
+  cost: string;
+  taxRateId: number | null;
+  sellable: boolean;
+  trackStock: boolean;
+  minStock: string;
+  active: boolean;
+}
+
+export interface Warehouse {
+  id: number;
+  name: string;
+  isDefault: boolean;
+}
+
+export interface StockLevelRow extends Product {
+  quantity: string;
+  belowMinimum: boolean;
+}
+
+export interface StockMovement {
+  id: number;
+  type: 'PURCHASE' | 'SALE' | 'ADJUSTMENT' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'WASTE';
+  quantity: string;
+  balance: string;
+  reason: string | null;
+  createdAt: string;
+  product: { name: string; unit: string };
+  warehouse: { name: string };
+  createdBy: { name: string } | null;
+}
+
+export interface Supplier {
+  id: number;
+  name: string;
+  taxId: string | null;
+  email: string | null;
+  phone: string | null;
+  active: boolean;
+}
+
+export interface Purchase {
+  id: number;
+  status: 'DRAFT' | 'RECEIVED' | 'CANCELLED';
+  supplierRef: string | null;
+  total: string;
+  orderedAt: string;
+  receivedAt: string | null;
+  supplier: { id: number; name: string };
+  warehouse: { id: number; name: string };
+  items: { id: number; productId: number; quantity: string; unitCost: string; total: string; product: { name: string; unit: string } }[];
+}
+
+export interface OrderItem {
+  id: number;
+  productId: number;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  total: string;
+  notes: string | null;
+}
+
+export interface Order {
+  id: number;
+  outlet: Outlet;
+  tableLabel: string | null;
+  status: 'OPEN' | 'CLOSED' | 'CANCELLED';
+  total: string;
+  openedAt: string;
+  closedAt: string | null;
+  items: OrderItem[];
+  reservation: { id: number; code: string; room: { number: string } } | null;
+  openedBy: { name: string } | null;
+  charges: { id: number; invoice: { id: number; fullNumber: string } | null }[];
+}

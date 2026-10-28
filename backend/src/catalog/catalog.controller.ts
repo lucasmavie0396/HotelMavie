@@ -1,0 +1,96 @@
+import { BadRequestException, Body, Controller, Get, NotFoundException, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
+import { JwtPayload } from '../auth/jwt-payload';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { HotelQueryDto } from '../common/hotel-query.dto';
+import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
+import { PrismaService } from '../prisma/prisma.service';
+import { CreateCategoryDto, CreateProductDto, ProductQueryDto, UpdateCategoryDto, UpdateProductDto } from './catalog.dto';
+
+@Controller()
+export class CatalogController {
+  constructor(private readonly prisma: PrismaService) {}
+
+  @Get('product-categories')
+  categories(@Query() query: HotelQueryDto, @CurrentUser() user: JwtPayload) {
+    return this.prisma.productCategory.findMany({
+      where: { hotelId: resolveHotelScope(user, query.hotelId) },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    });
+  }
+
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Post('product-categories')
+  createCategory(@Body() { hotelId, ...data }: CreateCategoryDto, @CurrentUser() user: JwtPayload) {
+    return this.prisma.productCategory.create({ data: { ...data, hotelId: this.requireHotel(user, hotelId) } });
+  }
+
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Patch('product-categories/:id')
+  async updateCategory(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCategoryDto, @CurrentUser() user: JwtPayload) {
+    const category = await this.prisma.productCategory.findUnique({ where: { id } });
+    if (!category || !canAccessHotel(user, category.hotelId)) {
+      throw new NotFoundException('Categoria nao encontrada');
+    }
+    return this.prisma.productCategory.update({ where: { id }, data: dto });
+  }
+
+  @Get('products')
+  products(@Query() query: ProductQueryDto, @CurrentUser() user: JwtPayload) {
+    const q = query.q?.trim();
+    return this.prisma.product.findMany({
+      where: {
+        hotelId: resolveHotelScope(user, query.hotelId),
+        categoryId: query.categoryId,
+        sellable: query.sellable,
+        ...(query.outlet ? { OR: [{ category: { outlet: query.outlet } }, { category: { outlet: null } }, { categoryId: null }] } : {}),
+        ...(q ? { AND: [{ OR: [{ name: { contains: q } }, { sku: { contains: q } }] }] } : {}),
+      },
+      include: { category: { select: { id: true, name: true, outlet: true } } },
+      orderBy: [{ active: 'desc' }, { name: 'asc' }],
+    });
+  }
+
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Post('products')
+  async createProduct(@Body() { hotelId, ...data }: CreateProductDto, @CurrentUser() user: JwtPayload) {
+    const scoped = this.requireHotel(user, hotelId);
+    await this.assertRefs(scoped, data);
+    return this.prisma.product.create({ data: { ...data, hotelId: scoped } });
+  }
+
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Patch('products/:id')
+  async updateProduct(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateProductDto, @CurrentUser() user: JwtPayload) {
+    const product = await this.prisma.product.findUnique({ where: { id } });
+    if (!product || !canAccessHotel(user, product.hotelId)) {
+      throw new NotFoundException('Produto nao encontrado');
+    }
+    await this.assertRefs(product.hotelId, dto);
+    return this.prisma.product.update({ where: { id }, data: dto });
+  }
+
+  private requireHotel(user: JwtPayload, hotelId?: number) {
+    const scoped = resolveHotelScope(user, hotelId);
+    if (!scoped) {
+      throw new BadRequestException('hotelId e obrigatorio');
+    }
+    return scoped;
+  }
+
+  private async assertRefs(hotelId: number, data: { categoryId?: number | null; taxRateId?: number | null }) {
+    if (data.categoryId) {
+      const category = await this.prisma.productCategory.findUnique({ where: { id: data.categoryId } });
+      if (category?.hotelId !== hotelId) {
+        throw new BadRequestException('Categoria invalida para este hotel');
+      }
+    }
+    if (data.taxRateId) {
+      const rate = await this.prisma.taxRate.findUnique({ where: { id: data.taxRateId } });
+      if (rate?.hotelId !== hotelId) {
+        throw new BadRequestException('Taxa de IVA invalida para este hotel');
+      }
+    }
+  }
+}

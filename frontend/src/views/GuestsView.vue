@@ -1,0 +1,118 @@
+<script setup lang="ts">
+import { onMounted, ref } from 'vue';
+import GuestForm from '@/components/GuestForm.vue';
+import StatusBadge from '@/components/StatusBadge.vue';
+import { api, errorMessage } from '@/services/api';
+import { useHotelsStore } from '@/stores/hotels';
+import type { Guest, Reservation } from '@/types';
+import { formatDate } from '@/utils/format';
+
+type GuestDetail = Guest & { reservations: (Omit<Reservation, 'guest'>)[] };
+
+const hotels = useHotelsStore();
+const guests = ref<Guest[]>([]);
+const q = ref('');
+const error = ref('');
+const editing = ref<GuestDetail | null>(null);
+const creating = ref(false);
+
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+
+async function load() {
+  try {
+    guests.value = (await api.get<Guest[]>('/guests', { params: { hotelId: hotels.selectedId, q: q.value || undefined } })).data;
+  } catch (e) {
+    error.value = errorMessage(e);
+  }
+}
+
+function search() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(load, 300);
+}
+
+async function open(guest: Guest) {
+  creating.value = false;
+  try {
+    editing.value = (await api.get<GuestDetail>(`/guests/${guest.id}`)).data;
+  } catch (e) {
+    error.value = errorMessage(e);
+  }
+}
+
+function startCreate() {
+  editing.value = null;
+  creating.value = true;
+}
+
+function close() {
+  editing.value = null;
+  creating.value = false;
+}
+
+async function saved() {
+  close();
+  await load();
+}
+
+onMounted(load);
+</script>
+
+<template>
+  <section class="space-y-6">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h1 class="text-2xl font-semibold">Hospedes</h1>
+      <div class="flex gap-2">
+        <input v-model="q" class="input w-64" placeholder="Procurar nome, email, documento" @input="search" />
+        <button class="btn" type="button" @click="startCreate">Novo hospede</button>
+      </div>
+    </div>
+
+    <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
+
+    <div v-if="creating || editing" class="card space-y-4">
+      <h2 class="font-semibold">{{ editing ? `${editing.firstName} ${editing.lastName}` : 'Novo hospede' }}</h2>
+      <GuestForm :guest="editing" @saved="saved" @cancel="close" />
+      <div v-if="editing?.reservations.length" class="space-y-2">
+        <h3 class="text-sm font-semibold text-slate-600">Historico de reservas</h3>
+        <ul class="divide-y divide-slate-100 text-sm">
+          <li v-for="reservation in editing.reservations" :key="reservation.id" class="flex items-center justify-between py-2">
+            <RouterLink :to="{ name: 'reservation', params: { id: reservation.id } }" class="hover:underline">
+              {{ reservation.code }} · Quarto {{ reservation.room.number }} · {{ formatDate(reservation.checkIn) }} - {{ formatDate(reservation.checkOut) }}
+            </RouterLink>
+            <StatusBadge :status="reservation.status" />
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card overflow-x-auto p-0">
+      <table class="w-full text-left text-sm">
+        <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
+          <tr>
+            <th class="px-4 py-3">Nome</th>
+            <th class="px-4 py-3">Email</th>
+            <th class="px-4 py-3">Telefone</th>
+            <th class="px-4 py-3">Documento</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="guest in guests"
+            :key="guest.id"
+            class="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
+            @click="open(guest)"
+          >
+            <td class="px-4 py-3 font-medium">{{ guest.firstName }} {{ guest.lastName }}</td>
+            <td class="px-4 py-3">{{ guest.email ?? '-' }}</td>
+            <td class="px-4 py-3">{{ guest.phone ?? '-' }}</td>
+            <td class="px-4 py-3">{{ [guest.documentType, guest.documentNumber].filter(Boolean).join(' ') || '-' }}</td>
+          </tr>
+          <tr v-if="!guests.length">
+            <td colspan="4" class="px-4 py-6 text-center text-slate-500">Sem hospedes</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</template>

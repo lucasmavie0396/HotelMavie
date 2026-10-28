@@ -1,0 +1,19 @@
+# Contexto local (copiar para CLAUDE.local.md, nao versionar)
+
+## Objetivo desta sessao
+
+[Uma ou duas frases com a tarefa concreta.]
+
+## Ambiente local
+
+- Pasta do projeto: [caminho]
+- Credenciais de teste: as definidas em SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD no backend/.env
+- Logs: backend/backend.log, backend/backend.err.log
+
+## Alteracoes locais intencionais (nao reverter, nao commitar)
+
+- [ficheiro] — [motivo]
+
+## Pendencias
+
+- [ ] ...
