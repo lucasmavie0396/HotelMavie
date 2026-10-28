@@ -1,4 +1,4 @@
-﻿import type { ChargeType, InvoiceType, PaymentMethod, ReservationSource, ReservationStatus, RoomStatus } from '@/types';
+import type { ChargeType, InvoiceType, PaymentMethod, ReservationSource, ReservationStatus, RoomStatus } from '@/types';
 
 const formatters = new Map<string, Intl.NumberFormat>();
 
@@ -91,6 +91,7 @@ export const INVOICE_TYPE_LABELS: Record<InvoiceType, string> = {
   INVOICE: 'Fatura',
   INVOICE_RECEIPT: 'Fatura-recibo',
   CREDIT_NOTE: 'Nota de credito',
+  RECEIPT: 'Recibo',
 };
 
 export const CHARGE_TYPE_LABELS: Record<ChargeType, string> = {

@@ -184,6 +184,9 @@ defineExpose({ load });
       <input v-model="invoice.customerAddress" class="input" placeholder="Morada (vazio = da ficha)" />
       <p class="text-xs text-slate-500 sm:col-span-3">
         Fatura {{ uninvoiced.length }} lancamentos por faturar. Depois de emitida, so pode ser corrigida com nota de credito.
+        <template v-if="invoice.type === 'INVOICE'">
+          A fatura a pagar sai do saldo da estadia e passa para a conta corrente do cliente; recebe-se depois com recibo.
+        </template>
       </p>
       <button class="btn" type="submit" :disabled="busy">Emitir</button>
     </form>
@@ -215,6 +218,7 @@ defineExpose({ load });
               <button v-if="item.invoice" class="text-indigo-600 hover:underline" type="button" @click="pdf(item.invoice.id)">
                 {{ item.invoice.fullNumber }}
               </button>
+              <span v-if="item.onCustomerAccount" class="ml-1 rounded bg-sky-100 px-1 text-xs text-sky-800">conta corrente</span>
               <span v-else class="text-slate-400">-</span>
             </td>
             <td class="py-2 text-right">
@@ -241,6 +245,11 @@ defineExpose({ load });
           </tr>
         </tbody>
         <tfoot class="font-semibold">
+          <tr v-if="Number(folio.customerAccountTotal) > 0" class="text-sky-800">
+            <td colspan="4" class="pt-3 text-right font-normal">Faturado a pagar (conta corrente do cliente)</td>
+            <td class="pt-3 text-right font-normal">{{ money(folio.customerAccountTotal) }}</td>
+            <td colspan="2"></td>
+          </tr>
           <tr>
             <td colspan="4" class="pt-3 text-right">Saldo</td>
             <td class="pt-3 text-right" :class="Number(folio.balance) > 0 ? 'text-rose-600' : 'text-emerald-700'">

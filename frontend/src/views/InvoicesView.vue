@@ -83,7 +83,9 @@ onMounted(load);
       <input v-model="filters.q" class="input sm:col-span-2" placeholder="Numero, cliente ou NIF" />
       <select v-model="filters.type" class="input">
         <option value="">Todos os tipos</option>
-        <option v-for="(label, type) in INVOICE_TYPE_LABELS" :key="type" :value="type">{{ label }}</option>
+        <template v-for="(label, type) in INVOICE_TYPE_LABELS" :key="type">
+          <option v-if="type !== 'RECEIPT'" :value="type">{{ label }}</option>
+        </template>
       </select>
       <input v-model="filters.from" class="input" type="date" aria-label="De" />
       <input v-model="filters.to" class="input" type="date" aria-label="Ate" />

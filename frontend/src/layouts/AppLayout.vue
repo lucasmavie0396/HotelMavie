@@ -18,6 +18,7 @@ const links = computed(() => [
   { to: { name: 'rooms' }, label: 'Quartos' },
   { to: { name: 'pos' }, label: 'Restaurante / Bar' },
   { to: { name: 'invoices' }, label: 'Faturacao' },
+  { to: { name: 'accounts' }, label: 'Contas correntes' },
   { to: { name: 'cash' }, label: 'Caixa' },
   { to: { name: 'products' }, label: 'Produtos' },
   { to: { name: 'stock' }, label: 'Stocks' },
@@ -80,6 +81,10 @@ async function logout() {
             Criar hotel
           </RouterLink>
         </p>
+        <div v-else-if="hotels.loadError" class="space-y-2 text-sm">
+          <p class="text-rose-600">Nao foi possivel ligar ao servidor: {{ hotels.loadError }}</p>
+          <button class="btn-secondary" type="button" @click="hotels.load(true)">Tentar novamente</button>
+        </div>
         <p v-else class="text-sm text-slate-500">A carregar...</p>
       </main>
     </div>

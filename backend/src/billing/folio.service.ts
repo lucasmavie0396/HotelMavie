@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { ChargeType, PaymentMethod, Prisma, Reservation, UserRole } from '@prisma/client';
+import { ChargeType, InvoiceStatus, InvoiceType, PaymentMethod, Prisma, Reservation, UserRole } from '@prisma/client';
 import { JwtPayload } from '../auth/jwt-payload';
 import { canAccessHotel } from '../common/hotel-scope';
 import { DecimalLike, sumMoney, toMoney } from '../common/money';
@@ -33,6 +33,10 @@ export interface PaymentInput {
 
 const ACCOMMODATION_REF = 'accommodation';
 
+const ON_GUEST_ACCOUNT: Prisma.ChargeWhereInput = {
+  OR: [{ invoiceId: null }, { invoice: { OR: [{ type: { not: InvoiceType.INVOICE } }, { status: { not: InvoiceStatus.ISSUED } }] } }],
+};
+
 @Injectable()
 export class FolioService {
   constructor(private readonly prisma: PrismaService) {}
@@ -42,7 +46,7 @@ export class FolioService {
     const [charges, payments, invoices] = await Promise.all([
       this.prisma.charge.findMany({
         where: { reservationId },
-        include: { invoice: { select: { id: true, fullNumber: true } } },
+        include: { invoice: { select: { id: true, fullNumber: true, type: true, status: true } } },
         orderBy: { createdAt: 'asc' },
       }),
       this.prisma.payment.findMany({ where: { reservationId }, orderBy: { createdAt: 'asc' } }),
@@ -52,15 +56,18 @@ export class FolioService {
         orderBy: { issuedAt: 'asc' },
       }),
     ]);
-    const chargesTotal = sumMoney(charges.map((charge) => charge.total));
+    const onAccount = (charge: (typeof charges)[number]) =>
+      charge.invoice?.type === InvoiceType.INVOICE && charge.invoice.status === InvoiceStatus.ISSUED;
+    const chargesTotal = sumMoney(charges.filter((charge) => !onAccount(charge)).map((charge) => charge.total));
     const paymentsTotal = sumMoney(payments.map((payment) => payment.amount));
     return {
       reservationId: reservation.id,
-      charges,
+      charges: charges.map((charge) => ({ ...charge, onCustomerAccount: onAccount(charge) })),
       payments,
       invoices,
       chargesTotal,
       paymentsTotal,
+      customerAccountTotal: sumMoney(charges.filter(onAccount).map((charge) => charge.total)),
       balance: chargesTotal.sub(paymentsTotal),
       pendingAccommodation: toMoney(reservation.totalAmount).sub(
         sumMoney(charges.filter((charge) => charge.type === ChargeType.ACCOMMODATION).map((charge) => charge.total)),
@@ -201,7 +208,7 @@ export class FolioService {
 
   async balance(tx: Prisma.TransactionClient, reservationId: number) {
     const [charges, payments] = await Promise.all([
-      tx.charge.aggregate({ where: { reservationId }, _sum: { total: true } }),
+      tx.charge.aggregate({ where: { reservationId, ...ON_GUEST_ACCOUNT }, _sum: { total: true } }),
       tx.payment.aggregate({ where: { reservationId }, _sum: { amount: true } }),
     ]);
     return toMoney(charges._sum.total ?? 0).sub(toMoney(payments._sum.amount ?? 0));

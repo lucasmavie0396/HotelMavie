@@ -8,10 +8,11 @@ import { CashService } from './cash.service';
 import { FolioService } from './folio.service';
 import { InvoicePdfService } from './invoice-pdf.service';
 import { InvoicesService } from './invoices.service';
+import { ReceiptsService } from './receipts.service';
 
 @Module({
   controllers: [BillingController, TaxRatesController, AtController],
-  providers: [FolioService, InvoicesService, InvoicePdfService, CashService, AtSigningService, SaftService],
+  providers: [FolioService, InvoicesService, InvoicePdfService, CashService, AtSigningService, SaftService, ReceiptsService],
   exports: [FolioService, InvoicesService, AtSigningService],
 })
 export class BillingModule {}

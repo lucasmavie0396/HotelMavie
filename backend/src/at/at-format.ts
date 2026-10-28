@@ -4,7 +4,42 @@ export const DOC_TYPE: Record<InvoiceType, string> = {
   INVOICE: 'FT',
   INVOICE_RECEIPT: 'FR',
   CREDIT_NOTE: 'NC',
+  RECEIPT: 'RG',
 };
+
+export const PAYMENT_MECHANISM: Record<string, string> = {
+  CASH: 'NU',
+  CARD: 'CC',
+  TRANSFER: 'TB',
+  MOBILE: 'OU',
+  OTHER: 'OU',
+};
+
+export function receiptQrContent(input: {
+  issuerTaxId: string | null;
+  customerTaxId: string | null;
+  issuedAt: Date;
+  receiptNo: string;
+  atcud: string | null;
+  amount: { toString(): string };
+  certificateNumber: string;
+  cancelled: boolean;
+}) {
+  return [
+    `A:${input.issuerTaxId ?? FINAL_CONSUMER_TAX_ID}`,
+    `B:${input.customerTaxId || FINAL_CONSUMER_TAX_ID}`,
+    'C:PT',
+    'D:RG',
+    `E:${input.cancelled ? 'A' : 'N'}`,
+    `F:${localParts(input.issuedAt).date.replace(/-/g, '')}`,
+    `G:${input.receiptNo}`,
+    `H:${input.atcud ?? '0'}`,
+    'I1:PT',
+    'N:0.00',
+    `O:${Number(input.amount.toString()).toFixed(2)}`,
+    `R:${input.certificateNumber}`,
+  ].join('*');
+}
 
 export const FINAL_CONSUMER_TAX_ID = '999999990';
 

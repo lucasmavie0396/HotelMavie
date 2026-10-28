@@ -37,6 +37,7 @@ const router = createRouter({
         { path: 'hospedes', name: 'guests', component: () => import('@/views/GuestsView.vue') },
         { path: 'quartos', name: 'rooms', component: () => import('@/views/RoomsView.vue') },
         { path: 'faturacao', name: 'invoices', component: () => import('@/views/InvoicesView.vue') },
+        { path: 'contas-correntes', name: 'accounts', component: () => import('@/views/AccountsView.vue') },
         { path: 'caixa', name: 'cash', component: () => import('@/views/CashView.vue') },
         { path: 'pos', name: 'pos', component: () => import('@/views/PosView.vue') },
         { path: 'produtos', name: 'products', component: () => import('@/views/ProductsView.vue') },

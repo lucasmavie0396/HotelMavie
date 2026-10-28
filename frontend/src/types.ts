@@ -104,7 +104,7 @@ export interface PublicHotel extends Pick<Hotel, 'name' | 'publicSlug' | 'email'
 
 export type ChargeType = 'ACCOMMODATION' | 'RESTAURANT' | 'BAR' | 'EXTRA';
 export type PaymentMethod = 'CASH' | 'CARD' | 'TRANSFER' | 'MOBILE' | 'OTHER';
-export type InvoiceType = 'INVOICE' | 'INVOICE_RECEIPT' | 'CREDIT_NOTE';
+export type InvoiceType = 'INVOICE' | 'INVOICE_RECEIPT' | 'CREDIT_NOTE' | 'RECEIPT';
 
 export interface TaxRate {
   id: number;
@@ -127,6 +127,7 @@ export interface Charge {
   total: string;
   invoiceId: number | null;
   invoice: { id: number; fullNumber: string } | null;
+  onCustomerAccount?: boolean;
   createdAt: string;
 }
 
@@ -159,6 +160,7 @@ export interface Folio {
   chargesTotal: string;
   paymentsTotal: string;
   balance: string;
+  customerAccountTotal: string;
   pendingAccommodation: string;
 }
 
@@ -280,4 +282,39 @@ export interface Order {
   reservation: { id: number; code: string; room: { number: string } } | null;
   openedBy: { name: string } | null;
   charges: { id: number; invoice: { id: number; fullNumber: string } | null }[];
+}
+
+export interface OpenInvoice {
+  id: number;
+  fullNumber: string;
+  issuedAt: string;
+  customerName: string;
+  customerTaxId: string | null;
+  grossTotal: string;
+  settled: string;
+  open: string;
+  customerKey: string;
+}
+
+export interface CustomerAccount {
+  customerKey: string;
+  customerName: string;
+  customerTaxId: string | null;
+  open: string;
+  invoices: number;
+  oldest: string;
+}
+
+export interface ReceiptDoc {
+  id: number;
+  fullNumber: string;
+  status: 'ISSUED' | 'CANCELLED';
+  issuedAt: string;
+  customerName: string;
+  customerTaxId: string | null;
+  amount: string;
+  method: PaymentMethod;
+  reference: string | null;
+  cancelReason: string | null;
+  lines: { id: number; amount: string; invoice: { id: number; fullNumber: string } }[];
 }

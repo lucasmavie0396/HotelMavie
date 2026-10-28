@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
-import { api } from '@/services/api';
+import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import type { Hotel } from '@/types';
 
@@ -8,6 +8,7 @@ export const useHotelsStore = defineStore('hotels', () => {
   const hotels = ref<Hotel[]>([]);
   const selectedId = ref<number | null>(null);
   const loaded = ref(false);
+  const loadError = ref('');
   let loading: Promise<void> | null = null;
 
   const selected = computed(() => hotels.value.find((hotel) => hotel.id === selectedId.value) ?? null);
@@ -22,10 +23,14 @@ export const useHotelsStore = defineStore('hotels', () => {
       .then(({ data }) => {
         hotels.value = data;
         loaded.value = true;
+        loadError.value = '';
         const auth = useAuthStore();
         if (!data.some((hotel) => hotel.id === selectedId.value)) {
           selectedId.value = auth.user?.hotelId ?? data[0]?.id ?? null;
         }
+      })
+      .catch((e) => {
+        loadError.value = errorMessage(e);
       })
       .finally(() => {
         loading = null;
@@ -47,5 +52,5 @@ export const useHotelsStore = defineStore('hotels', () => {
     loaded.value = false;
   }
 
-  return { hotels, selectedId, loaded, selected, currency, load, currencyOf, nameOf, reset };
+  return { hotels, selectedId, loaded, loadError, selected, currency, load, currencyOf, nameOf, reset };
 });

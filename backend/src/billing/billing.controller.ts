@@ -34,6 +34,8 @@ import {
 import { FolioService } from './folio.service';
 import { InvoicePdfService } from './invoice-pdf.service';
 import { InvoicesService } from './invoices.service';
+import { CancelReceiptDto, CreateReceiptDto, OpenInvoicesQueryDto, ReceiptsService } from './receipts.service';
+import { HotelQueryDto } from '../common/hotel-query.dto';
 
 class EmailInvoiceDto {
   @IsOptional()
@@ -50,6 +52,7 @@ export class BillingController {
     private readonly cash: CashService,
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
+    private readonly receipts: ReceiptsService,
   ) {}
 
   @Get('reservations/:id/folio')
@@ -130,6 +133,42 @@ export class BillingController {
   @Post('invoices/:id/credit-note')
   creditNote(@Param('id', ParseIntPipe) id: number, @Body() dto: CreditNoteDto, @CurrentUser() user: JwtPayload) {
     return this.invoices.creditNote(id, dto, user);
+  }
+
+  @Get('accounts')
+  accounts(@Query() query: HotelQueryDto, @CurrentUser() user: JwtPayload) {
+    return this.receipts.accounts(query, user);
+  }
+
+  @Get('invoices-open')
+  openInvoices(@Query() query: OpenInvoicesQueryDto, @CurrentUser() user: JwtPayload) {
+    return this.receipts.openInvoices(query, user);
+  }
+
+  @Get('receipts')
+  findReceipts(@Query() query: HotelQueryDto, @CurrentUser() user: JwtPayload) {
+    return this.receipts.findAll(query, user);
+  }
+
+  @Post('receipts')
+  issueReceipt(@Body() dto: CreateReceiptDto, @CurrentUser() user: JwtPayload) {
+    return this.receipts.issue(dto, user);
+  }
+
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Post('receipts/:id/cancel')
+  @HttpCode(HttpStatus.OK)
+  cancelReceipt(@Param('id', ParseIntPipe) id: number, @Body() dto: CancelReceiptDto, @CurrentUser() user: JwtPayload) {
+    return this.receipts.cancel(id, dto, user);
+  }
+
+  @Get('receipts/:id/pdf')
+  async receiptPdf(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload, @Res() res: Response) {
+    const receipt = await this.receipts.findOne(id, user);
+    const hotel = await this.prisma.hotel.findUniqueOrThrow({ where: { id: receipt.hotelId } });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${receipt.fullNumber.replace(/[^\w-]+/g, '-')}.pdf"`);
+    res.send(await this.pdf.renderReceipt(receipt, hotel));
   }
 
   @Get('cash-registers')

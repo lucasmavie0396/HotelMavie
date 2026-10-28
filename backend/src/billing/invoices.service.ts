@@ -157,6 +157,10 @@ export class InvoicesService {
     if (original.type === InvoiceType.CREDIT_NOTE) {
       throw new BadRequestException('Nao e possivel creditar uma nota de credito');
     }
+    const receipts = await this.prisma.receiptLine.count({ where: { invoiceId: id, receipt: { status: 'ISSUED' } } });
+    if (receipts) {
+      throw new ConflictException('Esta fatura tem recibos emitidos: anula-os antes de emitir a nota de credito');
+    }
     await this.ensureSeries(original.hotelId, InvoiceType.CREDIT_NOTE);
     return this.prisma.$transaction(async (tx) => {
       const { count } = await tx.invoice.updateMany({

@@ -1,9 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { Invoice, InvoiceLine, InvoiceType, TaxCategory } from '@prisma/client';
+import { Invoice, InvoiceLine, InvoiceType, Prisma, Receipt, ReceiptStatus, TaxCategory } from '@prisma/client';
 import { addDays, parseDate } from '../common/dates';
 import { PrismaService } from '../prisma/prisma.service';
 import { AtSigningService } from './at-signing.service';
-import { DOC_TYPE, FINAL_CONSUMER_TAX_ID, localParts } from './at-format';
+import { DOC_TYPE, FINAL_CONSUMER_TAX_ID, localParts, PAYMENT_MECHANISM } from './at-format';
 
 const VERSION = '0.1.0';
 const FINAL_CONSUMER_ID = 'CF';
@@ -38,6 +38,7 @@ function truncate(value: string | null | undefined, max: number, fallback = 'Des
 }
 
 type FullInvoice = Invoice & { lines: InvoiceLine[]; creditOf: { fullNumber: string } | null };
+type FullReceipt = Receipt & { lines: { amount: Prisma.Decimal; invoice: { fullNumber: string; issuedAt: Date } }[] };
 
 @Injectable()
 export class SaftService {
@@ -65,7 +66,16 @@ export class SaftService {
       orderBy: [{ type: 'asc' }, { issuedAt: 'asc' }, { number: 'asc' }],
     });
 
-    const customers = new Map<string, FullInvoice>();
+    const receipts: FullReceipt[] = await this.prisma.receipt.findMany({
+      where: { hotelId, issuedAt: { gte: from, lt: to } },
+      include: { lines: { include: { invoice: { select: { fullNumber: true, issuedAt: true } } }, orderBy: { id: 'asc' } } },
+      orderBy: [{ issuedAt: 'asc' }, { number: 'asc' }],
+    });
+
+    const customers = new Map<string, Pick<Invoice, 'customerTaxId' | 'customerName' | 'customerAddress'>>();
+    for (const receipt of receipts) {
+      customers.set(this.customerId(receipt), { ...receipt, customerAddress: null });
+    }
     const products = new Map<string, string>();
     const taxes = new Map<string, { category: TaxCategory; rate: string }>();
     for (const invoice of invoices) {
@@ -144,6 +154,16 @@ export class SaftService {
       el('TotalCredit', amount(totalCredit)),
       ...invoices.map((invoice) => this.invoiceXml(invoice)),
       '</SalesInvoices>',
+      ...(receipts.length
+        ? [
+            '<Payments>',
+            el('NumberOfEntries', receipts.length),
+            el('TotalDebit', '0.00'),
+            el('TotalCredit', amount(receipts.filter((r) => r.status === ReceiptStatus.ISSUED).reduce((sum, r) => sum + Number(r.amount), 0))),
+            ...receipts.map((receipt) => this.paymentXml(receipt)),
+            '</Payments>',
+          ]
+        : []),
       '</SourceDocuments>',
       '</AuditFile>',
     ].join('\n');
@@ -151,11 +171,57 @@ export class SaftService {
     return { filename: `SAFT-PT_${hotel.taxId}_${fromValue}_${toValue}.xml`, xml, count: invoices.length };
   }
 
-  private customerId(invoice: Invoice) {
-    return invoice.customerTaxId && invoice.customerTaxId !== FINAL_CONSUMER_TAX_ID ? invoice.customerTaxId : FINAL_CONSUMER_ID;
+  private customerId(document: { customerTaxId: string | null }) {
+    return document.customerTaxId && document.customerTaxId !== FINAL_CONSUMER_TAX_ID ? document.customerTaxId : FINAL_CONSUMER_ID;
   }
 
-  private customerXml(id: string, invoice: Invoice) {
+  private paymentXml(receipt: FullReceipt) {
+    const issued = localParts(receipt.issuedAt);
+    const cancelled = receipt.status === ReceiptStatus.CANCELLED;
+    return [
+      '<Payment>',
+      el('PaymentRefNo', receipt.fullNumber),
+      el('ATCUD', receipt.atcud ?? '0'),
+      el('Period', Number(issued.date.slice(5, 7))),
+      el('TransactionDate', issued.date),
+      el('PaymentType', 'RG'),
+      '<DocumentStatus>',
+      el('PaymentStatus', cancelled ? 'A' : 'N'),
+      el('PaymentStatusDate', localParts(receipt.cancelledAt ?? receipt.issuedAt).dateTime),
+      cancelled ? el('Reason', truncate(receipt.cancelReason, 50)) : '',
+      el('SourceID', receipt.createdById ?? 'SISTEMA'),
+      el('SourcePayment', 'P'),
+      '</DocumentStatus>',
+      '<PaymentMethod>',
+      el('PaymentMechanism', PAYMENT_MECHANISM[receipt.method]),
+      el('PaymentAmount', amount(receipt.amount)),
+      el('PaymentDate', issued.date),
+      '</PaymentMethod>',
+      el('SourceID', receipt.createdById ?? 'SISTEMA'),
+      el('SystemEntryDate', issued.dateTime),
+      el('CustomerID', this.customerId(receipt)),
+      ...receipt.lines.map((line, index) =>
+        [
+          '<Line>',
+          el('LineNumber', index + 1),
+          '<SourceDocumentID>',
+          el('OriginatingON', line.invoice.fullNumber),
+          el('InvoiceDate', localParts(line.invoice.issuedAt).date),
+          '</SourceDocumentID>',
+          el('CreditAmount', amount(line.amount)),
+          '</Line>',
+        ].join(''),
+      ),
+      '<DocumentTotals>',
+      el('TaxPayable', '0.00'),
+      el('NetTotal', amount(receipt.amount)),
+      el('GrossTotal', amount(receipt.amount)),
+      '</DocumentTotals>',
+      '</Payment>',
+    ].join('');
+  }
+
+  private customerXml(id: string, invoice: Pick<Invoice, 'customerName' | 'customerAddress'>) {
     const finalConsumer = id === FINAL_CONSUMER_ID;
     return [
       '<Customer>',

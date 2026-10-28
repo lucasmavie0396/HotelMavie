@@ -38,8 +38,8 @@ api.interceptors.response.use(
   },
 );
 
-export async function openInvoicePdf(id: number) {
-  const { data } = await api.get<Blob>(`/invoices/${id}/pdf`, { responseType: 'blob' });
+export async function openInvoicePdf(id: number, kind: 'invoices' | 'receipts' = 'invoices') {
+  const { data } = await api.get<Blob>(`/${kind}/${id}/pdf`, { responseType: 'blob' });
   const url = URL.createObjectURL(data);
   window.open(url, '_blank');
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
