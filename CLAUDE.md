@@ -115,8 +115,10 @@ docker compose exec backend npm run db:seed
 | Catálogo e stocks | `catalog/`, `stock/` (armazém principal usado nas vendas, custo médio, inventário, quebras, transferências) | Produtos, Stocks |
 | Compras | `purchases/` (fornecedores, rascunho → receção dá entrada em stock) | Compras |
 | Relatórios e alertas | `reports/` (ocupação, ADR, RevPAR, receita, top produtos; alertas operacionais) | Relatórios, botão Alertas |
-| Funcionários | `users/` (papéis ADMIN/MANAGER/RECEPTION, sessões por dispositivo em `user_sessions`) | Funcionários |
-| Backups | `backups/` (mysqldump para `BACKUP_DIR`) | Funcionários |
+| Utilizadores | `users/` (papéis ADMIN/MANAGER/RECEPTION, sessões por dispositivo em `user_sessions`) | Utilizadores |
+| Backups | `backups/` (mysqldump para `BACKUP_DIR`) | Utilizadores |
+| Contas correntes | `billing/receipts.service.ts` (FT em aberto, recibos RG) | Contas correntes |
+| Recursos humanos | `hr/` (fichas, escalas, ponto, mapa mensal) | Recursos humanos |
 
 ## Testes
 
@@ -143,5 +145,11 @@ Regras de negócio a manter: preços são sempre com IVA incluído (base calcula
 
 - **Certificação AT:** o código está preparado, mas falta o processo legal: passar o SAF-T no validador oficial da AT (verifica também os asserts XSD 1.1 e regras de negócio), pedir a certificação com a chave pública (`GET /api/at/public-key`) e depois definir `AT_CERTIFICATE_NUMBER`. Comunicar as séries no Portal das Finanças antes de as usar. Até lá os PDFs indicam "sem validade fiscal".
 - Comunicação de documentos à AT (webservice ou envio mensal do SAF-T).
-- Fichas de RH (horários, salários) — hoje "funcionários" são as contas de utilizador.
-- Deploy no Railway (ver README).
+- Processamento salarial (recibos de vencimento, TSU, IRS): o módulo de RH guarda fichas, escalas e ponto, mas não processa salários.
+- Deploy no Railway: tudo preparado (Dockerfiles, `railway.toml`, guia no README); falta correr com a conta. Os Dockerfiles e o CI ainda não foram executados porque a máquina de desenvolvimento não tem Docker.
+
+## Recursos humanos e produção
+
+- **RH** (`hr/`): fichas de funcionário separadas das contas (IBAN, NISS e salário só para gestores); turnos com deteção de sobreposição incluindo turnos noturnos e o dia seguinte; picagens com lock por funcionário; correções guardam quem e quando; mapa mensal de horas previstas vs trabalhadas.
+- **Chave AT em produção:** obrigatória (`AT_PRIVATE_KEY` em PEM numa linha, ou `AT_PRIVATE_KEY_PATH`); com `NODE_ENV=production` a API recusa arrancar sem ela. Gerar com `backend/scripts/generate-at-key.mjs`.
+- **Ficheiros de texto no Windows:** editar com a ferramenta de edição; o PowerShell 5.1 lê ficheiros UTF-8 sem BOM como ANSI e corrompe os acentos ao regravar.

@@ -47,41 +47,57 @@ npm --prefix frontend run dev
 
 Entra com `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`.
 
+## Testes
+
+```bash
+npm --prefix backend test
+npm --prefix backend run test:e2e
+```
+
+Os testes e2e usam uma base de dados própria (`<DATABASE_URL>_test`), apagada e recriada em cada execução; o SAF-T é validado contra o XSD oficial da AT. O GitHub Actions (`.github/workflows/ci.yml`) corre tudo contra MySQL 8.4 em cada push.
+
+## Chave de assinatura AT
+
+Em desenvolvimento a chave é gerada sozinha em `backend/keys/`. Em produção é obrigatória e tem de ser sempre a mesma (mudá-la parte a cadeia de assinaturas dos documentos):
+
+```bash
+node backend/scripts/generate-at-key.mjs backend/keys/at-private.pem
+```
+
+O script cria a chave privada e a pública (a pública é a que se entrega à AT na certificação) e mostra a privada numa linha para usar em `AT_PRIVATE_KEY`. Guarda a chave privada num cofre de senhas; nunca a versiones.
+
 ## Docker
 
 ```bash
 cp .env.example .env
+node backend/scripts/generate-at-key.mjs backend/keys/at-private.pem
 docker compose up -d --build
 docker compose exec backend npm run db:seed
 ```
 
-Painel em http://localhost:8080. O MySQL do compose fica exposto na porta 3308 para não colidir com o MySQL local.
-
-## API
-
-| Método | Rota | Acesso |
-|---|---|---|
-| POST | `/api/auth/login` | público (5 tentativas/min) |
-| POST | `/api/auth/refresh` | público |
-| POST | `/api/auth/logout` | autenticado |
-| GET | `/api/auth/me` | autenticado |
-| GET/POST/PATCH | `/api/users` | ADMIN |
-| GET | `/api/hotels` | autenticado (não-ADMIN vê só o seu hotel) |
-| POST/PATCH/DELETE | `/api/hotels` | ADMIN |
-| GET/PATCH | `/api/rooms` | autenticado, restrito ao hotel |
-| POST/DELETE | `/api/rooms` | ADMIN, MANAGER |
-| GET | `/api/public/hotels/:slug` | público |
-| GET | `/api/health` | público |
+Painel em http://localhost:8080. O MySQL do compose fica na porta 3308 para não colidir com o MySQL local. Os backups ficam no volume `backend_data` (`/data/backups`).
 
 ## Deploy no Railway
 
-Antes de começar, confirma em https://status.railway.com que os builds estão disponíveis para o teu plano.
+Antes de começar, confirma em https://status.railway.com que os builds estão disponíveis para o teu plano. Cada serviço tem `railway.toml` (Dockerfile e healthcheck).
 
-1. `railway init --name MAVIE-HGest`
-2. `railway add --database mysql`
-3. Cria dois serviços a partir do repositório, com root directory `backend` e `frontend`.
-4. Variáveis do backend: `DATABASE_URL` (referência ao MySQL do Railway), `JWT_SECRET`, `JWT_REFRESH_SECRET`, `CORS_ORIGIN` (domínio público do frontend), `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`.
-5. Variáveis do frontend: `API_UPSTREAM=http://<backend>.railway.internal:<PORT>` (sem barra final). O Railway define `PORT` automaticamente.
-6. Deploy (`railway up` ou dashboard) e gerar domínio público para o frontend.
-7. Seed: `railway run --service backend npm run db:seed`.
-8. Remove `SEED_ADMIN_PASSWORD` das variáveis depois do seed.
+1. `railway init --name MAVIE-HGest` e `railway add --database mysql`.
+2. Cria o serviço **backend** a partir do repositório com root directory `backend`, e o serviço **frontend** com root directory `frontend`.
+3. Variáveis do backend:
+
+   | Variável | Valor |
+   |---|---|
+   | `DATABASE_URL` | referência à variável `MYSQL_URL` do serviço MySQL |
+   | `PORT` | `3000` |
+   | `JWT_SECRET`, `JWT_REFRESH_SECRET` | dois valores aleatórios longos e diferentes |
+   | `CORS_ORIGIN` | domínio público do frontend (`https://...`) |
+   | `AT_PRIVATE_KEY` | chave privada numa linha (ver acima) |
+   | `AT_CERTIFICATE_NUMBER` | `0` até haver certificação |
+   | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | servidor de email |
+   | `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | só para o primeiro seed |
+
+4. Adiciona um volume ao backend montado em `/data` (backups).
+5. Variáveis do frontend: `API_UPSTREAM=http://backend.railway.internal:3000` (sem barra final; usa o nome do serviço backend).
+6. Faz o deploy e gera um domínio público só para o frontend.
+7. Seed: `railway run --service backend npm run db:seed`, depois remove `SEED_ADMIN_PASSWORD` e muda a password do admin.
+8. Em **Configuração**: dados fiscais, taxas de IVA e séries do ano com o código AT; em **Caixa** e **Stocks** cria as caixas e o armazém principal.

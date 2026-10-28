@@ -23,6 +23,17 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Define JWT_REFRESH_SECRET no .env}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@maviehgest.com}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      AT_PRIVATE_KEY_PATH: /data/keys/at-private.pem
+      AT_CERTIFICATE_NUMBER: ${AT_CERTIFICATE_NUMBER:-0}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+    volumes:
+      - backend_data:/data
+      - ./backend/keys:/data/keys:ro
     depends_on:
       db:
         condition: service_healthy
@@ -34,9 +45,11 @@ services:
     environment:
       API_UPSTREAM: http://backend:3000
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "8080:80"
 
 volumes:
   db_data:
+  backend_data:
