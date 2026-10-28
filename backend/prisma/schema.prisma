@@ -51,6 +51,7 @@ model Hotel {
   orders                 Order[]
   suppliers              Supplier[]
   warehouses             Warehouse[]
+  emailLogs              EmailLog[]
   purchases              Purchase[]
 
   @@map("hotels")
@@ -651,4 +652,26 @@ model RecipeItem {
   @@unique([productId, ingredientId])
   @@index([ingredientId])
   @@map("recipe_items")
+}
+
+enum EmailStatus {
+  SENT
+  LOGGED
+  FAILED
+}
+
+model EmailLog {
+  id        Int         @id @default(autoincrement())
+  hotelId   Int?
+  hotel     Hotel?      @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  kind      String      @db.VarChar(40)
+  recipient String      @db.VarChar(255)
+  subject   String      @db.VarChar(255)
+  status    EmailStatus
+  error     String?     @db.Text
+  relatedId Int?
+  createdAt DateTime    @default(now())
+
+  @@index([hotelId, createdAt])
+  @@map("email_logs")
 }

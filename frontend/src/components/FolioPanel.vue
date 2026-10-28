@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { api, errorMessage, openInvoicePdf } from '@/services/api';
+import { api, emailInvoice, errorMessage, openInvoicePdf } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
 import type { CashRegister, ChargeType, Folio, InvoiceType, PaymentMethod, Reservation, TaxRate } from '@/types';
@@ -259,6 +259,13 @@ defineExpose({ load });
         <span>{{ INVOICE_TYPE_LABELS[doc.type] }}</span>
         <span>{{ money(doc.grossTotal) }}</span>
         <span v-if="doc.status === 'CREDITED'" class="text-xs text-rose-600">creditada</span>
+        <button
+          class="text-xs text-indigo-600 hover:underline"
+          type="button"
+          @click="emailInvoice(doc.id, doc.fullNumber).catch((e) => (error = errorMessage(e)))"
+        >
+          Enviar por email
+        </button>
       </div>
     </div>
   </div>

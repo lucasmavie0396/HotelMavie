@@ -45,6 +45,22 @@ export async function openInvoicePdf(id: number) {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
+export async function emailInvoice(id: number, fullNumber: string) {
+  const to = window.prompt(`Enviar ${fullNumber} para (vazio = email do cliente):`, '');
+  if (to === null) {
+    return null;
+  }
+  const { data } = await api.post<{ status: 'SENT' | 'LOGGED' | 'FAILED'; recipient: string }>(`/invoices/${id}/email`, {
+    to: to.trim() || undefined,
+  });
+  window.alert(
+    data.status === 'SENT'
+      ? `Enviado para ${data.recipient}`
+      : `Registado para ${data.recipient}, mas nao enviado: o servidor de email (SMTP) nao esta configurado.`,
+  );
+  return data;
+}
+
 export function errorMessage(error: unknown) {
   if (axios.isAxiosError(error)) {
     const message = (error.response?.data as { message?: string | string[] } | undefined)?.message;

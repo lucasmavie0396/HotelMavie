@@ -9,6 +9,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { GuestsModule } from './guests/guests.module';
 import { HealthModule } from './health/health.module';
 import { HotelsModule } from './hotels/hotels.module';
+import { MailModule } from './mail/mail.module';
 import { OperationsModule } from './operations.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PublicModule } from './public/public.module';
@@ -21,6 +22,7 @@ import { UsersModule } from './users/users.module';
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     PrismaModule,
+    MailModule,
     AuthModule,
     UsersModule,
     HotelsModule,

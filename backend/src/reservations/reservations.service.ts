@@ -5,6 +5,8 @@ import { JwtPayload } from '../auth/jwt-payload';
 import { FolioService } from '../billing/folio.service';
 import { addDays, assertStayRange, parseDate, todayUtc } from '../common/dates';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
+import { MailService } from '../mail/mail.service';
+import { bookingConfirmedEmail } from '../mail/templates';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { AvailabilityQueryDto, ReservationQueryDto } from './dto/reservation-query.dto';
@@ -55,6 +57,7 @@ export class ReservationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly folio: FolioService,
+    private readonly mail: MailService,
   ) {}
 
   findAll(query: ReservationQueryDto, user: JwtPayload) {
@@ -220,7 +223,29 @@ export class ReservationsService {
 
   async confirm(id: number, user: JwtPayload) {
     await this.findOne(id, user);
-    return this.transition(id, [ReservationStatus.PENDING], { status: ReservationStatus.CONFIRMED });
+    const reservation = await this.transition(id, [ReservationStatus.PENDING], { status: ReservationStatus.CONFIRMED });
+    if (reservation.guest.email) {
+      const hotel = await this.prisma.hotel.findUniqueOrThrow({ where: { id: reservation.hotelId } });
+      const content = bookingConfirmedEmail(hotel, {
+        code: reservation.code,
+        guestName: `${reservation.guest.firstName} ${reservation.guest.lastName}`,
+        roomType: reservation.room.type,
+        checkIn: reservation.checkIn,
+        checkOut: reservation.checkOut,
+        adults: reservation.adults,
+        children: reservation.children,
+        totalAmount: reservation.totalAmount,
+      });
+      this.mail.queue({
+        hotelId: hotel.id,
+        kind: 'BOOKING_CONFIRMED',
+        to: reservation.guest.email,
+        replyTo: hotel.email,
+        relatedId: reservation.id,
+        ...content,
+      });
+    }
+    return reservation;
   }
 
   async cancel(id: number, user: JwtPayload) {

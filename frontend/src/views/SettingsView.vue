@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
 import type { TaxRate } from '@/types';
+import { formatDateTime } from '@/utils/format';
 
 const hotels = useHotelsStore();
 const taxRates = ref<TaxRate[]>([]);
@@ -11,11 +12,20 @@ const saved = ref('');
 const busy = ref(false);
 
 const fiscal = reactive({ legalName: '', taxId: '', invoiceFooter: '', accommodationTaxRateId: 0 });
+const emails = ref<{ smtpConfigured: boolean; items: { id: number; kind: string; recipient: string; subject: string; status: string; error: string | null; createdAt: string }[] } | null>(null);
+
+const EMAIL_KINDS: Record<string, string> = {
+  BOOKING_REQUEST: 'Pedido de reserva (hospede)',
+  BOOKING_ALERT: 'Nova reserva (hotel)',
+  BOOKING_CONFIRMED: 'Reserva confirmada',
+  INVOICE: 'Fatura',
+};
 const rate = reactive({ name: '', rate: 0, exemptionReason: '' });
 
 async function load() {
   try {
     taxRates.value = (await api.get<TaxRate[]>('/tax-rates', { params: { hotelId: hotels.selectedId } })).data;
+    emails.value = (await api.get('/email-logs', { params: { hotelId: hotels.selectedId } })).data;
     const hotel = hotels.selected;
     Object.assign(fiscal, {
       legalName: hotel?.legalName ?? '',
@@ -124,6 +134,30 @@ onMounted(load);
               </button>
             </td>
           </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div v-if="emails" class="card space-y-3">
+      <h2 class="font-semibold">Emails</h2>
+      <p v-if="!emails.smtpConfigured" class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        O servidor de email (SMTP) nao esta configurado: os emails ficam registados mas nao sao enviados. Configura SMTP_HOST,
+        SMTP_PORT, SMTP_USER, SMTP_PASS e MAIL_FROM no backend/.env. Para avisos de novas reservas, preenche o email do hotel em Hoteis.
+      </p>
+      <table class="w-full text-left text-sm">
+        <thead class="border-b border-slate-200 text-slate-600">
+          <tr><th class="py-2">Data</th><th class="py-2">Tipo</th><th class="py-2">Para</th><th class="py-2">Estado</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in emails.items" :key="item.id" class="border-b border-slate-100">
+            <td class="py-2">{{ formatDateTime(item.createdAt) }}</td>
+            <td class="py-2">{{ EMAIL_KINDS[item.kind] ?? item.kind }}</td>
+            <td class="py-2">{{ item.recipient }}</td>
+            <td class="py-2" :title="item.error ?? ''" :class="item.status === 'FAILED' ? 'text-rose-600' : item.status === 'SENT' ? 'text-emerald-700' : 'text-slate-500'">
+              {{ item.status === 'SENT' ? 'Enviado' : item.status === 'FAILED' ? 'Falhou' : 'So registado' }}
+            </td>
+          </tr>
+          <tr v-if="!emails.items.length"><td colspan="4" class="py-3 text-slate-500">Ainda nao houve emails</td></tr>
         </tbody>
       </table>
     </div>

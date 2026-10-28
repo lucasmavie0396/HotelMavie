@@ -1,5 +1,22 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Post, Query, Res } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseIntPipe,
+  Post,
+  Query,
+  Res,
+} from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+import { IsEmail, IsOptional } from 'class-validator';
+import { MailService } from '../mail/mail.service';
+import { invoiceEmail } from '../mail/templates';
 import type { Response } from 'express';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -18,6 +35,12 @@ import { FolioService } from './folio.service';
 import { InvoicePdfService } from './invoice-pdf.service';
 import { InvoicesService } from './invoices.service';
 
+class EmailInvoiceDto {
+  @IsOptional()
+  @IsEmail()
+  to?: string;
+}
+
 @Controller()
 export class BillingController {
   constructor(
@@ -26,6 +49,7 @@ export class BillingController {
     private readonly pdf: InvoicePdfService,
     private readonly cash: CashService,
     private readonly prisma: PrismaService,
+    private readonly mail: MailService,
   ) {}
 
   @Get('reservations/:id/folio')
@@ -73,6 +97,33 @@ export class BillingController {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${invoice.fullNumber.replace('/', '-')}.pdf"`);
     res.send(buffer);
+  }
+
+  @Post('invoices/:id/email')
+  @HttpCode(HttpStatus.OK)
+  async emailInvoice(@Param('id', ParseIntPipe) id: number, @Body() dto: EmailInvoiceDto, @CurrentUser() user: JwtPayload) {
+    const invoice = await this.invoices.findOne(id, user);
+    const to = dto.to ?? invoice.customerEmail;
+    if (!to) {
+      throw new BadRequestException('O documento nao tem email do cliente: indica o destinatario');
+    }
+    const hotel = await this.prisma.hotel.findUniqueOrThrow({ where: { id: invoice.hotelId } });
+    const content = invoiceEmail(hotel, invoice);
+    const log = await this.mail.send({
+      hotelId: hotel.id,
+      kind: 'INVOICE',
+      to,
+      replyTo: hotel.email,
+      relatedId: invoice.id,
+      ...content,
+      attachments: [
+        { filename: `${invoice.fullNumber.replace(/[^\w-]+/g, '-')}.pdf`, content: await this.pdf.render(invoice, hotel), contentType: 'application/pdf' },
+      ],
+    });
+    if (log.status === 'FAILED') {
+      throw new BadGatewayException(`Nao foi possivel enviar o email: ${log.error}`);
+    }
+    return log;
   }
 
   @Roles(UserRole.ADMIN, UserRole.MANAGER)

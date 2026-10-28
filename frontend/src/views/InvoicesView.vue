@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { api, errorMessage, openInvoicePdf } from '@/services/api';
+import { api, emailInvoice, errorMessage, openInvoicePdf } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
 import type { InvoiceSummary, InvoiceType } from '@/types';
@@ -57,6 +57,10 @@ async function credit(invoice: InvoiceSummary) {
   } catch (e) {
     error.value = errorMessage(e);
   }
+}
+
+function sendEmail(invoice: InvoiceSummary) {
+  emailInvoice(invoice.id, invoice.fullNumber).catch((e) => (error.value = errorMessage(e)));
 }
 
 function pdf(id: number) {
@@ -128,6 +132,7 @@ onMounted(load);
               >
                 Reserva
               </RouterLink>
+              <button class="mr-3 text-xs text-indigo-600 hover:underline" type="button" @click="sendEmail(invoice)">Email</button>
               <button
                 v-if="isManager && invoice.type !== 'CREDIT_NOTE' && invoice.status === 'ISSUED'"
                 class="text-xs text-rose-600 hover:underline"

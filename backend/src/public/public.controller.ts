@@ -3,6 +3,8 @@ import { ReservationSource } from '@prisma/client';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../common/decorators/public.decorator';
 import { assertStayRange, parseDate, todayUtc } from '../common/dates';
+import { MailService } from '../mail/mail.service';
+import { bookingRequestEmail, newBookingAlertEmail } from '../mail/templates';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReservationsService } from '../reservations/reservations.service';
 import { PublicAvailabilityQueryDto, PublicBookingDto } from './dto/public-booking.dto';
@@ -13,6 +15,7 @@ export class PublicController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly reservations: ReservationsService,
+    private readonly mail: MailService,
   ) {}
 
   @Get()
@@ -75,6 +78,22 @@ export class PublicController {
           source: ReservationSource.ONLINE,
           notes: dto.notes,
         });
+        const stay = {
+          code: reservation.code,
+          guestName: `${guest.firstName} ${guest.lastName}`,
+          roomType: room.type,
+          checkIn: dto.checkIn,
+          checkOut: dto.checkOut,
+          adults: dto.adults,
+          children,
+          totalAmount: reservation.totalAmount,
+        };
+        const toGuest = bookingRequestEmail(hotel, stay);
+        this.mail.queue({ hotelId: hotel.id, kind: 'BOOKING_REQUEST', to: email, replyTo: hotel.email, relatedId: reservation.id, ...toGuest });
+        if (hotel.email) {
+          const toHotel = newBookingAlertEmail(hotel, stay, email);
+          this.mail.queue({ hotelId: hotel.id, kind: 'BOOKING_ALERT', to: hotel.email, replyTo: email, relatedId: reservation.id, ...toHotel });
+        }
         return {
           code: reservation.code,
           status: reservation.status,
