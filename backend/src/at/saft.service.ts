@@ -60,6 +60,9 @@ export class SaftService {
     if (!hotel.taxId) {
       throw new BadRequestException('Preenche o NIF do hotel em Configuracao antes de exportar o SAF-T');
     }
+    if (!hotel.address || !hotel.city || (hotel.country === 'PT' && !/^\d{4}-\d{3}$/.test(hotel.postalCode ?? ''))) {
+      throw new BadRequestException('Preenche a morada, a localidade e o codigo postal (0000-000) do hotel antes de exportar o SAF-T');
+    }
     const invoices: FullInvoice[] = await this.prisma.invoice.findMany({
       where: { hotelId, issuedAt: { gte: from, lt: to } },
       include: { lines: { orderBy: { id: 'asc' } }, creditOf: { select: { fullNumber: true } } },
@@ -133,7 +136,7 @@ export class SaftService {
           '</Product>',
         ].join(''),
       ),
-      '<TaxTable>',
+      taxes.size ? '<TaxTable>' : '',
       ...[...taxes.values()].map((tax) =>
         [
           '<TaxTableEntry>',
@@ -145,7 +148,7 @@ export class SaftService {
           '</TaxTableEntry>',
         ].join(''),
       ),
-      '</TaxTable>',
+      taxes.size ? '</TaxTable>' : '',
       '</MasterFiles>',
       '<SourceDocuments>',
       '<SalesInvoices>',

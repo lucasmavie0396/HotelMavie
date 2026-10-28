@@ -49,6 +49,7 @@
         "jest": "^29.7.0",
         "supertest": "^7.1.4",
         "ts-jest": "^29.4.1",
-        "typescript": "^5.8.3"
+        "typescript": "^5.8.3",
+        "xmllint-wasm": "^4.0.2"
     }
 }

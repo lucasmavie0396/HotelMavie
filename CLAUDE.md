@@ -136,11 +136,12 @@ Regras de negócio a manter: preços são sempre com IVA incluído (base calcula
   - `hash` é a assinatura RSA-SHA1 (base64) de `data;data-hora;numero;total;hash anterior`, em hora de Lisboa (`at-format.ts`). Chave em `AT_PRIVATE_KEY_PATH`; sem isso gera uma chave de desenvolvimento em `backend/keys/` (não versionada).
   - ATCUD = código de validação da série + número; o código só se regista com `nextNumber = 1`.
   - QR code (Portaria 195/2020) e 4 caracteres da assinatura no PDF. Taxas têm `atCategory` (RED/INT/NOR/ISE); 0% exige `exemptionCode` M01–M99. Não se fatura lançamento sem taxa.
-  - SAF-T (PT) 1.04_01 em `GET /api/saft` (só faturação, um ano fiscal).
+  - SAF-T (PT) 1.04_01 em `GET /api/saft` (só faturação e recibos, um ano fiscal). `test/saft-xsd.e2e-spec.ts` valida-o contra o XSD oficial (`test/fixtures/saftpt1.04_01.xsd`, de info.portaldasfinancas.gov.pt/apps/saft-pt04/). O XSD é 1.1 e o libxml2 só lê 1.0: o teste retira os 19 `xs:assert` e reproduz em código os que se aplicam (isenções e tipo de recibo). Qualquer alteração ao SAF-T tem de manter este teste verde.
+  - Recibos (`billing/receipts.service.ts`): uma FT emitida sai do saldo da estadia e fica na conta corrente do cliente (`/contas-correntes`); RG liquida uma ou várias FT do mesmo cliente, total ou parcialmente. RG não é assinado (o SAF-T não o pede), tem ATCUD. Anular RG cria um pagamento de estorno. Uma FT com recibos ativos não se credita.
 
 ## Pendente
 
-- **Certificação AT:** o código está preparado, mas falta o processo legal: pedir a certificação à AT com a chave pública (`GET /api/at/public-key`), validar o SAF-T contra o XSD oficial e os testes da AT, e depois definir `AT_CERTIFICATE_NUMBER`. Comunicar as séries no Portal das Finanças antes de as usar. Até lá os PDFs indicam "sem validade fiscal".
-- Recibos (RG) para faturas pagas mais tarde e comunicação de documentos à AT (webservice ou ficheiro mensal).
+- **Certificação AT:** o código está preparado, mas falta o processo legal: passar o SAF-T no validador oficial da AT (verifica também os asserts XSD 1.1 e regras de negócio), pedir a certificação com a chave pública (`GET /api/at/public-key`) e depois definir `AT_CERTIFICATE_NUMBER`. Comunicar as séries no Portal das Finanças antes de as usar. Até lá os PDFs indicam "sem validade fiscal".
+- Comunicação de documentos à AT (webservice ou envio mensal do SAF-T).
 - Fichas de RH (horários, salários) — hoje "funcionários" são as contas de utilizador.
 - Deploy no Railway (ver README).
