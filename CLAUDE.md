@@ -51,6 +51,8 @@ npm --prefix backend run build
 npm --prefix backend run db:seed
 npm --prefix backend run start:dev
 npm --prefix backend run typecheck
+npm --prefix backend test
+npm --prefix backend run test:e2e
 
 npm --prefix frontend install
 npm --prefix frontend run dev
@@ -116,6 +118,13 @@ docker compose exec backend npm run db:seed
 | Funcionários | `users/` (papéis ADMIN/MANAGER/RECEPTION, sessões por dispositivo em `user_sessions`) | Funcionários |
 | Backups | `backups/` (mysqldump para `BACKUP_DIR`) | Funcionários |
 
+## Testes
+
+- Unitários em `src/**/*.spec.ts`; e2e em `backend/test/*.e2e-spec.ts` contra a app real e uma base de dados própria (`<DATABASE_URL>_test` ou `TEST_DATABASE_URL`), apagada e recriada com `migrate deploy` em cada execução. O setup recusa qualquer base cujo nome não termine em `_test`.
+- Cada teste cria o seu próprio hotel (`test/helpers.ts`), por isso os testes não dependem uns dos outros.
+- Qualquer alteração a reservas, faturação, caixa, POS ou stocks tem de manter `npm --prefix backend run test:e2e` verde; acrescentar um teste para cada regra nova.
+- Concorrência: usar `SELECT ... FOR UPDATE` e ler os valores bloqueados na própria consulta (em REPEATABLE READ uma leitura normal depois do lock pode devolver dados antigos). Nunca usar `this.prisma` dentro de um `$transaction` (esgota o pool de ligações); preparar o que for preciso antes da transação.
+
 Regras de negócio a manter: preços são sempre com IVA incluído (base calculada na fatura); documentos emitidos nunca se alteram nem apagam (corrige-se com nota de crédito); valores monetários usam `Prisma.Decimal` via `common/money.ts`.
 
 ## Pendente
@@ -124,5 +133,4 @@ Regras de negócio a manter: preços são sempre com IVA incluído (base calcula
 - Envio de emails (confirmação de reserva online, envio de faturas).
 - Fichas de RH (horários, salários) — hoje "funcionários" são as contas de utilizador.
 - Fichas técnicas/receitas (descontar ingredientes ao vender um prato).
-- Testes automatizados (unitários e e2e).
 - Deploy no Railway (ver README).
