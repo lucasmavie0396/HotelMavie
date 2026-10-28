@@ -318,3 +318,62 @@ export interface ReceiptDoc {
   cancelReason: string | null;
   lines: { id: number; amount: string; invoice: { id: number; fullNumber: string } }[];
 }
+export type ContractType = 'PERMANENT' | 'FIXED_TERM' | 'PART_TIME' | 'INTERN' | 'OTHER';
+
+export interface Employee {
+  id: number;
+  hotelId: number;
+  userId: number | null;
+  fullName: string;
+  jobTitle: string;
+  department: string | null;
+  active: boolean;
+  email?: string | null;
+  phone?: string | null;
+  taxId?: string | null;
+  socialSecurityNumber?: string | null;
+  iban?: string | null;
+  contractType?: ContractType;
+  startDate?: string;
+  endDate?: string | null;
+  weeklyHours?: string;
+  baseSalary?: string | null;
+  notes?: string | null;
+  user?: { id: number; email: string } | null;
+}
+
+export interface Shift {
+  id: number;
+  employeeId: number;
+  date: string;
+  startTime: string;
+  endTime: string;
+  breakMinutes: number;
+  notes: string | null;
+  employee: { id: number; fullName: string; jobTitle: string };
+}
+
+export interface TimeEntry {
+  id: number;
+  employeeId: number;
+  clockIn: string;
+  clockOut: string | null;
+  source: 'SELF' | 'MANAGER';
+  notes: string | null;
+  editedAt: string | null;
+  employee: { id: number; fullName: string };
+  editedBy: { name: string } | null;
+}
+
+export interface MonthlyRow {
+  employeeId: number;
+  fullName: string;
+  jobTitle: string;
+  scheduledShifts: number;
+  scheduledMinutes: number;
+  workedDays: number;
+  workedMinutes: number;
+  differenceMinutes: number;
+  openEntries: number;
+  editedEntries: number;
+}

@@ -42,6 +42,7 @@ const router = createRouter({
         { path: 'pos', name: 'pos', component: () => import('@/views/PosView.vue') },
         { path: 'produtos', name: 'products', component: () => import('@/views/ProductsView.vue') },
         { path: 'stocks', name: 'stock', component: () => import('@/views/StockView.vue') },
+        { path: 'rh', name: 'hr', component: () => import('@/views/HrView.vue') },
         {
           path: 'compras',
           name: 'purchases',

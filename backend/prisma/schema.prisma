@@ -57,33 +57,38 @@ model Hotel {
   emailLogs              EmailLog[]
   receipts               Receipt[]
   purchases              Purchase[]
+  employees              Employee[]
+  shifts                 Shift[]
+  timeEntries            TimeEntry[]
 
   @@map("hotels")
 }
 
 model User {
-  id             Int             @id @default(autoincrement())
-  name           String          @db.VarChar(150)
-  email          String          @unique @db.VarChar(150)
-  passwordHash   String          @db.VarChar(255)
-  role           UserRole        @default(RECEPTION)
-  active         Boolean         @default(true)
-  hotelId        Int?
-  hotel          Hotel?          @relation(fields: [hotelId], references: [id], onDelete: SetNull)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  sessions       UserSession[]
-  reservations   Reservation[]
-  charges        Charge[]
-  payments       Payment[]
-  invoices       Invoice[]
-  openedSessions CashSession[]   @relation("OpenedBy")
-  closedSessions CashSession[]   @relation("ClosedBy")
-  cashMovements  CashMovement[]
-  receipts       Receipt[]
-  orders         Order[]
-  stockMovements StockMovement[]
-  purchases      Purchase[]
+  id                Int             @id @default(autoincrement())
+  name              String          @db.VarChar(150)
+  email             String          @unique @db.VarChar(150)
+  passwordHash      String          @db.VarChar(255)
+  role              UserRole        @default(RECEPTION)
+  active            Boolean         @default(true)
+  hotelId           Int?
+  hotel             Hotel?          @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  sessions          UserSession[]
+  reservations      Reservation[]
+  charges           Charge[]
+  payments          Payment[]
+  invoices          Invoice[]
+  openedSessions    CashSession[]   @relation("OpenedBy")
+  closedSessions    CashSession[]   @relation("ClosedBy")
+  cashMovements     CashMovement[]
+  receipts          Receipt[]
+  orders            Order[]
+  stockMovements    StockMovement[]
+  purchases         Purchase[]
+  employee          Employee?
+  timeEntriesEdited TimeEntry[]     @relation("TimeEntryEditedBy")
 
   @@index([hotelId])
   @@map("users")
@@ -746,4 +751,85 @@ model ReceiptLine {
   @@index([receiptId])
   @@index([invoiceId])
   @@map("receipt_lines")
+}
+
+enum ContractType {
+  PERMANENT
+  FIXED_TERM
+  PART_TIME
+  INTERN
+  OTHER
+}
+
+enum TimeEntrySource {
+  SELF
+  MANAGER
+}
+
+model Employee {
+  id                   Int          @id @default(autoincrement())
+  hotelId              Int
+  hotel                Hotel        @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  userId               Int?         @unique
+  user                 User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  fullName             String       @db.VarChar(150)
+  jobTitle             String       @db.VarChar(80)
+  department           String?      @db.VarChar(60)
+  email                String?      @db.VarChar(150)
+  phone                String?      @db.VarChar(30)
+  taxId                String?      @db.VarChar(30)
+  socialSecurityNumber String?      @db.VarChar(30)
+  iban                 String?      @db.VarChar(40)
+  contractType         ContractType @default(PERMANENT)
+  startDate            DateTime     @db.Date
+  endDate              DateTime?    @db.Date
+  weeklyHours          Decimal      @default(40) @db.Decimal(5, 2)
+  baseSalary           Decimal?     @db.Decimal(12, 2)
+  active               Boolean      @default(true)
+  notes                String?      @db.Text
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  shifts               Shift[]
+  timeEntries          TimeEntry[]
+
+  @@index([hotelId, active])
+  @@map("employees")
+}
+
+model Shift {
+  id           Int      @id @default(autoincrement())
+  hotelId      Int
+  hotel        Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  employeeId   Int
+  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date         DateTime @db.Date
+  startTime    String   @db.VarChar(5)
+  endTime      String   @db.VarChar(5)
+  breakMinutes Int      @default(0)
+  notes        String?  @db.VarChar(200)
+  createdAt    DateTime @default(now())
+
+  @@index([hotelId, date])
+  @@index([employeeId, date])
+  @@map("shifts")
+}
+
+model TimeEntry {
+  id         Int             @id @default(autoincrement())
+  hotelId    Int
+  hotel      Hotel           @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  employeeId Int
+  employee   Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  clockIn    DateTime
+  clockOut   DateTime?
+  source     TimeEntrySource @default(SELF)
+  notes      String?         @db.VarChar(200)
+  editedById Int?
+  editedBy   User?           @relation("TimeEntryEditedBy", fields: [editedById], references: [id], onDelete: SetNull)
+  editedAt   DateTime?
+  createdAt  DateTime        @default(now())
+
+  @@index([employeeId, clockIn])
+  @@index([hotelId, clockIn])
+  @@map("time_entries")
 }

@@ -9,6 +9,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { GuestsModule } from './guests/guests.module';
 import { HealthModule } from './health/health.module';
 import { HotelsModule } from './hotels/hotels.module';
+import { HrModule } from './hr/hr.controller';
 import { MailModule } from './mail/mail.module';
 import { OperationsModule } from './operations.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -32,6 +33,7 @@ import { UsersModule } from './users/users.module';
     DashboardModule,
     OperationsModule,
     AdminModule,
+    HrModule,
     PublicModule,
     HealthModule,
   ],
