@@ -43,22 +43,49 @@ export const useAuthStore = defineStore('auth', () => {
     setSession(data);
   }
 
+  function adoptNewerSession(usedRefreshToken: string) {
+    const stored = loadSession();
+    if (stored && stored.refreshToken !== usedRefreshToken) {
+      session.value = stored;
+      return true;
+    }
+    return false;
+  }
+
   async function refresh(): Promise<'ok' | 'expired' | 'unavailable'> {
     if (!session.value) {
       return 'expired';
     }
+    const used = session.value.refreshToken;
+    if (adoptNewerSession(used)) {
+      return 'ok';
+    }
     try {
-      const { data } = await api.post<Session>('/auth/refresh', { refreshToken: session.value.refreshToken });
+      const { data } = await api.post<Session>('/auth/refresh', { refreshToken: used });
       setSession(data);
       return 'ok';
     } catch (error) {
       const status = (error as { response?: { status?: number } }).response?.status;
       if (status === 401 || status === 400) {
+        for (let attempt = 0; attempt < 10; attempt++) {
+          if (adoptNewerSession(used)) {
+            return 'ok';
+          }
+          await new Promise((done) => setTimeout(done, 200));
+        }
         setSession(null);
         return 'expired';
       }
       return 'unavailable';
     }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', (event) => {
+      if (event.key === STORAGE_KEY) {
+        session.value = event.newValue ? (JSON.parse(event.newValue) as Session) : null;
+      }
+    });
   }
 
   async function logout() {

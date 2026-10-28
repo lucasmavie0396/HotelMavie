@@ -656,12 +656,15 @@ model UserSession {
   userId     Int
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   tokenHash  String   @unique @db.VarChar(64)
+  previousTokenHash String? @db.VarChar(64)
+  rotatedAt  DateTime?
   expiresAt  DateTime
   userAgent  String?  @db.VarChar(255)
   createdAt  DateTime @default(now())
   lastUsedAt DateTime @default(now())
 
   @@index([userId])
+  @@index([previousTokenHash])
   @@map("user_sessions")
 }
 

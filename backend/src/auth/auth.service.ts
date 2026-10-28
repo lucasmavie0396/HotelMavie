@@ -9,6 +9,8 @@ import { publicUserSelect } from '../users/user.select';
 import { LoginDto } from './dto/login.dto';
 import { JwtPayload } from './jwt-payload';
 
+const ROTATION_GRACE_MS = 60_000;
+
 function hashToken(token: string) {
   return createHash('sha256').update(token).digest('hex');
 }
@@ -41,8 +43,15 @@ export class AuthService {
       throw new UnauthorizedException('Sessao expirada');
     }
 
-    const session = await this.prisma.userSession.findUnique({ where: { tokenHash: hashToken(refreshToken) } });
+    const tokenHash = hashToken(refreshToken);
+    const session = await this.prisma.userSession.findUnique({ where: { tokenHash } });
     if (!session) {
+      const justRotated = await this.prisma.userSession.findFirst({
+        where: { userId: payload.sub, previousTokenHash: tokenHash, rotatedAt: { gt: new Date(Date.now() - ROTATION_GRACE_MS) } },
+      });
+      if (justRotated) {
+        throw new UnauthorizedException('Sessao renovada noutro separador');
+      }
       await this.prisma.userSession.deleteMany({ where: { userId: payload.sub } });
       throw new UnauthorizedException('Sessao expirada');
     }
@@ -51,7 +60,7 @@ export class AuthService {
       await this.prisma.userSession.delete({ where: { id: session.id } });
       throw new UnauthorizedException('Sessao expirada');
     }
-    return this.issueTokens(user, session.id, userAgent);
+    return this.issueTokens(user, { id: session.id, tokenHash }, userAgent);
   }
 
   async logout(userId: number, refreshToken?: string) {
@@ -64,7 +73,7 @@ export class AuthService {
     return this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: publicUserSelect });
   }
 
-  private async issueTokens(user: User, sessionId?: number, userAgent?: string) {
+  private async issueTokens(user: User, previous?: { id: number; tokenHash: string }, userAgent?: string) {
     const payload: JwtPayload = { sub: user.id, role: user.role, hotelId: user.hotelId };
     const refreshSeconds = Number(this.config.get('JWT_REFRESH_EXPIRES_IN_SECONDS') ?? 604800);
     const [accessToken, refreshToken] = await Promise.all([
@@ -84,8 +93,14 @@ export class AuthService {
       userAgent: userAgent?.slice(0, 255),
       lastUsedAt: new Date(),
     };
-    if (sessionId) {
-      await this.prisma.userSession.update({ where: { id: sessionId }, data });
+    if (previous) {
+      const { count } = await this.prisma.userSession.updateMany({
+        where: { id: previous.id, tokenHash: previous.tokenHash },
+        data: { ...data, previousTokenHash: previous.tokenHash, rotatedAt: new Date() },
+      });
+      if (!count) {
+        throw new UnauthorizedException('Sessao renovada noutro separador');
+      }
     } else {
       await this.prisma.userSession.create({ data: { ...data, userId: user.id } });
     }

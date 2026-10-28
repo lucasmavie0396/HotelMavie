@@ -25,7 +25,23 @@ describe('Autenticacao e permissoes', () => {
     await ctx.http().post('/api/auth/refresh').send({ refreshToken: deviceB.refreshToken }).expect(200);
 
     await ctx.http().post('/api/auth/refresh').send({ refreshToken: deviceA.refreshToken }).expect(401);
+    await ctx.http().post('/api/auth/refresh').send({ refreshToken: rotated.body.refreshToken }).expect(200).then((r) => (rotated.body = r.body));
+
+    await ctx.prisma.userSession.updateMany({ where: { user: { email } }, data: { rotatedAt: new Date(Date.now() - 5 * 60_000) } });
+    await ctx.http().post('/api/auth/refresh').send({ refreshToken: deviceA.refreshToken }).expect(401);
     await ctx.http().post('/api/auth/refresh').send({ refreshToken: rotated.body.refreshToken }).expect(401);
+  });
+
+  it('dois separadores a renovar com o mesmo token nao terminam a sessao', async () => {
+    const { email } = await createUser(ctx.prisma, UserRole.ADMIN, null);
+    const tab = await login(ctx, email);
+    const [first, second] = await Promise.all([
+      ctx.http().post('/api/auth/refresh').send({ refreshToken: tab.refreshToken }),
+      ctx.http().post('/api/auth/refresh').send({ refreshToken: tab.refreshToken }),
+    ]);
+    const winner = [first, second].find((r) => r.status === 200)!;
+    expect([first.status, second.status].sort()).toEqual([200, 401]);
+    await ctx.http().post('/api/auth/refresh').send({ refreshToken: winner.body.refreshToken }).expect(200);
   });
 
   it('desativar um utilizador impede login e termina as sessoes', async () => {
