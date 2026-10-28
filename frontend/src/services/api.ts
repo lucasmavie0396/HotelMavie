@@ -5,7 +5,7 @@ type RetriableConfig = InternalAxiosRequestConfig & { _retry?: boolean };
 
 export const api = axios.create({ baseURL: '/api' });
 
-let refreshing: Promise<boolean> | null = null;
+let refreshing: Promise<'ok' | 'expired' | 'unavailable'> | null = null;
 
 api.interceptors.request.use((config) => {
   const auth = useAuthStore();
@@ -30,10 +30,13 @@ api.interceptors.response.use(
         refreshing = null;
       });
 
-    if (await refreshing) {
+    const result = await refreshing;
+    if (result === 'ok') {
       return api(original);
     }
-    window.location.assign('/login');
+    if (result === 'expired') {
+      window.location.assign('/login');
+    }
     return Promise.reject(error);
   },
 );

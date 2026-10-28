@@ -43,17 +43,21 @@ export const useAuthStore = defineStore('auth', () => {
     setSession(data);
   }
 
-  async function refresh() {
+  async function refresh(): Promise<'ok' | 'expired' | 'unavailable'> {
     if (!session.value) {
-      return false;
+      return 'expired';
     }
     try {
       const { data } = await api.post<Session>('/auth/refresh', { refreshToken: session.value.refreshToken });
       setSession(data);
-      return true;
-    } catch {
-      setSession(null);
-      return false;
+      return 'ok';
+    } catch (error) {
+      const status = (error as { response?: { status?: number } }).response?.status;
+      if (status === 401 || status === 400) {
+        setSession(null);
+        return 'expired';
+      }
+      return 'unavailable';
     }
   }
 
