@@ -212,6 +212,9 @@ export class PurchasesService {
       if (!count) {
         throw new ConflictException('Esta compra ja foi recebida ou cancelada');
       }
+      const items = await tx.$queryRaw<{ productId: number }[]>`SELECT productId FROM purchase_items WHERE purchaseId = ${id}`;
+      const productIds = [...new Set(items.map((item) => item.productId))];
+      await tx.$queryRaw`SELECT id FROM products WHERE id IN (${Prisma.join(productIds)}) FOR UPDATE`;
       const purchase = await tx.purchase.findUniqueOrThrow({ where: { id }, include: { items: true } });
       for (const item of purchase.items) {
         const product = await tx.product.findUniqueOrThrow({

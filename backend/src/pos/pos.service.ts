@@ -212,6 +212,9 @@ export class PosService {
     }
     const chargeType = order.outlet === Outlet.BAR ? ChargeType.BAR : ChargeType.RESTAURANT;
     const label = order.outlet === Outlet.BAR ? 'Bar' : 'Restaurante';
+    if (dto.mode === 'PAY') {
+      await this.invoices.ensureSeries(order.hotelId, InvoiceType.INVOICE_RECEIPT);
+    }
 
     await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.order.updateMany({

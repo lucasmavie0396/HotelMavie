@@ -35,9 +35,20 @@ export const invoiceInclude = {
   creditNotes: { select: { id: true, fullNumber: true } },
 } satisfies Prisma.InvoiceInclude;
 
+function seriesCode(type: InvoiceType, date: Date) {
+  return `${SERIES_PREFIX[type]}${date.getFullYear()}`;
+}
+
 @Injectable()
 export class InvoicesService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async ensureSeries(hotelId: number, ...types: InvoiceType[]) {
+    const now = new Date();
+    for (const type of types) {
+      await this.prisma.$executeRaw`INSERT IGNORE INTO invoice_series (hotelId, type, code, nextNumber, active, createdAt) VALUES (${hotelId}, ${type}, ${seriesCode(type, now)}, 1, true, NOW(3))`;
+    }
+  }
 
   findAll(query: InvoiceQueryDto, user: JwtPayload) {
     const q = query.q?.trim();
@@ -69,6 +80,8 @@ export class InvoicesService {
     if (!reservation || !canAccessHotel(user, reservation.hotelId)) {
       throw new NotFoundException('Reserva nao encontrada');
     }
+    const type = dto.type ?? InvoiceType.INVOICE;
+    await this.ensureSeries(reservation.hotelId, type);
     return this.prisma.$transaction(async (tx) => {
       const charges = await tx.charge.findMany({
         where: {
@@ -84,7 +97,7 @@ export class InvoicesService {
       const guest = reservation.guest;
       return this.issue(tx, {
         hotelId: reservation.hotelId,
-        type: dto.type ?? InvoiceType.INVOICE,
+        type,
         reservationId,
         charges,
         customerName: dto.customerName ?? `${guest.firstName} ${guest.lastName}`,
@@ -136,6 +149,7 @@ export class InvoicesService {
     if (original.type === InvoiceType.CREDIT_NOTE) {
       throw new BadRequestException('Nao e possivel creditar uma nota de credito');
     }
+    await this.ensureSeries(original.hotelId, InvoiceType.CREDIT_NOTE);
     return this.prisma.$transaction(async (tx) => {
       const { count } = await tx.invoice.updateMany({
         where: { id, status: InvoiceStatus.ISSUED },
@@ -174,19 +188,18 @@ export class InvoicesService {
   ) {
     const hotel = await tx.hotel.findUniqueOrThrow({ where: { id: input.hotelId } });
     const issuedAt = new Date();
-    const code = `${SERIES_PREFIX[input.type]}${issuedAt.getFullYear()}`;
-    await tx.invoiceSeries.upsert({
-      where: { hotelId_code: { hotelId: input.hotelId, code } },
-      update: {},
-      create: { hotelId: input.hotelId, code, type: input.type },
-    });
-    await tx.$queryRaw`SELECT id FROM invoice_series WHERE hotelId = ${input.hotelId} AND code = ${code} FOR UPDATE`;
-    const series = await tx.invoiceSeries.findUniqueOrThrow({ where: { hotelId_code: { hotelId: input.hotelId, code } } });
+    const code = seriesCode(input.type, issuedAt);
+    const [series] = await tx.$queryRaw<{ id: number; code: string; nextNumber: number; lastHash: string | null }[]>`
+      SELECT id, code, nextNumber, lastHash FROM invoice_series WHERE hotelId = ${input.hotelId} AND code = ${code} FOR UPDATE`;
+    if (!series) {
+      throw new ConflictException('Serie de faturacao indisponivel, tenta novamente');
+    }
 
     const netTotal = sumMoney(input.lines.map((line) => line.netAmount as Prisma.Decimal));
     const taxTotal = sumMoney(input.lines.map((line) => line.taxAmount as Prisma.Decimal));
     const grossTotal = sumMoney(input.lines.map((line) => line.grossAmount as Prisma.Decimal));
-    const fullNumber = `${series.code}/${series.nextNumber}`;
+    const number = Number(series.nextNumber);
+    const fullNumber = `${series.code}/${number}`;
     const hash = createHash('sha256')
       .update([series.lastHash ?? '', issuedAt.toISOString(), fullNumber, grossTotal.toFixed(2)].join(';'))
       .digest('hex');
@@ -196,7 +209,7 @@ export class InvoicesService {
         hotelId: input.hotelId,
         seriesId: series.id,
         type: input.type,
-        number: series.nextNumber,
+        number,
         fullNumber,
         issuedAt,
         reservationId: input.reservationId ?? null,
@@ -219,7 +232,7 @@ export class InvoicesService {
     });
     await tx.invoiceSeries.update({
       where: { id: series.id },
-      data: { nextNumber: { increment: 1 }, lastHash: hash },
+      data: { nextNumber: number + 1, lastHash: hash },
     });
     return invoice;
   }
