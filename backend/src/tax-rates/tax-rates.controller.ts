@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, NotFoundException, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { TaxCategory, UserRole } from '@prisma/client';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional } from 'class-validator';
 import { JwtPayload } from '../auth/jwt-payload';
@@ -35,10 +35,16 @@ export class TaxRatesController {
     if (!scoped) {
       throw new BadRequestException('hotelId e obrigatorio');
     }
-    if (data.rate === 0 && !data.exemptionReason) {
-      throw new BadRequestException('Uma taxa de 0% precisa do motivo de isencao');
+    if (data.rate === 0) {
+      if (!data.exemptionReason || !data.exemptionCode) {
+        throw new BadRequestException('Uma taxa de 0% precisa do motivo e do codigo de isencao da AT (ex.: M07)');
+      }
+      return this.prisma.taxRate.create({ data: { ...data, atCategory: TaxCategory.ISE, hotelId: scoped } });
     }
-    return this.prisma.taxRate.create({ data: { ...data, hotelId: scoped } });
+    if (data.atCategory === TaxCategory.ISE) {
+      throw new BadRequestException('A categoria Isento so se aplica a taxas de 0%');
+    }
+    return this.prisma.taxRate.create({ data: { ...data, exemptionCode: null, hotelId: scoped } });
   }
 
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
@@ -47,6 +53,10 @@ export class TaxRatesController {
     const rate = await this.prisma.taxRate.findUnique({ where: { id } });
     if (!rate || !canAccessHotel(user, rate.hotelId)) {
       throw new NotFoundException('Taxa nao encontrada');
+    }
+    const exempt = rate.rate.isZero();
+    if (dto.atCategory && (dto.atCategory === TaxCategory.ISE) !== exempt) {
+      throw new BadRequestException('A categoria Isento so se aplica a taxas de 0%');
     }
     return this.prisma.taxRate.update({ where: { id }, data: dto });
   }

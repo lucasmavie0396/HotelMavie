@@ -247,6 +247,7 @@ export class PosService {
             unitPrice: item.unitPrice,
             taxRateId: item.taxRateId,
             sourceRef: `order:${order.id}`,
+            productCode: `P${item.productId}`,
             createdById: user.sub,
           }),
         );

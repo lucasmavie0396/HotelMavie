@@ -27,6 +27,9 @@ export interface Hotel {
   taxId: string | null;
   invoiceFooter: string | null;
   accommodationTaxRateId: number | null;
+  city: string | null;
+  postalCode: string | null;
+  country: string;
 }
 
 export interface Room {
@@ -109,6 +112,8 @@ export interface TaxRate {
   name: string;
   rate: string;
   exemptionReason: string | null;
+  exemptionCode: string | null;
+  atCategory: 'RED' | 'INT' | 'NOR' | 'ISE';
   active: boolean;
 }
 

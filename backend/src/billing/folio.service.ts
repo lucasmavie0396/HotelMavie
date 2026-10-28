@@ -15,6 +15,7 @@ export interface ChargeInput {
   unitPrice: DecimalLike;
   taxRateId?: number | null;
   sourceRef?: string;
+  productCode?: string;
   createdById?: number;
 }
 
@@ -129,6 +130,7 @@ export class FolioService {
         taxRate: rate,
         total: toMoney(quantity.mul(unitPrice)),
         sourceRef: input.sourceRef,
+        productCode: input.productCode ?? (input.type === ChargeType.ACCOMMODATION ? 'ALOJ' : 'EXTRA'),
         createdById: input.createdById,
       },
     });

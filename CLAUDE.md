@@ -127,10 +127,20 @@ docker compose exec backend npm run db:seed
 
 Regras de negócio a manter: preços são sempre com IVA incluído (base calculada na fatura); documentos emitidos nunca se alteram nem apagam (corrige-se com nota de crédito); valores monetários usam `Prisma.Decimal` via `common/money.ts`.
 
+## Receitas, emails e AT
+
+- **Receitas** (`catalog/recipes.service.ts`): um prato com receita não controla stock próprio; ao vender descontam-se os ingredientes (um só nível, ingredientes têm de controlar stock). O relatório mostra o food cost.
+- **Emails** (`mail/`): `MailService.queue` para envios que não podem bloquear o pedido; `send` quando o utilizador espera o resultado. Todos os envios ficam em `email_logs`. Sem `SMTP_HOST` usa `jsonTransport` (estado LOGGED, nada sai). Os testes forçam `SMTP_HOST=''`. Todo o texto de utilizador nos templates passa por `escapeHtml`.
+- **AT** (`at/`):
+  - Numeração `FT|FR|NC <ano>/<n>`, série por tipo e ano (`invoice_series`, único em hotel+tipo+código).
+  - `hash` é a assinatura RSA-SHA1 (base64) de `data;data-hora;numero;total;hash anterior`, em hora de Lisboa (`at-format.ts`). Chave em `AT_PRIVATE_KEY_PATH`; sem isso gera uma chave de desenvolvimento em `backend/keys/` (não versionada).
+  - ATCUD = código de validação da série + número; o código só se regista com `nextNumber = 1`.
+  - QR code (Portaria 195/2020) e 4 caracteres da assinatura no PDF. Taxas têm `atCategory` (RED/INT/NOR/ISE); 0% exige `exemptionCode` M01–M99. Não se fatura lançamento sem taxa.
+  - SAF-T (PT) 1.04_01 em `GET /api/saft` (só faturação, um ano fiscal).
+
 ## Pendente
 
-- **Certificação AT:** o software não está certificado. Falta assinatura RSA dos documentos, QR code, ATCUD e exportação SAF-T (PT). Até lá os PDFs indicam "sem validade fiscal".
-- Envio de emails (confirmação de reserva online, envio de faturas).
+- **Certificação AT:** o código está preparado, mas falta o processo legal: pedir a certificação à AT com a chave pública (`GET /api/at/public-key`), validar o SAF-T contra o XSD oficial e os testes da AT, e depois definir `AT_CERTIFICATE_NUMBER`. Comunicar as séries no Portal das Finanças antes de as usar. Até lá os PDFs indicam "sem validade fiscal".
+- Recibos (RG) para faturas pagas mais tarde e comunicação de documentos à AT (webservice ou ficheiro mensal).
 - Fichas de RH (horários, salários) — hoje "funcionários" são as contas de utilizador.
-- Fichas técnicas/receitas (descontar ingredientes ao vender um prato).
 - Deploy no Railway (ver README).

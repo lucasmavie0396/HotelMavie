@@ -33,7 +33,7 @@ export function day(offset = 0) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-export async function createHotel(prisma: PrismaClient, options: { rooms?: number; accommodationRate?: number } = {}) {
+export async function createHotel(prisma: PrismaClient, options: { rooms?: number; accommodationRate?: number | null } = {}) {
   const id = uid();
   const hotel = await prisma.hotel.create({
     data: { name: `Hotel ${id}`, publicSlug: `hotel-${id}`, publicEnabled: true, currency: 'EUR' },
@@ -47,8 +47,9 @@ export async function createHotel(prisma: PrismaClient, options: { rooms?: numbe
     );
   }
   let accommodationRate = null;
-  if (options.accommodationRate !== undefined) {
-    accommodationRate = await prisma.taxRate.create({ data: { hotelId: hotel.id, name: 'Alojamento', rate: options.accommodationRate } });
+  const rate = options.accommodationRate === undefined ? 6 : options.accommodationRate;
+  if (rate !== null) {
+    accommodationRate = await prisma.taxRate.create({ data: { hotelId: hotel.id, name: 'Alojamento', rate, atCategory: 'RED' } });
     await prisma.hotel.update({ where: { id: hotel.id }, data: { accommodationTaxRateId: accommodationRate.id } });
   }
   return { hotel, rooms, accommodationRate };

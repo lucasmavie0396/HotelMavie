@@ -1,17 +1,26 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { api, errorMessage } from '@/services/api';
+import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
-import type { TaxRate } from '@/types';
-import { formatDateTime } from '@/utils/format';
+import type { InvoiceType, TaxRate } from '@/types';
+import { formatDateTime, INVOICE_TYPE_LABELS, todayIso } from '@/utils/format';
 
+const auth = useAuthStore();
 const hotels = useHotelsStore();
 const taxRates = ref<TaxRate[]>([]);
 const error = ref('');
 const saved = ref('');
 const busy = ref(false);
 
-const fiscal = reactive({ legalName: '', taxId: '', invoiceFooter: '', accommodationTaxRateId: 0 });
+const fiscal = reactive({ legalName: '', taxId: '', invoiceFooter: '', accommodationTaxRateId: 0, city: '', postalCode: '', country: 'PT' });
+const series = ref<{ id: number; type: InvoiceType; code: string; nextNumber: number; atValidationCode: string | null }[]>([]);
+const seriesCodes = reactive<Record<number, string>>({});
+const atStatus = ref<{ certified: boolean; certificateNumber: string } | null>(null);
+const saft = reactive({ from: `${new Date().getFullYear()}-01-01`, to: todayIso() });
+const isAdmin = computed(() => auth.user?.role === 'ADMIN');
+
+const CATEGORY_LABELS: Record<TaxRate['atCategory'], string> = { RED: 'Reduzida', INT: 'Intermedia', NOR: 'Normal', ISE: 'Isento' };
 const emails = ref<{ smtpConfigured: boolean; items: { id: number; kind: string; recipient: string; subject: string; status: string; error: string | null; createdAt: string }[] } | null>(null);
 
 const EMAIL_KINDS: Record<string, string> = {
@@ -20,18 +29,23 @@ const EMAIL_KINDS: Record<string, string> = {
   BOOKING_CONFIRMED: 'Reserva confirmada',
   INVOICE: 'Fatura',
 };
-const rate = reactive({ name: '', rate: 0, exemptionReason: '' });
+const rate = reactive({ name: '', rate: 23, atCategory: 'NOR' as TaxRate['atCategory'], exemptionReason: '', exemptionCode: '' });
 
 async function load() {
   try {
     taxRates.value = (await api.get<TaxRate[]>('/tax-rates', { params: { hotelId: hotels.selectedId } })).data;
     emails.value = (await api.get('/email-logs', { params: { hotelId: hotels.selectedId } })).data;
+    series.value = (await api.get('/invoice-series', { params: { hotelId: hotels.selectedId } })).data;
+    atStatus.value = (await api.get('/at/status')).data;
     const hotel = hotels.selected;
     Object.assign(fiscal, {
       legalName: hotel?.legalName ?? '',
       taxId: hotel?.taxId ?? '',
       invoiceFooter: hotel?.invoiceFooter ?? '',
       accommodationTaxRateId: hotel?.accommodationTaxRateId ?? 0,
+      city: hotel?.city ?? '',
+      postalCode: hotel?.postalCode ?? '',
+      country: hotel?.country ?? 'PT',
     });
   } catch (e) {
     error.value = errorMessage(e);
@@ -62,6 +76,9 @@ const saveFiscal = () =>
         taxId: fiscal.taxId || undefined,
         invoiceFooter: fiscal.invoiceFooter || undefined,
         accommodationTaxRateId: fiscal.accommodationTaxRateId || null,
+        city: fiscal.city || undefined,
+        postalCode: fiscal.postalCode || undefined,
+        country: fiscal.country.toUpperCase() || undefined,
       }),
     'Dados fiscais guardados',
   );
@@ -73,10 +90,47 @@ const addRate = () =>
         hotelId: hotels.selectedId,
         name: rate.name,
         rate: rate.rate,
+        atCategory: rate.rate === 0 ? undefined : rate.atCategory,
         exemptionReason: rate.exemptionReason || undefined,
+        exemptionCode: rate.exemptionCode.toUpperCase() || undefined,
       }),
     'Taxa criada',
-  ).then(() => Object.assign(rate, { name: '', rate: 0, exemptionReason: '' }));
+  ).then(() => Object.assign(rate, { name: '', rate: 23, atCategory: 'NOR', exemptionReason: '', exemptionCode: '' }));
+
+const createSeries = () =>
+  run(async () => {
+    for (const type of ['INVOICE', 'INVOICE_RECEIPT', 'CREDIT_NOTE'] as InvoiceType[]) {
+      await api.post('/invoice-series', { hotelId: hotels.selectedId, type });
+    }
+  }, 'Series do ano criadas');
+
+const saveSeriesCode = (id: number) =>
+  run(() => api.patch(`/invoice-series/${id}`, { atValidationCode: (seriesCodes[id] ?? '').trim().toUpperCase() }), 'Codigo AT registado');
+
+async function download(path: string, params: Record<string, unknown>, fallbackName: string) {
+  error.value = '';
+  try {
+    const response = await api.get<Blob>(path, { params, responseType: 'blob' });
+    const name = /filename="([^"]+)"/.exec(response.headers['content-disposition'] ?? '')?.[1] ?? fallbackName;
+    const url = URL.createObjectURL(response.data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    error.value = e instanceof Error && 'response' in e ? await blobError(e) : errorMessage(e);
+  }
+}
+
+async function blobError(e: unknown) {
+  const data = (e as { response?: { data?: Blob } }).response?.data;
+  try {
+    return data ? (JSON.parse(await data.text()).message as string) : errorMessage(e);
+  } catch {
+    return errorMessage(e);
+  }
+}
 
 const toggleRate = (item: TaxRate) =>
   run(() => api.patch(`/tax-rates/${item.id}`, { active: !item.active }), item.active ? 'Taxa desativada' : 'Taxa ativada');
@@ -86,7 +140,7 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <h1 class="text-2xl font-semibold">Configuracao · {{ hotels.selected?.name }}</h1>
+    <h1 class="text-2xl font-semibold">Configuracao Â· {{ hotels.selected?.name }}</h1>
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
     <p v-if="saved" class="text-sm text-emerald-700">{{ saved }}</p>
@@ -104,6 +158,11 @@ onMounted(load);
           </option>
         </select>
       </label>
+      <input v-model="fiscal.city" class="input" placeholder="Localidade" />
+      <div class="flex gap-2">
+        <input v-model="fiscal.postalCode" class="input" placeholder="Codigo postal" />
+        <input v-model="fiscal.country" class="input w-20" maxlength="2" placeholder="PT" aria-label="Pais" />
+      </div>
       <textarea v-model="fiscal.invoiceFooter" class="input sm:col-span-2" rows="2" placeholder="Rodape das faturas (IBAN, condicoes...)" />
       <div class="flex justify-end sm:col-span-2">
         <button class="btn" type="submit" :disabled="busy">Guardar</button>
@@ -112,21 +171,30 @@ onMounted(load);
 
     <div class="card space-y-4">
       <h2 class="font-semibold">Taxas de IVA</h2>
-      <form class="grid gap-3 sm:grid-cols-4" @submit.prevent="addRate">
-        <input v-model="rate.name" class="input" placeholder="Nome (ex.: Taxa normal)" required />
+      <form class="grid gap-3 sm:grid-cols-6" @submit.prevent="addRate">
+        <input v-model="rate.name" class="input sm:col-span-2" placeholder="Nome (ex.: Taxa normal)" required />
         <input v-model.number="rate.rate" class="input" type="number" min="0" max="100" step="0.01" placeholder="%" required />
-        <input v-model="rate.exemptionReason" class="input" placeholder="Motivo de isencao (se 0%)" :required="rate.rate === 0" />
-        <button class="btn" type="submit" :disabled="busy">Adicionar taxa</button>
+        <select v-if="rate.rate !== 0" v-model="rate.atCategory" class="input sm:col-span-2" aria-label="Categoria AT">
+          <option value="RED">Reduzida (RED)</option>
+          <option value="INT">Intermedia (INT)</option>
+          <option value="NOR">Normal (NOR)</option>
+        </select>
+        <template v-else>
+          <input v-model="rate.exemptionReason" class="input" placeholder="Motivo de isencao" required />
+          <input v-model="rate.exemptionCode" class="input" placeholder="Codigo (ex.: M07)" pattern="[Mm]\d{2}" required />
+        </template>
+        <button class="btn" type="submit" :disabled="busy">Adicionar</button>
       </form>
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 text-slate-600">
-          <tr><th class="py-2">Nome</th><th class="py-2">Taxa</th><th class="py-2">Isencao</th><th class="py-2">Estado</th><th></th></tr>
+          <tr><th class="py-2">Nome</th><th class="py-2">Taxa</th><th class="py-2">Categoria AT</th><th class="py-2">Isencao</th><th class="py-2">Estado</th><th></th></tr>
         </thead>
         <tbody>
           <tr v-for="item in taxRates" :key="item.id" class="border-b border-slate-100" :class="item.active ? '' : 'text-slate-400'">
             <td class="py-2">{{ item.name }}</td>
             <td class="py-2">{{ Number(item.rate) }}%</td>
-            <td class="py-2">{{ item.exemptionReason ?? '-' }}</td>
+            <td class="py-2">{{ CATEGORY_LABELS[item.atCategory] }}</td>
+            <td class="py-2">{{ item.exemptionCode ? `${item.exemptionCode} Â· ${item.exemptionReason}` : '-' }}</td>
             <td class="py-2">{{ item.active ? 'Ativa' : 'Inativa' }}</td>
             <td class="py-2 text-right">
               <button class="text-xs text-indigo-600 hover:underline" type="button" @click="toggleRate(item)">
@@ -136,6 +204,60 @@ onMounted(load);
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <div class="card space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h2 class="font-semibold">Autoridade Tributaria</h2>
+        <span
+          v-if="atStatus"
+          class="rounded-full px-2 py-0.5 text-xs font-medium"
+          :class="atStatus.certified ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
+        >
+          {{ atStatus.certified ? `Certificado n.o ${atStatus.certificateNumber}/AT` : 'Software nao certificado' }}
+        </span>
+      </div>
+      <p class="text-sm text-slate-600">
+        Antes de emitir o primeiro documento de cada ano, cria as series, comunica-as no Portal das Financas e regista aqui o
+        codigo de validacao que a AT devolver. Sem esse codigo o ATCUD fica "0".
+      </p>
+      <div class="flex flex-wrap gap-2">
+        <button class="btn-secondary" type="button" :disabled="busy" @click="createSeries">Criar series deste ano</button>
+        <button
+          v-if="isAdmin"
+          class="btn-secondary"
+          type="button"
+          @click="download('/at/public-key', {}, 'mavie-hgest-public-key.pem')"
+        >
+          Descarregar chave publica
+        </button>
+      </div>
+      <table class="w-full text-left text-sm">
+        <thead class="border-b border-slate-200 text-slate-600">
+          <tr><th class="py-2">Serie</th><th class="py-2">Documento</th><th class="py-2">Proximo n.o</th><th class="py-2">Codigo AT</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in series" :key="item.id" class="border-b border-slate-100">
+            <td class="py-2 font-medium">{{ item.code }}</td>
+            <td class="py-2">{{ INVOICE_TYPE_LABELS[item.type] }}</td>
+            <td class="py-2">{{ item.nextNumber }}</td>
+            <td class="py-2">
+              <span v-if="item.atValidationCode" class="font-mono">{{ item.atValidationCode }}</span>
+              <form v-else-if="item.nextNumber === 1" class="flex gap-2" @submit.prevent="saveSeriesCode(item.id)">
+                <input v-model="seriesCodes[item.id]" class="input w-40 font-mono uppercase" placeholder="Ex.: AAJFJ4VC" minlength="8" required />
+                <button class="btn-secondary" type="submit" :disabled="busy">Registar</button>
+              </form>
+              <span v-else class="text-rose-600">Ja tem documentos sem ATCUD</span>
+            </td>
+          </tr>
+          <tr v-if="!series.length"><td colspan="4" class="py-3 text-slate-500">Ainda nao ha series</td></tr>
+        </tbody>
+      </table>
+      <form class="flex flex-wrap items-end gap-2 border-t border-slate-200 pt-4" @submit.prevent="download('/saft', { hotelId: hotels.selectedId, ...saft }, 'saft.xml')">
+        <label class="text-sm">De<input v-model="saft.from" class="input" type="date" required /></label>
+        <label class="text-sm">Ate<input v-model="saft.to" class="input" type="date" required /></label>
+        <button class="btn" type="submit">Exportar SAF-T (PT)</button>
+      </form>
     </div>
 
     <div v-if="emails" class="card space-y-3">

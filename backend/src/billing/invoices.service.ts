@@ -1,18 +1,13 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Charge, InvoiceStatus, InvoiceType, Prisma, TaxRate } from '@prisma/client';
-import { createHash } from 'node:crypto';
+import { Charge, InvoiceStatus, InvoiceType, Prisma, TaxCategory, TaxRate } from '@prisma/client';
+import { DOC_TYPE, localParts, signatureMessage } from '../at/at-format';
+import { AtSigningService } from '../at/at-signing.service';
 import { JwtPayload } from '../auth/jwt-payload';
 import { addDays, parseDate } from '../common/dates';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { splitGross, sumMoney } from '../common/money';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreditNoteDto, InvoiceQueryDto, IssueInvoiceDto } from './billing.dto';
-
-const SERIES_PREFIX: Record<InvoiceType, string> = {
-  INVOICE: 'FT',
-  INVOICE_RECEIPT: 'FR',
-  CREDIT_NOTE: 'NC',
-};
 
 export interface CustomerData {
   customerName?: string;
@@ -35,18 +30,21 @@ export const invoiceInclude = {
   creditNotes: { select: { id: true, fullNumber: true } },
 } satisfies Prisma.InvoiceInclude;
 
-function seriesCode(type: InvoiceType, date: Date) {
-  return `${SERIES_PREFIX[type]}${date.getFullYear()}`;
+export function seriesCode(date: Date) {
+  return String(localParts(date).year);
 }
 
 @Injectable()
 export class InvoicesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly signing: AtSigningService,
+  ) {}
 
   async ensureSeries(hotelId: number, ...types: InvoiceType[]) {
-    const now = new Date();
+    const code = seriesCode(new Date());
     for (const type of types) {
-      await this.prisma.$executeRaw`INSERT IGNORE INTO invoice_series (hotelId, type, code, nextNumber, active, createdAt) VALUES (${hotelId}, ${type}, ${seriesCode(type, now)}, 1, true, NOW(3))`;
+      await this.prisma.$executeRaw`INSERT IGNORE INTO invoice_series (hotelId, type, code, nextNumber, active, createdAt) VALUES (${hotelId}, ${type}, ${code}, 1, true, NOW(3))`;
     }
   }
 
@@ -113,14 +111,24 @@ export class InvoicesService {
     if (!input.charges.length) {
       throw new BadRequestException('Nao ha lancamentos por faturar');
     }
+    const untaxed = input.charges.filter((charge) => !charge.taxRateRef);
+    if (untaxed.length) {
+      throw new BadRequestException(
+        `Lancamentos sem taxa de IVA: ${untaxed.map((c) => c.description).join(', ')}. Configura a taxa (ou a isencao) antes de faturar.`,
+      );
+    }
     const lines = input.charges.map((charge) => {
       const { netAmount, taxAmount, grossAmount } = splitGross(charge.total, charge.taxRate);
+      const exempt = charge.taxRate.isZero();
       return {
         description: charge.description,
+        productCode: charge.productCode ?? charge.type,
         quantity: charge.quantity,
         unitPrice: charge.unitPrice,
         taxRate: charge.taxRate,
-        exemptionReason: charge.taxRate.isZero() ? (charge.taxRateRef?.exemptionReason ?? null) : null,
+        taxCategory: exempt ? TaxCategory.ISE : charge.taxRateRef!.atCategory,
+        exemptionReason: exempt ? charge.taxRateRef!.exemptionReason : null,
+        exemptionCode: exempt ? charge.taxRateRef!.exemptionCode : null,
         netAmount,
         taxAmount,
         grossAmount,
@@ -188,9 +196,11 @@ export class InvoicesService {
   ) {
     const hotel = await tx.hotel.findUniqueOrThrow({ where: { id: input.hotelId } });
     const issuedAt = new Date();
-    const code = seriesCode(input.type, issuedAt);
-    const [series] = await tx.$queryRaw<{ id: number; code: string; nextNumber: number; lastHash: string | null }[]>`
-      SELECT id, code, nextNumber, lastHash FROM invoice_series WHERE hotelId = ${input.hotelId} AND code = ${code} FOR UPDATE`;
+    const code = seriesCode(issuedAt);
+    const [series] = await tx.$queryRaw<
+      { id: number; code: string; nextNumber: number; lastHash: string | null; atValidationCode: string | null }[]
+    >`SELECT id, code, nextNumber, lastHash, atValidationCode FROM invoice_series
+      WHERE hotelId = ${input.hotelId} AND type = ${input.type} AND code = ${code} FOR UPDATE`;
     if (!series) {
       throw new ConflictException('Serie de faturacao indisponivel, tenta novamente');
     }
@@ -199,10 +209,9 @@ export class InvoicesService {
     const taxTotal = sumMoney(input.lines.map((line) => line.taxAmount as Prisma.Decimal));
     const grossTotal = sumMoney(input.lines.map((line) => line.grossAmount as Prisma.Decimal));
     const number = Number(series.nextNumber);
-    const fullNumber = `${series.code}/${number}`;
-    const hash = createHash('sha256')
-      .update([series.lastHash ?? '', issuedAt.toISOString(), fullNumber, grossTotal.toFixed(2)].join(';'))
-      .digest('hex');
+    const fullNumber = `${DOC_TYPE[input.type]} ${series.code}/${number}`;
+    const hash = this.signing.sign(signatureMessage({ issuedAt, invoiceNo: fullNumber, grossTotal, previousHash: series.lastHash }));
+    const atcud = series.atValidationCode ? `${series.atValidationCode}-${number}` : null;
 
     const invoice = await tx.invoice.create({
       data: {
@@ -225,6 +234,8 @@ export class InvoicesService {
         grossTotal,
         previousHash: series.lastHash,
         hash,
+        atcud,
+        keyVersion: this.signing.keyVersion,
         createdById: input.createdById,
         lines: { createMany: { data: input.lines } },
       },

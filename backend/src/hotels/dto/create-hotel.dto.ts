@@ -48,6 +48,20 @@ export class CreateHotelDto {
   invoiceFooter?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  city?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  postalCode?: string;
+
+  @IsOptional()
+  @Matches(/^[A-Z]{2}$/, { message: 'Pais em codigo ISO de 2 letras (ex.: PT)' })
+  country?: string;
+
+  @IsOptional()
   @IsInt()
   accommodationTaxRateId?: number | null;
 }

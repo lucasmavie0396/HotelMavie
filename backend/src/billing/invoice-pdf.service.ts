@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Hotel, Invoice, InvoiceLine, InvoiceType } from '@prisma/client';
 import PDFDocument from 'pdfkit';
+import QRCode from 'qrcode';
+import { printedHash, qrCodeContent } from '../at/at-format';
+import { AtSigningService } from '../at/at-signing.service';
 import { sumMoney } from '../common/money';
 
 const TITLES: Record<InvoiceType, string> = {
@@ -13,7 +16,27 @@ type FullInvoice = Invoice & { lines: InvoiceLine[]; creditOf: { fullNumber: str
 
 @Injectable()
 export class InvoicePdfService {
-  render(invoice: FullInvoice, hotel: Hotel) {
+  constructor(private readonly signing: AtSigningService) {}
+
+  async render(invoice: FullInvoice, hotel: Hotel) {
+    const qrContent = qrCodeContent({
+      issuerTaxId: hotel.taxId,
+      customerTaxId: invoice.customerTaxId,
+      type: invoice.type,
+      issuedAt: invoice.issuedAt,
+      invoiceNo: invoice.fullNumber,
+      atcud: invoice.atcud,
+      lines: invoice.lines,
+      taxTotal: invoice.taxTotal,
+      grossTotal: invoice.grossTotal,
+      signature: invoice.hash,
+      certificateNumber: this.signing.certificateNumber,
+    });
+    const qr = await QRCode.toBuffer(qrContent, { errorCorrectionLevel: 'M', margin: 0, width: 240 });
+    const hashMark = printedHash(invoice.hash);
+    const certified = this.signing.certified;
+    const certificate = this.signing.certificateNumber;
+
     return new Promise<Buffer>((resolve, reject) => {
       const doc = new PDFDocument({ size: 'A4', margin: 50 });
       const chunks: Buffer[] = [];
@@ -33,7 +56,8 @@ export class InvoicePdfService {
       if (hotel.phone || hotel.email) doc.text([hotel.phone, hotel.email].filter(Boolean).join(' · '));
 
       doc.fontSize(14).font('Helvetica-Bold').text(`${TITLES[invoice.type]} ${invoice.fullNumber}`, left, 50, { width, align: 'right' });
-      doc.fontSize(9).font('Helvetica').text(`Data: ${invoice.issuedAt.toLocaleString('pt-PT')}`, { width, align: 'right' });
+      doc.fontSize(9).font('Helvetica').text(`Data: ${invoice.issuedAt.toLocaleString('pt-PT', { timeZone: process.env.AT_TIMEZONE ?? 'Europe/Lisbon' })}`, { width, align: 'right' });
+      doc.text(`ATCUD: ${invoice.atcud ?? '0 (serie por comunicar a AT)'}`, { width, align: 'right' });
       if (invoice.creditOf) doc.text(`Referente a: ${invoice.creditOf.fullNumber}`, { width, align: 'right' });
       if (invoice.reason) doc.text(`Motivo: ${invoice.reason}`, { width, align: 'right' });
 
@@ -115,13 +139,23 @@ export class InvoicePdfService {
         ty += bold ? 18 : 13;
       }
 
+      const footerY = doc.page.height - 145;
+      doc.image(qr, left, footerY, { width: 85 });
       doc.fontSize(7).font('Helvetica').fillColor('#666666');
-      const footerY = doc.page.height - 90;
-      if (hotel.invoiceFooter) doc.text(hotel.invoiceFooter, left, footerY - 20, { width });
-      doc.text(`Hash: ${invoice.hash.slice(0, 4)}...${invoice.hash.slice(-4)}`, left, footerY, { width });
-      doc.text('Documento emitido por software nao certificado pela Autoridade Tributaria. Sem validade fiscal.', left, footerY + 10, {
-        width,
-      });
+      const textX = left + 100;
+      const textWidth = width - 100;
+      if (hotel.invoiceFooter) doc.text(hotel.invoiceFooter, textX, footerY, { width: textWidth });
+      doc.text(
+        certified
+          ? `${hashMark}-Processado por programa certificado n.o ${certificate}/AT`
+          : `${hashMark}-Documento emitido por software nao certificado pela Autoridade Tributaria. Sem validade fiscal.`,
+        textX,
+        footerY + 55,
+        { width: textWidth, lineBreak: false },
+      );
+      if (invoice.type === 'INVOICE') {
+        doc.text('Este documento nao serve de recibo.', textX, footerY + 67, { width: textWidth, lineBreak: false });
+      }
       doc.end();
     });
   }

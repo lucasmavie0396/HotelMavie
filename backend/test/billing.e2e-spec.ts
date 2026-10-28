@@ -1,5 +1,6 @@
 import { UserRole } from '@prisma/client';
-import { createHash } from 'node:crypto';
+import { createVerify } from 'node:crypto';
+import { signatureMessage } from '../src/at/at-format';
 import { createApp, createGuest, createHotel, createUser, day, login, TestContext } from './helpers';
 
 describe('Faturacao, conta do hospede e caixa', () => {
@@ -55,11 +56,17 @@ describe('Faturacao, conta do hospede e caixa', () => {
 
     const second = await ctx.http().post(`/api/reservations/${id}/invoices`).set(auth).send({ customerTaxId: '123456789' }).expect(201);
     expect(second.body.number).toBe(2);
+    expect(second.body.fullNumber).toMatch(/^FT \d{4}\/2$/);
     expect(second.body.previousHash).toBe(first.body.hash);
-    const expected = createHash('sha256')
-      .update([first.body.hash, new Date(second.body.issuedAt).toISOString(), second.body.fullNumber, '167.00'].join(';'))
-      .digest('hex');
-    expect(second.body.hash).toBe(expected);
+    const publicKey = (await ctx.http().get('/api/at/public-key').set(auth).expect(200)).text;
+    const message = signatureMessage({
+      issuedAt: new Date(second.body.issuedAt),
+      invoiceNo: second.body.fullNumber,
+      grossTotal: { toFixed: () => '167.00' },
+      previousHash: first.body.hash,
+    });
+    expect(createVerify('RSA-SHA1').update(message).verify(publicKey, second.body.hash, 'base64')).toBe(true);
+    expect(createVerify('RSA-SHA1').update(message.replace('167.00', '168.00')).verify(publicKey, second.body.hash, 'base64')).toBe(false);
   });
 
   it('faturas emitidas em simultaneo nao repetem nem saltam numeros', async () => {
