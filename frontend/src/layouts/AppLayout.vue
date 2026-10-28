@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import NotificationsBell from '@/components/NotificationsBell.vue';
 import { useAuthStore } from '@/stores/auth';
@@ -30,6 +30,13 @@ const links = computed(() => [
   ...(auth.user?.role === 'ADMIN' ? [{ to: { name: 'hotels' }, label: 'Hoteis' }] : []),
 ]);
 
+const content = ref<HTMLElement | null>(null);
+
+watch(
+  () => route.fullPath,
+  () => content.value?.scrollTo({ top: 0 }),
+);
+
 onMounted(() => hotels.load());
 
 async function logout() {
@@ -40,8 +47,8 @@ async function logout() {
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col md:flex-row">
-    <aside class="bg-slate-900 text-slate-100 md:w-56 md:shrink-0">
+  <div class="flex h-dvh flex-col overflow-hidden md:flex-row">
+    <aside class="shrink-0 bg-slate-900 text-slate-100 md:w-56 md:overflow-y-auto">
       <div class="px-5 py-4 text-lg font-semibold">MAVIE-HGest</div>
       <nav class="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-col">
         <RouterLink
@@ -57,8 +64,8 @@ async function logout() {
       </nav>
     </aside>
 
-    <div class="flex min-w-0 flex-1 flex-col">
-      <header class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-6 py-3">
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+      <header class="relative z-10 flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-6 py-3">
         <select
           v-if="hotels.hotels.length > 1"
           v-model.number="hotels.selectedId"
@@ -74,7 +81,7 @@ async function logout() {
           <button class="btn-secondary" type="button" @click="logout">Sair</button>
         </div>
       </header>
-      <main class="flex-1 p-6">
+      <main ref="content" class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6">
         <RouterView v-if="hotels.selectedId || route.name === 'hotels'" :key="hotels.selectedId ?? 0" />
         <p v-else-if="hotels.loaded" class="text-sm text-slate-500">
           Nao ha nenhum hotel associado a esta conta.
