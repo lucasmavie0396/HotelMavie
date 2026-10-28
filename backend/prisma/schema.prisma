@@ -57,27 +57,27 @@ model Hotel {
 }
 
 model User {
-  id               Int             @id @default(autoincrement())
-  name             String          @db.VarChar(150)
-  email            String          @unique @db.VarChar(150)
-  passwordHash     String          @db.VarChar(255)
-  role             UserRole        @default(RECEPTION)
-  active           Boolean         @default(true)
-  hotelId          Int?
-  hotel            Hotel?          @relation(fields: [hotelId], references: [id], onDelete: SetNull)
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-  sessions UserSession[]
-  reservations     Reservation[]
-  charges          Charge[]
-  payments         Payment[]
-  invoices         Invoice[]
-  openedSessions   CashSession[]   @relation("OpenedBy")
-  closedSessions   CashSession[]   @relation("ClosedBy")
-  cashMovements    CashMovement[]
-  orders           Order[]
-  stockMovements   StockMovement[]
-  purchases        Purchase[]
+  id             Int             @id @default(autoincrement())
+  name           String          @db.VarChar(150)
+  email          String          @unique @db.VarChar(150)
+  passwordHash   String          @db.VarChar(255)
+  role           UserRole        @default(RECEPTION)
+  active         Boolean         @default(true)
+  hotelId        Int?
+  hotel          Hotel?          @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  sessions       UserSession[]
+  reservations   Reservation[]
+  charges        Charge[]
+  payments       Payment[]
+  invoices       Invoice[]
+  openedSessions CashSession[]   @relation("OpenedBy")
+  closedSessions CashSession[]   @relation("ClosedBy")
+  cashMovements  CashMovement[]
+  orders         Order[]
+  stockMovements StockMovement[]
+  purchases      Purchase[]
 
   @@index([hotelId])
   @@map("users")
@@ -467,6 +467,8 @@ model Product {
   stockLevels    StockLevel[]
   stockMovements StockMovement[]
   purchaseItems  PurchaseItem[]
+  recipeItems    RecipeItem[]     @relation("RecipeDish")
+  usedIn         RecipeItem[]     @relation("RecipeIngredient")
 
   @@unique([hotelId, sku])
   @@index([hotelId, categoryId])
@@ -625,15 +627,28 @@ model PurchaseItem {
 }
 
 model UserSession {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash String   @unique @db.VarChar(64)
-  expiresAt DateTime
-  userAgent String?  @db.VarChar(255)
-  createdAt DateTime @default(now())
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String   @unique @db.VarChar(64)
+  expiresAt  DateTime
+  userAgent  String?  @db.VarChar(255)
+  createdAt  DateTime @default(now())
   lastUsedAt DateTime @default(now())
 
   @@index([userId])
   @@map("user_sessions")
+}
+
+model RecipeItem {
+  id           Int     @id @default(autoincrement())
+  productId    Int
+  product      Product @relation("RecipeDish", fields: [productId], references: [id], onDelete: Cascade)
+  ingredientId Int
+  ingredient   Product @relation("RecipeIngredient", fields: [ingredientId], references: [id], onDelete: Restrict)
+  quantity     Decimal @db.Decimal(12, 3)
+
+  @@unique([productId, ingredientId])
+  @@index([ingredientId])
+  @@map("recipe_items")
 }

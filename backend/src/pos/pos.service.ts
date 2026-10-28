@@ -298,22 +298,39 @@ export class PosService {
     items: { productId: number; quantity: Prisma.Decimal }[],
     createdById: number,
   ) {
-    const tracked = await tx.product.findMany({
-      where: { id: { in: items.map((item) => item.productId) }, trackStock: true },
-      select: { id: true },
+    const products = await tx.product.findMany({
+      where: { id: { in: items.map((item) => item.productId) } },
+      select: { id: true, name: true, trackStock: true, recipeItems: { select: { ingredientId: true, quantity: true } } },
     });
-    if (!tracked.length) {
+    const consumption = new Map<number, { quantity: Prisma.Decimal; reasons: Set<string> }>();
+    const consume = (productId: number, quantity: Prisma.Decimal, reason: string) => {
+      const current = consumption.get(productId) ?? { quantity: new Prisma.Decimal(0), reasons: new Set<string>() };
+      current.quantity = current.quantity.add(quantity);
+      current.reasons.add(reason);
+      consumption.set(productId, current);
+    };
+    for (const item of items) {
+      const product = products.find((p) => p.id === item.productId);
+      if (!product) continue;
+      if (product.recipeItems.length) {
+        for (const line of product.recipeItems) {
+          consume(line.ingredientId, line.quantity.mul(item.quantity), product.name);
+        }
+      } else if (product.trackStock) {
+        consume(product.id, item.quantity, product.name);
+      }
+    }
+    if (!consumption.size) {
       return;
     }
-    const trackedIds = new Set(tracked.map((product) => product.id));
     const warehouse = await this.stock.defaultWarehouse(tx, hotelId);
-    for (const item of items.filter((i) => trackedIds.has(i.productId))) {
+    for (const [productId, { quantity, reasons }] of consumption) {
       await this.stock.move(tx, {
         warehouseId: warehouse.id,
-        productId: item.productId,
+        productId,
         type: StockMovementType.SALE,
-        quantity: item.quantity.neg(),
-        reason: `Pedido #${orderId}`,
+        quantity: quantity.neg(),
+        reason: `Pedido #${orderId} (${[...reasons].join(', ')})`.slice(0, 200),
         orderId,
         createdById,
       });

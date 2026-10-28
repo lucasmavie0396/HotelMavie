@@ -20,6 +20,7 @@ interface Summary {
   paymentsByMethod: { method: PaymentMethod; count: number; total: string }[];
   invoices: { type: InvoiceType; count: number; total: string; tax: string }[];
   topProducts: { productId: number; name: string; quantity: string; total: string }[];
+  foodAndBeverage: { revenue: string; costOfSales: string; costPercent: number };
   reservationsBySource: { source: ReservationSource; count: number }[];
   cancellations: number;
 }
@@ -61,6 +62,10 @@ function exportCsv() {
     [],
     ['Documentos'],
     ...s.invoices.map((r) => [INVOICE_TYPE_LABELS[r.type], r.count, r.total, r.tax]),
+    [],
+    ['Restauracao: receita', s.foodAndBeverage.revenue],
+    ['Restauracao: custo das vendas', s.foodAndBeverage.costOfSales],
+    ['Food cost %', s.foodAndBeverage.costPercent],
     [],
     ['Produtos mais vendidos'],
     ...s.topProducts.map((r) => [r.name, r.quantity, r.total]),
@@ -133,7 +138,16 @@ onMounted(load);
           </div>
           <p v-if="!summary.topProducts.length" class="text-sm text-slate-500">Sem vendas</p>
         </div>
-        <div class="card space-y-2 lg:col-span-2">
+        <div class="card space-y-2">
+          <h2 class="font-semibold">Restauracao e bar</h2>
+          <div class="flex justify-between text-sm"><span>Receita</span><span>{{ money(summary.foodAndBeverage.revenue) }}</span></div>
+          <div class="flex justify-between text-sm"><span>Custo das vendas (stock)</span><span>{{ money(summary.foodAndBeverage.costOfSales) }}</span></div>
+          <div class="flex justify-between text-sm font-semibold">
+            <span>Food cost</span>
+            <span :class="summary.foodAndBeverage.costPercent > 35 ? 'text-rose-700' : 'text-emerald-700'">{{ summary.foodAndBeverage.costPercent }}%</span>
+          </div>
+        </div>
+        <div class="card space-y-2">
           <h2 class="font-semibold">Reservas criadas por origem</h2>
           <div class="flex flex-wrap gap-6 text-sm">
             <span v-for="row in summary.reservationsBySource" :key="row.source">

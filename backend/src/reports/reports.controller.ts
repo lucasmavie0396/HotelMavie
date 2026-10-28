@@ -1,5 +1,5 @@
 import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
-import { OrderStatus, Prisma, PurchaseStatus, ReservationStatus, UserRole } from '@prisma/client';
+import { OrderStatus, Prisma, PurchaseStatus, ReservationStatus, StockMovementType, UserRole } from '@prisma/client';
 import { IsDateString, Length } from 'class-validator';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -38,7 +38,7 @@ export class ReportsController {
     }
     const period = { gte: from, lt: to };
 
-    const [roomCount, reservations, charges, payments, invoices, orderItems, sources, cancellations] = await Promise.all([
+    const [roomCount, reservations, charges, payments, invoices, orderItems, sources, cancellations, sales] = await Promise.all([
       this.prisma.room.count({ where: { hotelId } }),
       this.prisma.reservation.findMany({
         where: { hotelId, status: { in: SOLD_STATUSES }, checkIn: { lt: to }, checkOut: { gt: from } },
@@ -58,7 +58,18 @@ export class ReportsController {
       this.prisma.reservation.count({
         where: { hotelId, status: { in: [ReservationStatus.CANCELLED, ReservationStatus.NO_SHOW] }, updatedAt: period },
       }),
+      this.prisma.stockMovement.findMany({
+        where: { type: StockMovementType.SALE, createdAt: period, warehouse: { hotelId } },
+        select: { quantity: true, unitCost: true },
+      }),
     ]);
+    const costOfSales = sales.reduce(
+      (sum, movement) => sum.add(movement.quantity.abs().mul(movement.unitCost ?? 0)),
+      new Prisma.Decimal(0),
+    );
+    const fnbRevenue = charges
+      .filter((row) => row.type === 'RESTAURANT' || row.type === 'BAR')
+      .reduce((sum, row) => sum.add(row._sum.total ?? 0), new Prisma.Decimal(0));
 
     let roomNights = 0;
     let roomRevenue = new Prisma.Decimal(0);
@@ -96,6 +107,11 @@ export class ReportsController {
         quantity: row._sum.quantity ?? 0,
         total: toMoney(row._sum.total ?? 0),
       })),
+      foodAndBeverage: {
+        revenue: toMoney(fnbRevenue),
+        costOfSales: toMoney(costOfSales),
+        costPercent: fnbRevenue.isZero() ? 0 : Number(costOfSales.div(fnbRevenue).mul(100).toFixed(1)),
+      },
       reservationsBySource: sources.map((row) => ({ source: row.source, count: row._count._all })),
       cancellations,
     };

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import RecipeEditor from '@/components/RecipeEditor.vue';
 import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
@@ -14,6 +15,7 @@ const taxRates = ref<TaxRate[]>([]);
 const error = ref('');
 const busy = ref(false);
 const editingId = ref<number | null>(null);
+const recipeFor = ref<Product | null>(null);
 const q = ref('');
 
 const canManage = computed(() => auth.user?.role !== 'RECEPTION');
@@ -161,6 +163,8 @@ onMounted(load);
       </div>
     </div>
 
+    <RecipeEditor v-if="recipeFor" :key="recipeFor.id" :product="recipeFor" :ingredients="products" @close="recipeFor = null" />
+
     <div class="card overflow-x-auto p-0">
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
@@ -184,6 +188,14 @@ onMounted(load);
             <td class="px-4 py-3 text-right">{{ formatMoney(product.cost, hotels.currency) }}</td>
             <td class="px-4 py-3">{{ product.trackStock ? `Sim (min. ${Number(product.minStock)} ${product.unit})` : 'Nao' }}</td>
             <td class="px-4 py-3 text-right">
+              <button
+                v-if="canManage && product.sellable"
+                class="mr-3 text-xs text-indigo-600 hover:underline"
+                type="button"
+                @click="recipeFor = product"
+              >
+                Receita
+              </button>
               <button v-if="canManage" class="text-xs text-indigo-600 hover:underline" type="button" @click="edit(product)">Editar</button>
             </td>
           </tr>

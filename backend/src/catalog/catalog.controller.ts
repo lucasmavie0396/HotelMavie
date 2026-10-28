@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, NotFoundException, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, NotFoundException, Param, ParseIntPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -7,10 +7,14 @@ import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCategoryDto, CreateProductDto, ProductQueryDto, UpdateCategoryDto, UpdateProductDto } from './catalog.dto';
+import { RecipeDto, RecipesService } from './recipes.service';
 
 @Controller()
 export class CatalogController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly recipes: RecipesService,
+  ) {}
 
   @Get('product-categories')
   categories(@Query() query: HotelQueryDto, @CurrentUser() user: JwtPayload) {
@@ -68,7 +72,24 @@ export class CatalogController {
       throw new NotFoundException('Produto nao encontrado');
     }
     await this.assertRefs(product.hotelId, dto);
+    if (dto.trackStock && (await this.prisma.recipeItem.count({ where: { productId: id } }))) {
+      throw new BadRequestException('Este produto tem receita: o stock e controlado pelos ingredientes');
+    }
+    if (dto.trackStock === false && (await this.prisma.recipeItem.count({ where: { ingredientId: id } }))) {
+      throw new BadRequestException('Este produto e ingrediente de uma receita e tem de controlar stock');
+    }
     return this.prisma.product.update({ where: { id }, data: dto });
+  }
+
+  @Get('products/:id/recipe')
+  recipe(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.recipes.get(id, user);
+  }
+
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Put('products/:id/recipe')
+  setRecipe(@Param('id', ParseIntPipe) id: number, @Body() dto: RecipeDto, @CurrentUser() user: JwtPayload) {
+    return this.recipes.set(id, dto, user);
   }
 
   private requireHotel(user: JwtPayload, hotelId?: number) {
