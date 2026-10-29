@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageHeader from '@/components/PageHeader.vue';
 import { reactive, ref } from 'vue';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
@@ -62,7 +63,7 @@ async function save() {
 
 <template>
   <section class="space-y-6">
-    <h1 class="text-2xl font-semibold">Hoteis</h1>
+    <PageHeader section="hotels" subtitle="Hoteis geridos e site publico de cada um" />
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
 

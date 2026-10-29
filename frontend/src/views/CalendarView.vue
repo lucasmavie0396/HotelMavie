@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, errorMessage } from '@/services/api';
@@ -91,15 +92,12 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <h1 class="text-2xl font-semibold">Calendario</h1>
-      <div class="flex items-center gap-2">
-        <button class="btn-secondary" type="button" @click="move(-7)">&larr; 7 dias</button>
-        <input v-model="start" class="input w-auto" type="date" @change="load" />
-        <button class="btn-secondary" type="button" @click="start = todayIso(); load()">Hoje</button>
-        <button class="btn-secondary" type="button" @click="move(7)">7 dias &rarr;</button>
-      </div>
-    </div>
+    <PageHeader section="calendar" subtitle="Ocupacao dos quartos nos proximos 14 dias">
+      <button class="btn-secondary" type="button" @click="move(-7)">&larr; 7 dias</button>
+      <input v-model="start" class="input w-auto" type="date" @change="load" />
+      <button class="btn-secondary" type="button" @click="start = todayIso(); load()">Hoje</button>
+      <button class="btn-secondary" type="button" @click="move(7)">7 dias &rarr;</button>
+    </PageHeader>
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
 

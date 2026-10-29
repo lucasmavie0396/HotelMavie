@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageHeader from '@/components/PageHeader.vue';
 import { onMounted, reactive, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { api, errorMessage } from '@/services/api';
@@ -87,15 +88,14 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <h1 class="text-2xl font-semibold">Relatorios</h1>
+    <PageHeader section="reports" subtitle="Ocupacao, receita, pagamentos e vendas">
       <form class="flex flex-wrap items-center gap-2" @submit.prevent="load">
         <input v-model="range.from" class="input w-auto" type="date" aria-label="De" required />
         <input v-model="range.to" class="input w-auto" type="date" aria-label="Ate" required />
         <button class="btn" type="submit">Atualizar</button>
         <button class="btn-secondary" type="button" :disabled="!summary" @click="exportCsv">Exportar CSV</button>
       </form>
-    </div>
+    </PageHeader>
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
@@ -131,9 +132,8 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <h1 class="text-2xl font-semibold">Compras</h1>
-      <div class="flex rounded-md border border-slate-300 bg-white p-0.5 text-sm">
+    <PageHeader section="purchases" subtitle="Encomendas a fornecedores e rececao de mercadoria">
+      <div class="flex rounded-lg bg-white p-0.5 text-sm text-slate-700 shadow">
         <button type="button" class="rounded px-4 py-1.5" :class="tab === 'purchases' ? 'bg-indigo-600 text-white' : ''" @click="tab = 'purchases'">
           Encomendas
         </button>
@@ -141,7 +141,7 @@ onMounted(load);
           Fornecedores
         </button>
       </div>
-    </div>
+    </PageHeader>
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
 

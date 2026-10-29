@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
@@ -102,18 +103,15 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <h1 class="text-2xl font-semibold">Stocks</h1>
-      <div class="flex flex-wrap items-center gap-2">
-        <select v-model.number="warehouseId" class="input w-auto" @change="load">
-          <option v-for="w in warehouses" :key="w.id" :value="w.id">{{ w.name }}{{ w.isDefault ? ' (principal)' : '' }}</option>
-        </select>
-        <form v-if="isManager" class="flex gap-2" @submit.prevent="createWarehouse">
-          <input v-model="newWarehouse" class="input w-40" placeholder="Novo armazem" required />
-          <button class="btn-secondary" type="submit" :disabled="busy">Criar</button>
-        </form>
-      </div>
-    </div>
+    <PageHeader section="stock" subtitle="Existencias, entradas, quebras e inventario">
+      <select v-model.number="warehouseId" class="input w-auto" @change="load">
+        <option v-for="w in warehouses" :key="w.id" :value="w.id">{{ w.name }}{{ w.isDefault ? ' (principal)' : '' }}</option>
+      </select>
+      <form v-if="isManager" class="flex gap-2" @submit.prevent="createWarehouse">
+        <input v-model="newWarehouse" class="input w-40" placeholder="Novo armazem" required />
+        <button class="btn-secondary" type="submit" :disabled="busy">Criar</button>
+      </form>
+    </PageHeader>
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
     <p v-if="!warehouses.length" class="text-sm text-slate-500">Cria um armazem para comecar. O primeiro fica como principal e e usado nas vendas.</p>

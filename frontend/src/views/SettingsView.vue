@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import PaymentTypesTab from '@/components/settings/PaymentTypesTab.vue';
@@ -168,15 +169,15 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <h1 class="text-2xl font-semibold">Configuração · {{ hotels.selected?.name }}</h1>
+    <PageHeader section="settings" title="Configuracao" :subtitle="hotels.selected?.name" />
 
-    <nav class="flex flex-wrap gap-1 border-b border-slate-200" aria-label="Separadores da configuracao">
+    <nav class="flex flex-wrap gap-1 rounded-2xl bg-white p-1.5 shadow-sm ring-1 ring-slate-100" aria-label="Separadores da configuracao">
       <button
         v-for="item in TABS"
         :key="item.value"
         type="button"
-        class="-mb-px rounded-t-md border px-4 py-2 text-sm"
-        :class="tab === item.value ? 'border-slate-200 border-b-white bg-white font-medium text-indigo-700' : 'border-transparent text-slate-600 hover:text-slate-900'"
+        class="rounded-xl px-4 py-2 text-sm transition"
+        :class="tab === item.value ? 'bg-gradient-to-r from-indigo-600 to-violet-600 font-medium text-white shadow' : 'text-slate-600 hover:bg-indigo-50 hover:text-indigo-700'"
         @click="selectTab(item.value)"
       >
         {{ item.label }}

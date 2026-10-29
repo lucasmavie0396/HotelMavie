@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageHeader from '@/components/PageHeader.vue';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
@@ -238,9 +239,8 @@ onBeforeUnmount(() => clearInterval(timer));
 
 <template>
   <section class="space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <h1 class="text-2xl font-semibold">Recursos humanos</h1>
-      <div class="flex rounded-md border border-slate-300 bg-white p-0.5 text-sm">
+    <PageHeader section="hr" subtitle="Fichas, escalas, ponto e mapa mensal">
+      <div class="flex rounded-lg bg-white p-0.5 text-sm shadow">
         <button
           v-for="item in tabs"
           :key="item.value"
@@ -252,7 +252,7 @@ onBeforeUnmount(() => clearInterval(timer));
           {{ item.label }}
         </button>
       </div>
-    </div>
+    </PageHeader>
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
     <p v-if="notice" class="text-sm text-emerald-700">{{ notice }}</p>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, errorMessage } from '@/services/api';
@@ -114,7 +115,7 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <h1 class="text-2xl font-semibold">Quartos</h1>
+    <PageHeader section="rooms" subtitle="Estado, precos, fotografias e descricao no site" />
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
 

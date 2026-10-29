@@ -4,31 +4,31 @@ import { useRoute, useRouter } from 'vue-router';
 import NotificationsBell from '@/components/NotificationsBell.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
+import { SECTIONS } from '@/utils/sections';
 
 const auth = useAuthStore();
 const hotels = useHotelsStore();
 const route = useRoute();
 const router = useRouter();
 
-const links = computed(() => [
-  { to: { name: 'dashboard' }, label: 'Painel' },
-  { to: { name: 'calendar' }, label: 'Calendario' },
-  { to: { name: 'reservations' }, label: 'Reservas' },
-  { to: { name: 'guests' }, label: 'Hospedes' },
-  { to: { name: 'rooms' }, label: 'Quartos' },
-  { to: { name: 'pos' }, label: 'Restaurante / Bar' },
-  { to: { name: 'invoices' }, label: 'Faturacao' },
-  { to: { name: 'accounts' }, label: 'Contas correntes' },
-  { to: { name: 'cash' }, label: 'Caixa' },
-  { to: { name: 'products' }, label: 'Produtos' },
-  { to: { name: 'stock' }, label: 'Stocks' },
-  { to: { name: 'hr' }, label: 'Recursos humanos' },
-  ...(auth.user?.role !== 'RECEPTION' ? [{ to: { name: 'purchases' }, label: 'Compras' }] : []),
-  ...(auth.user?.role !== 'RECEPTION' ? [{ to: { name: 'reports' }, label: 'Relatorios' }] : []),
-  ...(auth.user?.role !== 'RECEPTION' ? [{ to: { name: 'settings' }, label: 'Configuracao' }] : []),
-  ...(auth.user?.role === 'ADMIN' ? [{ to: { name: 'users' }, label: 'Utilizadores' }] : []),
-  ...(auth.user?.role === 'ADMIN' ? [{ to: { name: 'hotels' }, label: 'Hoteis' }] : []),
-]);
+const links = computed(() =>
+  [
+    'dashboard',
+    'calendar',
+    'reservations',
+    'guests',
+    'rooms',
+    'pos',
+    'invoices',
+    'accounts',
+    'cash',
+    'products',
+    'stock',
+    'hr',
+    ...(auth.user?.role !== 'RECEPTION' ? ['purchases', 'reports', 'settings'] : []),
+    ...(auth.user?.role === 'ADMIN' ? ['users', 'hotels'] : []),
+  ].map((name) => ({ to: { name }, name, ...SECTIONS[name] })),
+);
 
 const content = ref<HTMLElement | null>(null);
 
@@ -48,18 +48,30 @@ async function logout() {
 
 <template>
   <div class="flex h-dvh flex-col overflow-hidden md:flex-row">
-    <aside class="shrink-0 bg-slate-900 text-slate-100 md:w-56 md:overflow-y-auto">
-      <div class="px-5 py-4 text-lg font-semibold">MAVIE-HGest</div>
-      <nav class="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-col">
-        <RouterLink
-          v-for="link in links"
-          :key="link.label"
-          :to="link.to"
-          class="rounded-md px-3 py-2 text-sm whitespace-nowrap hover:bg-slate-800"
-          :active-class="link.to.name === 'dashboard' ? '' : 'bg-slate-800 font-medium'"
-          exact-active-class="bg-slate-800 font-medium"
-        >
-          {{ link.label }}
+    <aside class="shrink-0 bg-gradient-to-b from-slate-950 via-slate-900 to-indigo-950 text-slate-100 md:w-60 md:overflow-y-auto">
+      <div class="flex items-center gap-2.5 px-5 py-4">
+        <span class="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-sm font-bold shadow-lg">M</span>
+        <span class="text-lg font-semibold tracking-tight">MAVIE-HGest</span>
+      </div>
+      <nav class="flex gap-1 overflow-x-auto px-3 pb-4 md:flex-col">
+        <RouterLink v-for="link in links" :key="link.name" v-slot="{ href, navigate, isActive, isExactActive }" :to="link.to" custom>
+          <a
+            :href="href"
+            class="group flex items-center gap-3 rounded-xl px-2.5 py-2 text-sm whitespace-nowrap transition"
+            :class="(link.name === 'dashboard' ? isExactActive : isActive) ? 'bg-white/10 font-medium text-white shadow-inner' : 'text-slate-300 hover:bg-white/5 hover:text-white'"
+            :aria-current="(link.name === 'dashboard' ? isExactActive : isActive) ? 'page' : undefined"
+            @click="navigate"
+          >
+            <span
+              class="flex size-7 shrink-0 items-center justify-center rounded-lg text-white transition"
+              :class="(link.name === 'dashboard' ? isExactActive : isActive) ? `${link.dot} shadow-md` : 'bg-white/5 group-hover:bg-white/10'"
+            >
+              <svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path :d="link.icon" />
+              </svg>
+            </span>
+            {{ link.label }}
+          </a>
         </RouterLink>
       </nav>
     </aside>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import DepositPanel from '@/components/DepositPanel.vue';
@@ -70,16 +71,17 @@ onMounted(load);
 
 <template>
   <section v-if="reservation" class="space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <RouterLink :to="{ name: 'reservations' }" class="text-sm text-indigo-600 hover:underline">&larr; Reservas</RouterLink>
-        <h1 class="flex items-center gap-3 text-2xl font-semibold">
-          Reserva {{ reservation.code }}
-          <StatusBadge :status="reservation.status" />
-        </h1>
-      </div>
+    <PageHeader section="reservations">
+      <template #title>
+        Reserva {{ reservation.code }}
+        <StatusBadge :status="reservation.status" />
+      </template>
+      <template #subtitle>
+        <RouterLink :to="{ name: 'reservations' }" class="hover:underline">&larr; Reservas</RouterLink>
+        · {{ reservation.guest.firstName }} {{ reservation.guest.lastName }} · Quarto {{ reservation.room.number }}
+      </template>
       <ReservationActions :reservation="reservation" @updated="fill" @error="error = $event" />
-    </div>
+    </PageHeader>
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
 

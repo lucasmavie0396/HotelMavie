@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
 import { api, errorMessage, openInvoicePdf } from '@/services/api';
@@ -115,10 +116,9 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <div class="flex flex-wrap items-baseline justify-between gap-3">
-      <h1 class="text-2xl font-semibold">Contas correntes</h1>
-      <p class="text-sm text-slate-600">Total em divida: <strong>{{ money(totalOpen) }}</strong></p>
-    </div>
+    <PageHeader section="accounts" subtitle="Faturas a pagar e recibos">
+      <p class="rounded-xl bg-white/15 px-4 py-2 text-sm backdrop-blur">Total em divida <strong class="block text-xl">{{ money(totalOpen) }}</strong></p>
+    </PageHeader>
 
     <p class="text-sm text-slate-600">
       As faturas "a pagar" (FT) ficam aqui ate serem liquidadas com recibo. As faturas-recibo (FR) ja estao pagas.

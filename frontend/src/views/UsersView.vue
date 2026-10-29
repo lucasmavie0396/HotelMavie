@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageHeader from '@/components/PageHeader.vue';
 import { onMounted, reactive, ref } from 'vue';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
@@ -111,7 +112,7 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <h1 class="text-2xl font-semibold">Funcionarios e sistema</h1>
+    <PageHeader section="users" title="Funcionarios e sistema" subtitle="Contas, papeis, sessoes e backups" />
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
     <p v-if="notice" class="text-sm text-emerald-700">{{ notice }}</p>

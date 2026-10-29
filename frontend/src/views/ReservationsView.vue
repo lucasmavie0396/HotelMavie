@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import NewReservationForm from '@/components/NewReservationForm.vue';
@@ -101,10 +102,9 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <h1 class="text-2xl font-semibold">Reservas</h1>
-      <button class="btn" type="button" @click="creating = !creating">Nova reserva</button>
-    </div>
+    <PageHeader section="reservations" subtitle="Pedidos, confirmacoes, check-in e check-out">
+      <button class="btn" type="button" @click="creating = !creating">+ Nova reserva</button>
+    </PageHeader>
 
     <div v-if="creating" class="card">
       <NewReservationForm

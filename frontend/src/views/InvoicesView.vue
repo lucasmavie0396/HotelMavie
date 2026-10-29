@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { api, emailInvoice, errorMessage, openInvoicePdf } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
@@ -72,7 +73,7 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <h1 class="text-2xl font-semibold">Faturacao</h1>
+    <PageHeader section="invoices" subtitle="Faturas, faturas-recibo, notas de credito e SAF-T" />
 
     <p class="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
       Software nao certificado pela Autoridade Tributaria: os documentos tem numeracao sequencial e encadeamento por hash,

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import RecipeEditor from '@/components/RecipeEditor.vue';
 import { api, errorMessage } from '@/services/api';
@@ -114,10 +115,9 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <h1 class="text-2xl font-semibold">Produtos e ementa</h1>
+    <PageHeader section="products" title="Produtos e ementa" subtitle="Precos, categorias, receitas e impressoras de preparacao">
       <input v-model="q" class="input w-64" placeholder="Procurar produto" />
-    </div>
+    </PageHeader>
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
 

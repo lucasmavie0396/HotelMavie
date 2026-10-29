@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
@@ -89,7 +90,7 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <h1 class="text-2xl font-semibold">Caixa</h1>
+    <PageHeader section="cash" subtitle="Abertura, movimentos e fecho de caixa" />
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
 

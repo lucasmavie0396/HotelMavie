@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import RoomAccountPanel from '@/components/RoomAccountPanel.vue';
 import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
@@ -209,9 +210,8 @@ onMounted(load);
 
 <template>
   <section class="space-y-4">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <h1 class="text-2xl font-semibold">Ponto de venda</h1>
-      <div class="flex rounded-md border border-slate-300 bg-white p-0.5 text-sm">
+    <PageHeader section="pos" title="Ponto de venda" subtitle="Restaurante, bar e contas dos quartos">
+      <div class="flex rounded-lg bg-white p-0.5 text-sm shadow">
         <button
           v-for="item in MODES"
           :key="item.value"
@@ -223,7 +223,7 @@ onMounted(load);
           {{ item.label }}
         </button>
       </div>
-    </div>
+    </PageHeader>
 
     <RoomAccountPanel v-if="mode === 'ROOMS'" />
 
