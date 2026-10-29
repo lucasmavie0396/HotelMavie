@@ -5,6 +5,7 @@ import {
   OrderStatus,
   Outlet,
   PaymentMethod,
+  PrepStation,
   Prisma,
   ReservationStatus,
   StockMovementType,
@@ -27,6 +28,7 @@ import {
 import { JwtPayload } from '../auth/jwt-payload';
 import { FolioService } from '../billing/folio.service';
 import { InvoicesService } from '../billing/invoices.service';
+import { Ticket, TicketPdfService } from '../billing/ticket-pdf.service';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { sumMoney, toMoney } from '../common/money';
@@ -121,7 +123,13 @@ export class OrderQueryDto extends HotelQueryDto {
 }
 
 const orderInclude = {
-  items: { orderBy: { createdAt: 'asc' } },
+  items: {
+    orderBy: { createdAt: 'asc' },
+    include: {
+      product: { select: { category: { select: { prepStation: true } } } },
+      voidedBy: { select: { name: true } },
+    },
+  },
   reservation: { select: { id: true, code: true, room: { select: { number: true } } } },
   openedBy: { select: { name: true } },
   payments: { select: { id: true, method: true, amount: true, invoiceId: true } },
@@ -135,6 +143,7 @@ export class PosService {
     private readonly folio: FolioService,
     private readonly invoices: InvoicesService,
     private readonly stock: StockService,
+    private readonly tickets: TicketPdfService,
   ) {}
 
   findAll(query: OrderQueryDto, user: JwtPayload) {
@@ -186,19 +195,107 @@ export class PosService {
   }
 
   async removeItem(orderId: number, itemId: number, user: JwtPayload) {
-    await this.openOrder(orderId, user);
+    const order = await this.openOrder(orderId, user);
+    const item = order.items.find((line) => line.id === itemId);
+    if (!item) {
+      throw new NotFoundException('Linha nao encontrada');
+    }
+    if (item.sentAt) {
+      throw new ConflictException('Esta linha ja foi enviada para preparacao: tem de ser anulada');
+    }
     return this.prisma.$transaction(async (tx) => {
-      const { count } = await tx.orderItem.deleteMany({ where: { id: itemId, orderId } });
+      await tx.orderItem.delete({ where: { id: itemId } });
+      return this.recalculate(tx, orderId);
+    });
+  }
+
+  async voidItem(orderId: number, itemId: number, reason: string, user: JwtPayload) {
+    const order = await this.openOrder(orderId, user);
+    if (user.role === UserRole.RECEPTION) {
+      throw new ForbiddenException('So um gestor pode anular linhas enviadas para preparacao');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.orderItem.updateMany({
+        where: { id: itemId, orderId: order.id, voidedAt: null },
+        data: { voidedAt: new Date(), voidReason: reason, voidedById: user.sub },
+      });
       if (!count) {
-        throw new NotFoundException('Linha nao encontrada');
+        throw new ConflictException('Esta linha nao existe ou ja foi anulada');
       }
       return this.recalculate(tx, orderId);
     });
   }
 
+  async send(orderId: number, user: JwtPayload) {
+    const order = await this.openOrder(orderId, user);
+    const pending = order.items.filter((item) => !item.sentAt && !item.voidedAt);
+    if (!pending.length) {
+      throw new BadRequestException('Nao ha linhas novas para enviar');
+    }
+    const sentAt = new Date();
+    await this.prisma.orderItem.updateMany({ where: { id: { in: pending.map((item) => item.id) } }, data: { sentAt } });
+    const stations = [...new Set(pending.map((item) => this.stationOf(order, item)))].filter((station) => station !== PrepStation.NONE);
+    return { sentAt, stations };
+  }
+
+  async ticket(orderId: number, station: PrepStation, sentAt: string | undefined, user: JwtPayload) {
+    const order = await this.findOne(orderId, user);
+    const hotel = await this.prisma.hotel.findUniqueOrThrow({ where: { id: order.hotelId } });
+    const sent = order.items.filter((item) => item.sentAt && this.stationOf(order, item) === station);
+    const batch = sentAt ? new Date(sentAt).getTime() : Math.max(0, ...sent.map((item) => item.sentAt!.getTime()));
+    const items = sent.filter((item) => item.sentAt!.getTime() === batch);
+    if (!items.length) {
+      throw new NotFoundException('Nao ha linhas enviadas para este posto');
+    }
+    const ticket = new Ticket(hotel.currency);
+    ticket.text(station === PrepStation.BAR ? 'PEDIDO BAR' : 'PEDIDO COZINHA', { bold: true, size: 14, align: 'center' });
+    ticket.text(`${order.tableLabel ?? `Pedido #${order.id}`}`, { bold: true, size: 12, align: 'center' });
+    ticket.text(`${Ticket.when(new Date(batch))} · ${order.openedBy?.name ?? ''}`, { size: 8, align: 'center' });
+    ticket.rule();
+    ticket.lines(items.map((item) => ({ quantity: item.quantity, description: item.description, notes: item.notes, struck: Boolean(item.voidedAt) })), false);
+    return this.tickets.render(ticket);
+  }
+
+  async voidTicket(orderId: number, itemId: number, user: JwtPayload) {
+    const order = await this.findOne(orderId, user);
+    const item = order.items.find((line) => line.id === itemId && line.voidedAt);
+    if (!item) {
+      throw new NotFoundException('Linha anulada nao encontrada');
+    }
+    const ticket = new Ticket();
+    ticket.text('*** ANULAR ***', { bold: true, size: 14, align: 'center' });
+    ticket.text(this.stationOf(order, item) === PrepStation.BAR ? 'BAR' : 'COZINHA', { bold: true, align: 'center' });
+    ticket.text(`${order.tableLabel ?? `Pedido #${order.id}`}`, { bold: true, size: 12, align: 'center' });
+    ticket.text(Ticket.when(item.voidedAt!), { size: 8, align: 'center' });
+    ticket.rule();
+    ticket.lines([{ quantity: item.quantity, description: item.description }], false);
+    ticket.text(`Motivo: ${item.voidReason ?? ''}`, { size: 9 });
+    if (item.voidedBy) ticket.text(`Por: ${item.voidedBy.name}`, { size: 8 });
+    return this.tickets.render(ticket);
+  }
+
+  async prebill(orderId: number, user: JwtPayload) {
+    const order = await this.findOne(orderId, user);
+    const hotel = await this.prisma.hotel.findUniqueOrThrow({ where: { id: order.hotelId } });
+    const ticket = new Ticket(hotel.currency).header(hotel);
+    ticket.text('CONSULTA DE MESA', { bold: true, size: 12, align: 'center' });
+    ticket.text(`${order.tableLabel ?? `Pedido #${order.id}`} · ${Ticket.when(new Date())}`, { size: 8, align: 'center' });
+    ticket.rule();
+    ticket.lines(order.items.filter((item) => !item.voidedAt).map((item) => ({ quantity: item.quantity, description: item.description, total: item.total })));
+    ticket.rule();
+    ticket.cols('TOTAL', ticket.money(order.total), { bold: true, size: 12 });
+    ticket.space();
+    ticket.text('Este documento nao serve de fatura. Peca a fatura no pagamento.', { size: 7, align: 'center' });
+    return this.tickets.render(ticket);
+  }
+
+  private stationOf(order: { outlet: Outlet }, item: { product: { category: { prepStation: PrepStation } | null } }) {
+    return item.product.category?.prepStation ?? (order.outlet === Outlet.BAR ? PrepStation.BAR : PrepStation.KITCHEN);
+  }
+
   async cancel(orderId: number, user: JwtPayload) {
     const order = await this.openOrder(orderId, user);
-    if (order.items.length && user.role === UserRole.RECEPTION) {
+    if (order.items.some((item) => !item.voidedAt) && user.role === UserRole.RECEPTION) {
       throw new ForbiddenException('So um gestor pode anular pedidos com produtos');
     }
     await this.prisma.order.update({ where: { id: orderId }, data: { status: OrderStatus.CANCELLED, closedAt: new Date() } });
@@ -207,7 +304,8 @@ export class PosService {
 
   async close(orderId: number, dto: CloseOrderDto, user: JwtPayload) {
     const order = await this.openOrder(orderId, user);
-    if (!order.items.length) {
+    const items = order.items.filter((item) => !item.voidedAt);
+    if (!items.length) {
       throw new BadRequestException('O pedido nao tem produtos');
     }
     const chargeType = order.outlet === Outlet.BAR ? ChargeType.BAR : ChargeType.RESTAURANT;
@@ -236,7 +334,7 @@ export class PosService {
       }
 
       const charges = [];
-      for (const item of order.items) {
+      for (const item of items) {
         charges.push(
           await this.folio.createCharge(tx, {
             hotelId: order.hotelId,
@@ -287,7 +385,8 @@ export class PosService {
         }
       }
 
-      await this.deductStock(tx, order.hotelId, order.id, order.items, user.sub);
+      await tx.orderItem.updateMany({ where: { orderId, sentAt: null, voidedAt: null }, data: { sentAt: new Date() } });
+      await this.deductStock(tx, order.hotelId, order.id, items, user.sub);
     });
     return this.findOne(orderId, user);
   }
@@ -339,7 +438,7 @@ export class PosService {
   }
 
   private async recalculate(tx: Prisma.TransactionClient, orderId: number) {
-    const { _sum } = await tx.orderItem.aggregate({ where: { orderId }, _sum: { total: true } });
+    const { _sum } = await tx.orderItem.aggregate({ where: { orderId, voidedAt: null }, _sum: { total: true } });
     return tx.order.update({ where: { id: orderId }, data: { total: _sum.total ?? 0 }, include: orderInclude });
   }
 

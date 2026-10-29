@@ -192,11 +192,13 @@ export interface CashSessionDetail extends CashSession {
 }
 
 export type Outlet = 'RESTAURANT' | 'BAR';
+export type PrepStation = 'KITCHEN' | 'BAR' | 'NONE';
 
 export interface ProductCategory {
   id: number;
   name: string;
   outlet: Outlet | null;
+  prepStation: PrepStation;
   sortOrder: number;
 }
 
@@ -268,6 +270,11 @@ export interface OrderItem {
   unitPrice: string;
   total: string;
   notes: string | null;
+  sentAt: string | null;
+  voidedAt: string | null;
+  voidReason: string | null;
+  voidedBy: { name: string } | null;
+  product: { category: { prepStation: PrepStation } | null };
 }
 
 export interface Order {

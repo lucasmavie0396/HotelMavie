@@ -41,11 +41,15 @@ api.interceptors.response.use(
   },
 );
 
-export async function openInvoicePdf(id: number, kind: 'invoices' | 'receipts' = 'invoices') {
-  const { data } = await api.get<Blob>(`/${kind}/${id}/pdf`, { responseType: 'blob' });
+export async function openPdf(path: string, params?: Record<string, unknown>) {
+  const { data } = await api.get<Blob>(path, { params, responseType: 'blob' });
   const url = URL.createObjectURL(data);
   window.open(url, '_blank');
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+export function openInvoicePdf(id: number, kind: 'invoices' | 'receipts' = 'invoices', format?: 'ticket') {
+  return openPdf(`/${kind}/${id}/pdf`, format ? { format } : undefined);
 }
 
 export async function emailInvoice(id: number, fullNumber: string) {

@@ -1,7 +1,22 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseEnumPipe, ParseIntPipe, Post, Query, Res } from '@nestjs/common';
+import { PrepStation } from '@prisma/client';
+import { IsString, Length } from 'class-validator';
+import type { Response } from 'express';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CloseOrderDto, OpenOrderDto, OrderItemDto, OrderQueryDto, PosService } from './pos.service';
+
+class VoidItemDto {
+  @IsString()
+  @Length(3, 200)
+  reason: string;
+}
+
+function sendPdf(res: Response, buffer: Buffer, name: string) {
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${name}.pdf"`);
+  res.send(buffer);
+}
 
 @Controller('orders')
 export class PosController {
@@ -34,6 +49,49 @@ export class PosController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.pos.removeItem(id, itemId, user);
+  }
+
+  @Post(':id/items/:itemId/void')
+  @HttpCode(HttpStatus.OK)
+  voidItem(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('itemId', ParseIntPipe) itemId: number,
+    @Body() dto: VoidItemDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.pos.voidItem(id, itemId, dto.reason, user);
+  }
+
+  @Get(':id/items/:itemId/void-ticket')
+  async voidTicket(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('itemId', ParseIntPipe) itemId: number,
+    @CurrentUser() user: JwtPayload,
+    @Res() res: Response,
+  ) {
+    sendPdf(res, await this.pos.voidTicket(id, itemId, user), `anulacao-${id}-${itemId}`);
+  }
+
+  @Post(':id/send')
+  @HttpCode(HttpStatus.OK)
+  send(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.pos.send(id, user);
+  }
+
+  @Get(':id/ticket')
+  async ticket(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('station', new ParseEnumPipe(PrepStation)) station: PrepStation,
+    @Query('sentAt') sentAt: string | undefined,
+    @CurrentUser() user: JwtPayload,
+    @Res() res: Response,
+  ) {
+    sendPdf(res, await this.pos.ticket(id, station, sentAt, user), `pedido-${id}-${station.toLowerCase()}`);
+  }
+
+  @Get(':id/prebill')
+  async prebill(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload, @Res() res: Response) {
+    sendPdf(res, await this.pos.prebill(id, user), `consulta-${id}`);
   }
 
   @Post(':id/close')

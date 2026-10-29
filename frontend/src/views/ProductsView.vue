@@ -4,7 +4,7 @@ import RecipeEditor from '@/components/RecipeEditor.vue';
 import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
-import type { Outlet, Product, ProductCategory, TaxRate } from '@/types';
+import type { Outlet, PrepStation, Product, ProductCategory, TaxRate } from '@/types';
 import { formatMoney } from '@/utils/format';
 
 const auth = useAuthStore();
@@ -29,7 +29,8 @@ function emptyProduct() {
 }
 
 const form = reactive(emptyProduct());
-const category = reactive({ name: '', outlet: '' as Outlet | '' });
+const category = reactive({ name: '', outlet: '' as Outlet | '', prepStation: 'KITCHEN' as PrepStation });
+const STATION_LABELS: Record<PrepStation, string> = { KITCHEN: 'Cozinha', BAR: 'Bar', NONE: 'Sem preparacao' };
 
 async function load() {
   try {
@@ -95,8 +96,13 @@ const saveProduct = () =>
 
 const addCategory = () =>
   run(async () => {
-    await api.post('/product-categories', { hotelId: hotels.selectedId, name: category.name, outlet: category.outlet || null });
-    Object.assign(category, { name: '', outlet: '' });
+    await api.post('/product-categories', {
+      hotelId: hotels.selectedId,
+      name: category.name,
+      outlet: category.outlet || null,
+      prepStation: category.prepStation,
+    });
+    Object.assign(category, { name: '', outlet: '', prepStation: 'KITCHEN' });
   });
 
 onMounted(load);
@@ -145,19 +151,24 @@ onMounted(load);
 
       <div class="card space-y-3">
         <h2 class="font-semibold">Categorias</h2>
-        <form class="flex gap-2" @submit.prevent="addCategory">
-          <input v-model="category.name" class="input" placeholder="Nova categoria" required />
-          <select v-model="category.outlet" class="input w-32">
-            <option value="">Ambos</option>
-            <option value="RESTAURANT">Restaurante</option>
-            <option value="BAR">Bar</option>
+        <form class="grid grid-cols-2 gap-2" @submit.prevent="addCategory">
+          <input v-model="category.name" class="input col-span-2" placeholder="Nova categoria" required />
+          <select v-model="category.outlet" class="input" aria-label="Onde se vende">
+            <option value="">Restaurante e bar</option>
+            <option value="RESTAURANT">So restaurante</option>
+            <option value="BAR">So bar</option>
           </select>
-          <button class="btn" type="submit" :disabled="busy">+</button>
+          <select v-model="category.prepStation" class="input" aria-label="Onde se prepara">
+            <option v-for="(label, value) in STATION_LABELS" :key="value" :value="value">Prepara: {{ label }}</option>
+          </select>
+          <button class="btn col-span-2" type="submit" :disabled="busy">Adicionar categoria</button>
         </form>
         <ul class="divide-y divide-slate-100 text-sm">
           <li v-for="item in categories" :key="item.id" class="flex justify-between py-1.5">
             {{ item.name }}
-            <span class="text-slate-500">{{ item.outlet === 'BAR' ? 'Bar' : item.outlet === 'RESTAURANT' ? 'Restaurante' : 'Ambos' }}</span>
+            <span class="text-slate-500">
+              {{ item.outlet === 'BAR' ? 'Bar' : item.outlet === 'RESTAURANT' ? 'Restaurante' : 'Ambos' }} · {{ STATION_LABELS[item.prepStation] }}
+            </span>
           </li>
         </ul>
       </div>

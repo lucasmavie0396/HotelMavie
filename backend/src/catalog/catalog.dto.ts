@@ -1,5 +1,5 @@
 import { OmitType, PartialType } from '@nestjs/mapped-types';
-import { Outlet } from '@prisma/client';
+import { Outlet, PrepStation } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { HotelQueryDto } from '../common/hotel-query.dto';
@@ -16,6 +16,10 @@ export class CreateCategoryDto {
   @IsOptional()
   @IsEnum(Outlet)
   outlet?: Outlet | null;
+
+  @IsOptional()
+  @IsEnum(PrepStation)
+  prepStation?: PrepStation;
 
   @IsOptional()
   @IsInt()

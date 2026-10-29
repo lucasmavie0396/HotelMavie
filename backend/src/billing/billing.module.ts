@@ -9,10 +9,11 @@ import { FolioService } from './folio.service';
 import { InvoicePdfService } from './invoice-pdf.service';
 import { InvoicesService } from './invoices.service';
 import { ReceiptsService } from './receipts.service';
+import { TicketPdfService } from './ticket-pdf.service';
 
 @Module({
   controllers: [BillingController, TaxRatesController, AtController],
-  providers: [FolioService, InvoicesService, InvoicePdfService, CashService, AtSigningService, SaftService, ReceiptsService],
-  exports: [FolioService, InvoicesService, AtSigningService],
+  providers: [FolioService, InvoicesService, InvoicePdfService, CashService, AtSigningService, SaftService, ReceiptsService, TicketPdfService],
+  exports: [FolioService, InvoicesService, AtSigningService, TicketPdfService],
 })
 export class BillingModule {}
