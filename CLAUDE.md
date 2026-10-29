@@ -79,6 +79,8 @@ docker compose exec backend npm run db:seed
 
 ### Backend
 - Produção: sempre `node dist/main.js`. Nunca `tsx` (parte o metadata dos decorators do NestJS).
+- Produção em Windows: `deploy/windows/` (instalar, atualizar, servico, executar.cmd, IIS opcional). Com `FRONTEND_DIR` a API serve também o `frontend/dist` (fallback SPA fora de `/api`). `TRUST_PROXY` (predefinição 1, como os testes esperam; `0` quando exposto sem proxy, `loopback` atrás do IIS) e `HOST` vêm do `.env`.
+- Scripts `.ps1` só com ASCII (o PowerShell 5.1 lê ficheiros sem BOM como ANSI).
 
 ### Git
 - Commits em português, sem acentos, descritivos (ex.: `adiciona modulo de reservas`).

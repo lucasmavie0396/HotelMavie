@@ -66,6 +66,17 @@ node backend/scripts/generate-at-key.mjs backend/keys/at-private.pem
 
 O script cria a chave privada e a pública (a pública é a que se entrega à AT na certificação) e mostra a privada numa linha para usar em `AT_PRIVATE_KEY`. Guarda a chave privada num cofre de senhas; nunca a versiones.
 
+## Produção num Windows Server
+
+Guia completo: [deploy/windows/README.md](deploy/windows/README.md). Em resumo, no PowerShell como Administrador:
+
+```powershell
+cd C:\MAVIE-HGest\deploy\windows
+.\instalar.ps1 -Port 8080 -DbUser mavie -DbPassword '...' -AbrirFirewall
+```
+
+Um só processo Node serve a API, o painel e o site público (`FRONTEND_DIR`), arranca com o Windows e reinicia sozinho. Para atualizar usa `.\atualizar.ps1`, que faz backup antes; para gerir, `.\servico.ps1`. O IIS é opcional, para HTTPS com domínio.
+
 ## Docker
 
 ```bash
