@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { api, errorMessage } from '@/services/api';
 import { fileUrl, readImage } from '@/services/files';
 import { useAuthStore } from '@/stores/auth';
@@ -11,6 +12,15 @@ const auth = useAuthStore();
 const hotels = useHotelsStore();
 const rooms = ref<Room[]>([]);
 const error = ref('');
+const route = useRoute();
+const router = useRouter();
+const statusFilter = ref<RoomStatus | ''>(ROOM_STATUSES.includes(route.query.estado as RoomStatus) ? (route.query.estado as RoomStatus) : '');
+const visibleRooms = computed(() => (statusFilter.value ? rooms.value.filter((room) => room.status === statusFilter.value) : rooms.value));
+
+function filterStatus(status: RoomStatus | '') {
+  statusFilter.value = status;
+  router.replace({ query: status ? { estado: status } : {} });
+}
 const saving = ref(false);
 
 const canManage = computed(() => auth.user?.role === 'ADMIN' || auth.user?.role === 'MANAGER');
@@ -117,6 +127,27 @@ onMounted(load);
       <button class="btn sm:col-span-6 sm:justify-self-end" type="submit" :disabled="saving">Adicionar quarto</button>
     </form>
 
+    <div class="flex flex-wrap gap-2" role="group" aria-label="Filtrar por estado">
+      <button
+        type="button"
+        class="rounded-full border px-3 py-1 text-xs font-medium"
+        :class="statusFilter === '' ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"
+        @click="filterStatus('')"
+      >
+        Todos ({{ rooms.length }})
+      </button>
+      <button
+        v-for="status in ROOM_STATUSES"
+        :key="status"
+        type="button"
+        class="rounded-full border px-3 py-1 text-xs font-medium"
+        :class="statusFilter === status ? `${ROOM_STATUS_CLASSES[status]} border-transparent ring-2 ring-slate-400` : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"
+        @click="filterStatus(status)"
+      >
+        {{ ROOM_STATUS_LABELS[status] }} ({{ rooms.filter((room) => room.status === status).length }})
+      </button>
+    </div>
+
     <div class="card overflow-x-auto p-0">
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
@@ -131,7 +162,7 @@ onMounted(load);
           </tr>
         </thead>
         <tbody>
-          <template v-for="room in rooms" :key="room.id">
+          <template v-for="room in visibleRooms" :key="room.id">
           <tr class="border-b border-slate-100 last:border-0">
             <td class="px-4 py-3 font-medium">{{ room.number }}</td>
             <td class="px-4 py-3">{{ room.type }}</td>
@@ -189,8 +220,8 @@ onMounted(load);
             </td>
           </tr>
           </template>
-          <tr v-if="!rooms.length">
-            <td colspan="7" class="px-4 py-6 text-center text-slate-500">Sem quartos registados</td>
+          <tr v-if="!visibleRooms.length">
+            <td colspan="7" class="px-4 py-6 text-center text-slate-500">{{ statusFilter ? 'Nenhum quarto neste estado' : 'Sem quartos registados' }}</td>
           </tr>
         </tbody>
       </table>

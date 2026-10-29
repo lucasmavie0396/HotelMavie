@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
 import type { Reservation, Room } from '@/types';
@@ -18,7 +18,8 @@ interface Cell {
 
 const router = useRouter();
 const hotels = useHotelsStore();
-const start = ref(todayIso());
+const initial = useRoute().query.inicio;
+const start = ref(typeof initial === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(initial) ? initial : todayIso());
 const rooms = ref<Room[]>([]);
 const reservations = ref<Reservation[]>([]);
 const error = ref('');

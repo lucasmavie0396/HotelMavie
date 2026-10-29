@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
 import type { ChargeType, InvoiceType, PaymentMethod, ReservationSource } from '@/types';
@@ -26,7 +27,9 @@ interface Summary {
 }
 
 const hotels = useHotelsStore();
-const range = reactive({ from: addDays(todayIso(), -30), to: todayIso() });
+const query = useRoute().query;
+const isDate = (value: unknown): value is string => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+const range = reactive({ from: isDate(query.de) ? query.de : addDays(todayIso(), -30), to: isDate(query.ate) ? query.ate : todayIso() });
 const summary = ref<Summary | null>(null);
 const error = ref('');
 

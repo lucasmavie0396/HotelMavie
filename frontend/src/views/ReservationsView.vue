@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import NewReservationForm from '@/components/NewReservationForm.vue';
 import ReservationActions from '@/components/ReservationActions.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
-import type { Reservation, ReservationStatus } from '@/types';
-import { formatDate, formatMoney, RESERVATION_SOURCE_LABELS, RESERVATION_STATUS_LABELS, RESERVATION_STATUSES } from '@/utils/format';
+import type { Reservation, ReservationSource, ReservationStatus } from '@/types';
+import { formatDate, formatMoney, RESERVATION_SOURCE_LABELS, RESERVATION_STATUS_LABELS, RESERVATION_STATUSES, todayIso } from '@/utils/format';
 
 const route = useRoute();
 const router = useRouter();
@@ -16,15 +16,51 @@ const reservations = ref<Reservation[]>([]);
 const error = ref('');
 const creating = ref(route.query.nova === '1');
 
+const queryText = (key: string) => (typeof route.query[key] === 'string' ? (route.query[key] as string) : '');
+const VIEWS: Record<string, string> = {
+  chegadas: 'Chegadas por fazer ate hoje',
+  saidas: 'Saidas por fazer ate hoje',
+  pendente: 'Sinais por confirmar',
+};
+
 const filters = reactive({
-  status: '' as ReservationStatus | '',
-  from: '',
-  to: '',
-  q: '',
+  status: (RESERVATION_STATUSES.includes(queryText('estado') as ReservationStatus) ? queryText('estado') : '') as ReservationStatus | '',
+  from: queryText('de'),
+  to: queryText('ate'),
+  q: queryText('q'),
 });
+const source = ref<ReservationSource | ''>(Object.keys(RESERVATION_SOURCE_LABELS).includes(queryText('origem')) ? (queryText('origem') as ReservationSource) : '');
+const view = ref(queryText('sinal') === 'pendente' ? 'pendente' : VIEWS[queryText('vista')] ? queryText('vista') : '');
+
+const visible = computed(() => {
+  const today = todayIso();
+  return reservations.value.filter((reservation) => {
+    if (source.value && reservation.source !== source.value) return false;
+    if (view.value === 'chegadas') return ['PENDING', 'CONFIRMED'].includes(reservation.status) && reservation.checkIn.slice(0, 10) <= today;
+    if (view.value === 'saidas') return reservation.status === 'CHECKED_IN' && reservation.checkOut.slice(0, 10) <= today;
+    if (view.value === 'pendente') return reservation.status === 'PENDING' && reservation.depositAmount !== null && !reservation.depositPaymentId;
+    return true;
+  });
+});
+
+function clearView() {
+  view.value = '';
+  source.value = '';
+  router.replace({ query: {} });
+  load();
+}
 
 async function load() {
   error.value = '';
+  const today = todayIso();
+  const forView =
+    view.value === 'chegadas'
+      ? { from: today, to: today }
+      : view.value === 'saidas'
+        ? { status: 'CHECKED_IN' }
+        : view.value === 'pendente'
+          ? { status: 'PENDING' }
+          : {};
   try {
     reservations.value = (
       await api.get<Reservation[]>('/reservations', {
@@ -34,6 +70,7 @@ async function load() {
           from: filters.from || undefined,
           to: filters.to || undefined,
           q: filters.q || undefined,
+          ...forView,
         },
       })
     ).data;
@@ -56,7 +93,7 @@ async function created(reservation: Reservation) {
 
 function clearFilters() {
   Object.assign(filters, { status: '', from: '', to: '', q: '' });
-  load();
+  clearView();
 }
 
 onMounted(load);
@@ -96,6 +133,14 @@ onMounted(load);
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
 
+    <div v-if="view || source" class="flex flex-wrap items-center gap-2 text-sm">
+      <span class="text-slate-500">A mostrar:</span>
+      <span v-if="view" class="rounded-full bg-indigo-100 px-3 py-1 font-medium text-indigo-800">{{ VIEWS[view] }}</span>
+      <span v-if="source" class="rounded-full bg-indigo-100 px-3 py-1 font-medium text-indigo-800">Origem: {{ RESERVATION_SOURCE_LABELS[source] }}</span>
+      <span class="text-slate-500">({{ visible.length }})</span>
+      <button class="text-indigo-600 hover:underline" type="button" @click="clearView">Ver todas</button>
+    </div>
+
     <div class="card overflow-x-auto p-0">
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
@@ -112,7 +157,7 @@ onMounted(load);
           </tr>
         </thead>
         <tbody>
-          <tr v-for="reservation in reservations" :key="reservation.id" class="border-b border-slate-100 last:border-0">
+          <tr v-for="reservation in visible" :key="reservation.id" class="border-b border-slate-100 last:border-0">
             <td class="px-4 py-3 font-medium">
               <RouterLink :to="{ name: 'reservation', params: { id: reservation.id } }" class="text-indigo-600 hover:underline">
                 {{ reservation.code }}
@@ -139,7 +184,7 @@ onMounted(load);
               <ReservationActions :reservation="reservation" @updated="replace" @error="error = $event" />
             </td>
           </tr>
-          <tr v-if="!reservations.length">
+          <tr v-if="!visible.length">
             <td colspan="9" class="px-4 py-6 text-center text-slate-500">Sem reservas</td>
           </tr>
         </tbody>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { api, errorMessage } from '@/services/api';
 import { fileUrl } from '@/services/files';
@@ -17,6 +17,9 @@ interface BookingResult {
   currency: string;
 }
 
+const CARD_ACCENTS = ['from-indigo-500 to-violet-500', 'from-amber-400 to-orange-500', 'from-emerald-400 to-teal-500', 'from-pink-500 to-rose-500', 'from-sky-400 to-blue-500'];
+const STEPS = ['Datas', 'Quarto', 'Os seus dados', 'Pedido enviado'];
+
 const route = useRoute();
 const slug = computed(() => encodeURIComponent(String(route.params.slug)));
 const hotel = ref<PublicHotel | null>(null);
@@ -30,10 +33,19 @@ const guest = reactive({ firstName: '', lastName: '', email: '', phone: '', note
 const booking = ref<BookingResult | null>(null);
 const photo = reactive<Record<string, number>>({});
 const viewer = ref<{ images: string[]; index: number } | null>(null);
+const bookingForm = ref<HTMLElement | null>(null);
+const roomsSection = ref<HTMLElement | null>(null);
 
 const needsDeposit = computed(() => (hotel.value?.depositPercent ?? 0) > 0);
 const money = (value: string | number) => formatMoney(value, hotel.value?.currency ?? 'EUR');
 const remaining = computed(() => (chosen.value?.total && chosen.value.deposit ? Number(chosen.value.total) - Number(chosen.value.deposit) : 0));
+const heroImage = computed(() => hotel.value?.roomTypes.find((room) => room.images.length)?.images[0] ?? null);
+const nights = computed(() => Math.max(Math.round((Date.parse(search.checkOut) - Date.parse(search.checkIn)) / 86_400_000), 0));
+const step = computed(() => (booking.value ? 3 : chosen.value ? 2 : results.value ? 1 : 0));
+const lowestPrice = computed(() => Math.min(...(hotel.value?.roomTypes.map((room) => Number(room.pricePerNight)) ?? [0])));
+const place = computed(() => [hotel.value?.address, hotel.value?.city].filter(Boolean).join(', '));
+const mapsUrl = computed(() => (place.value ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${hotel.value?.name} ${place.value}`)}` : ''));
+const rooms = computed(() => results.value ?? hotel.value?.roomTypes ?? []);
 
 watch(
   slug,
@@ -61,8 +73,18 @@ function currentPhoto(room: PublicRoomType) {
   return room.images[photo[room.type] ?? 0] ?? room.images[0];
 }
 
-function step(room: PublicRoomType, delta: number) {
+function stepPhoto(room: PublicRoomType, delta: number) {
   photo[room.type] = ((photo[room.type] ?? 0) + delta + room.images.length) % room.images.length;
+}
+
+function scrollToId(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function choose(room: PublicRoomType) {
+  chosen.value = room;
+  await nextTick();
+  bookingForm.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 async function findAvailability() {
@@ -75,11 +97,20 @@ async function findAvailability() {
         params: { checkIn: search.checkIn, checkOut: search.checkOut, guests: search.adults + search.children },
       })
     ).data;
+    await nextTick();
+    roomsSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {
     error.value = errorMessage(e);
   } finally {
     loading.value = false;
   }
+}
+
+function newSearch() {
+  results.value = null;
+  chosen.value = null;
+  booking.value = null;
+  scrollToId('reservar');
 }
 
 async function book() {
@@ -102,7 +133,8 @@ async function book() {
         depositReference: needsDeposit.value ? guest.depositReference.trim() : undefined,
       })
     ).data;
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    await nextTick();
+    scrollToId('reservar');
   } catch (e) {
     error.value = errorMessage(e);
   } finally {
@@ -112,168 +144,307 @@ async function book() {
 </script>
 
 <template>
-  <div class="min-h-full bg-slate-50">
+  <div class="min-h-full bg-gradient-to-b from-amber-50/60 via-white to-indigo-50/60 text-slate-800">
     <p v-if="error && !hotel" class="py-20 text-center text-slate-500">{{ error }}</p>
 
     <template v-if="hotel">
-      <header class="border-b border-slate-200 bg-white">
-        <div class="mx-auto flex max-w-5xl flex-wrap items-center gap-5 px-4 py-6">
-          <img v-if="hotel.logoFile" :src="fileUrl(hotel.logoFile)" :alt="hotel.name" class="max-h-20 max-w-48 object-contain" />
-          <div class="min-w-0 flex-1">
-            <h1 class="text-3xl font-semibold text-slate-900">{{ hotel.name }}</h1>
-            <p class="mt-1 text-sm text-slate-600">
-              {{ [hotel.address, hotel.city].filter(Boolean).join(', ') }}
-            </p>
-            <p class="text-sm text-slate-600">{{ [hotel.phone, hotel.email].filter(Boolean).join(' · ') }}</p>
+      <nav class="sticky top-0 z-30 border-b border-white/40 bg-white/80 backdrop-blur">
+        <div class="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3">
+          <button type="button" class="flex min-w-0 items-center gap-3" @click="scrollToId('inicio')">
+            <img v-if="hotel.logoFile" :src="fileUrl(hotel.logoFile)" :alt="hotel.name" class="h-9 max-w-28 object-contain" />
+            <span class="truncate font-semibold">{{ hotel.name }}</span>
+          </button>
+          <div class="ml-auto hidden items-center gap-5 text-sm text-slate-600 sm:flex">
+            <button type="button" class="hover:text-indigo-700" @click="scrollToId('quartos')">Quartos</button>
+            <button type="button" class="hover:text-indigo-700" @click="scrollToId('como-reservar')">Como reservar</button>
+            <button type="button" class="hover:text-indigo-700" @click="scrollToId('contactos')">Contactos</button>
           </div>
+          <button type="button" class="ml-auto rounded-full bg-gradient-to-r from-amber-400 to-orange-500 px-4 py-1.5 text-sm font-semibold text-white shadow hover:brightness-105 sm:ml-0" @click="scrollToId('reservar')">
+            Reservar
+          </button>
+        </div>
+      </nav>
+
+      <header id="inicio" class="relative isolate overflow-hidden">
+        <img v-if="heroImage" :src="fileUrl(heroImage)" alt="" class="absolute inset-0 -z-20 h-full w-full object-cover" />
+        <div class="absolute inset-0 -z-10" :class="heroImage ? 'bg-gradient-to-br from-indigo-950/85 via-violet-900/70 to-orange-700/50' : 'bg-gradient-to-br from-indigo-700 via-violet-600 to-orange-500'" />
+        <div class="absolute -top-24 -left-24 -z-10 size-80 rounded-full bg-amber-300/30 blur-3xl" />
+        <div class="absolute -right-16 bottom-0 -z-10 size-96 rounded-full bg-fuchsia-400/25 blur-3xl" />
+        <div class="mx-auto max-w-6xl px-4 pt-16 pb-36 text-white sm:pt-24">
+          <img v-if="hotel.logoFile" :src="fileUrl(hotel.logoFile)" :alt="hotel.name" class="mb-6 max-h-20 max-w-52 rounded-xl bg-white/90 object-contain p-2 shadow-lg" />
+          <p v-if="place" class="mb-2 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-sm backdrop-blur">
+            <svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 21s7-6.2 7-12a7 7 0 10-14 0c0 5.8 7 12 7 12z" /><circle cx="12" cy="9" r="2.5" /></svg>
+            {{ place }}
+          </p>
+          <h1 class="max-w-3xl text-4xl font-bold tracking-tight drop-shadow sm:text-6xl">{{ hotel.name }}</h1>
+          <p v-if="hotel.publicDescription" class="mt-4 max-w-2xl text-lg leading-relaxed text-white/90 line-clamp-3">{{ hotel.publicDescription }}</p>
+          <p v-if="hotel.roomTypes.length" class="mt-6 text-white/90">
+            Quartos desde <span class="text-2xl font-bold text-amber-300">{{ money(lowestPrice) }}</span> / noite
+          </p>
         </div>
       </header>
 
-      <main class="mx-auto max-w-5xl space-y-8 px-4 py-8">
-        <p v-if="hotel.publicDescription && !booking" class="max-w-3xl text-base leading-relaxed whitespace-pre-line text-slate-700">
-          {{ hotel.publicDescription }}
-        </p>
-
-        <div v-if="booking" class="card space-y-4 border-emerald-200 bg-emerald-50">
-          <h2 class="text-xl font-semibold text-emerald-800">Pedido de reserva recebido</h2>
-          <dl class="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[auto_1fr]">
-            <dt class="text-slate-500">Codigo</dt>
-            <dd class="font-mono font-semibold">{{ booking.code }}</dd>
-            <dt class="text-slate-500">Quarto</dt>
-            <dd>{{ booking.roomType }}</dd>
-            <dt class="text-slate-500">Datas</dt>
-            <dd>{{ formatDate(booking.checkIn) }} a {{ formatDate(booking.checkOut) }}</dd>
-            <dt class="text-slate-500">Total</dt>
-            <dd>{{ formatMoney(booking.totalAmount, booking.currency) }}</dd>
-            <template v-if="booking.depositAmount">
-              <dt class="text-slate-500">Sinal</dt>
-              <dd>{{ formatMoney(booking.depositAmount, booking.currency) }} · referencia {{ booking.depositReference }}</dd>
-              <dt class="text-slate-500">Restante</dt>
-              <dd>{{ formatMoney(Number(booking.totalAmount) - Number(booking.depositAmount), booking.currency) }} no check-in ou check-out</dd>
-            </template>
-          </dl>
-          <p class="text-sm text-slate-700">
-            {{
-              booking.depositAmount
-                ? 'O hotel vai verificar o pagamento do sinal e enviar-lhe por email o comprovativo e a confirmacao da reserva.'
-                : 'O hotel vai confirmar a reserva por email.'
-            }}
-            Guarde o codigo para qualquer contacto.
-          </p>
-        </div>
-
-        <template v-else>
-          <form class="card grid gap-3 sm:grid-cols-5" @submit.prevent="findAvailability">
-            <label class="text-sm">
-              Entrada
-              <input v-model="search.checkIn" class="input" type="date" :min="todayIso()" required @change="onCheckInChange" />
-            </label>
-            <label class="text-sm">
-              Saida
-              <input v-model="search.checkOut" class="input" type="date" :min="addDays(search.checkIn, 1)" required />
-            </label>
-            <label class="text-sm">
-              Adultos
-              <input v-model.number="search.adults" class="input" type="number" min="1" max="20" required />
-            </label>
-            <label class="text-sm">
-              Criancas
-              <input v-model.number="search.children" class="input" type="number" min="0" max="20" />
-            </label>
-            <button class="btn self-end" type="submit" :disabled="loading">Ver disponibilidade</button>
-          </form>
-
-          <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
-
-          <p v-if="results && !results.length" class="text-sm text-slate-500">Sem disponibilidade para estas datas.</p>
-          <div class="grid gap-5 sm:grid-cols-2">
-            <article
-              v-for="room in results ?? hotel.roomTypes"
-              :key="room.type"
-              class="card overflow-hidden p-0"
-              :class="[results ? 'cursor-pointer' : '', chosen?.type === room.type ? 'ring-2 ring-indigo-500' : '']"
-              @click="results && (chosen = room)"
+      <main class="mx-auto -mt-24 max-w-6xl space-y-16 px-4 pb-16">
+        <section id="reservar" class="scroll-mt-20 rounded-2xl bg-white p-5 shadow-xl ring-1 shadow-indigo-900/10 ring-slate-100 sm:p-6">
+          <ol class="mb-5 flex flex-wrap gap-2 text-xs font-medium">
+            <li
+              v-for="(label, index) in STEPS"
+              :key="label"
+              class="flex items-center gap-2 rounded-full px-3 py-1"
+              :class="index === step ? 'bg-indigo-600 text-white' : index < step ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'"
             >
-              <div class="relative aspect-[4/3] bg-slate-200">
+              <span class="flex size-5 items-center justify-center rounded-full" :class="index === step ? 'bg-white/25' : index < step ? 'bg-emerald-500 text-white' : 'bg-white'">
+                {{ index < step ? '✓' : index + 1 }}
+              </span>
+              {{ label }}
+            </li>
+          </ol>
+
+          <div v-if="booking" class="space-y-4 rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50 p-5 ring-1 ring-emerald-200">
+            <div class="flex items-center gap-3">
+              <span class="flex size-11 items-center justify-center rounded-full bg-emerald-500 text-xl text-white shadow">✓</span>
+              <div>
+                <h2 class="text-xl font-semibold text-emerald-900">Pedido de reserva recebido</h2>
+                <p class="text-sm text-emerald-800">Codigo <span class="font-mono font-bold">{{ booking.code }}</span></p>
+              </div>
+            </div>
+            <dl class="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[auto_1fr]">
+              <dt class="text-slate-500">Quarto</dt>
+              <dd>{{ booking.roomType }}</dd>
+              <dt class="text-slate-500">Datas</dt>
+              <dd>{{ formatDate(booking.checkIn) }} a {{ formatDate(booking.checkOut) }}</dd>
+              <dt class="text-slate-500">Total</dt>
+              <dd class="font-semibold">{{ formatMoney(booking.totalAmount, booking.currency) }}</dd>
+              <template v-if="booking.depositAmount">
+                <dt class="text-slate-500">Sinal</dt>
+                <dd>{{ formatMoney(booking.depositAmount, booking.currency) }} · referencia {{ booking.depositReference }}</dd>
+                <dt class="text-slate-500">Restante</dt>
+                <dd>{{ formatMoney(Number(booking.totalAmount) - Number(booking.depositAmount), booking.currency) }} no check-in ou check-out</dd>
+              </template>
+            </dl>
+            <p class="text-sm text-slate-700">
+              {{
+                booking.depositAmount
+                  ? 'Vamos verificar o pagamento do sinal e enviar-lhe por email o comprovativo e a confirmacao da reserva.'
+                  : 'Vamos confirmar a reserva por email.'
+              }}
+              Guarde o codigo para qualquer contacto.
+            </p>
+            <button type="button" class="text-sm font-medium text-emerald-800 hover:underline" @click="newSearch">Fazer outra reserva</button>
+          </div>
+
+          <form v-else class="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_0.7fr_0.7fr_auto]" @submit.prevent="findAvailability">
+            <label class="text-sm font-medium text-slate-600">
+              Entrada
+              <input v-model="search.checkIn" class="input mt-1" type="date" :min="todayIso()" required @change="onCheckInChange" />
+            </label>
+            <label class="text-sm font-medium text-slate-600">
+              Saida
+              <input v-model="search.checkOut" class="input mt-1" type="date" :min="addDays(search.checkIn, 1)" required />
+            </label>
+            <label class="text-sm font-medium text-slate-600">
+              Adultos
+              <input v-model.number="search.adults" class="input mt-1" type="number" min="1" max="20" required />
+            </label>
+            <label class="text-sm font-medium text-slate-600">
+              Criancas
+              <input v-model.number="search.children" class="input mt-1" type="number" min="0" max="20" />
+            </label>
+            <button
+              class="self-end rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-2.5 font-semibold text-white shadow-md hover:brightness-110 disabled:opacity-60 sm:col-span-2 lg:col-span-1"
+              type="submit"
+              :disabled="loading"
+            >
+              {{ loading ? 'A procurar...' : `Ver disponibilidade${nights ? ` · ${nights} ${nights === 1 ? 'noite' : 'noites'}` : ''}` }}
+            </button>
+          </form>
+          <p v-if="error" class="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{{ error }}</p>
+        </section>
+
+        <section v-if="!booking" id="quartos" ref="roomsSection" class="scroll-mt-20 space-y-6">
+          <div class="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p class="text-sm font-semibold tracking-widest text-orange-500 uppercase">{{ results ? 'Disponiveis para as suas datas' : 'Os nossos quartos' }}</p>
+              <h2 class="text-3xl font-bold text-slate-900">
+                {{ results ? `${formatDate(search.checkIn)} a ${formatDate(search.checkOut)}` : 'Escolha o seu espaco' }}
+              </h2>
+            </div>
+            <button v-if="results" type="button" class="text-sm font-medium text-indigo-700 hover:underline" @click="newSearch">Mudar datas</button>
+          </div>
+
+          <p v-if="results && !results.length" class="rounded-xl bg-amber-50 p-6 text-center text-amber-900 ring-1 ring-amber-200">
+            Sem disponibilidade para estas datas. Experimente outras datas ou contacte-nos.
+          </p>
+
+          <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            <article
+              v-for="(room, index) in rooms"
+              :key="room.type"
+              class="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-md ring-1 ring-slate-100 transition hover:-translate-y-1 hover:shadow-xl"
+              :class="chosen?.type === room.type ? 'ring-4 ring-indigo-500' : ''"
+            >
+              <div class="relative aspect-[4/3] overflow-hidden">
                 <img
                   v-if="room.images.length"
                   :src="fileUrl(currentPhoto(room))"
                   :alt="room.type"
-                  class="h-full w-full cursor-zoom-in object-cover"
-                  @click.stop="viewer = { images: room.images, index: photo[room.type] ?? 0 }"
+                  class="h-full w-full cursor-zoom-in object-cover transition duration-500 group-hover:scale-105"
+                  @click="viewer = { images: room.images, index: photo[room.type] ?? 0 }"
                 />
-                <div v-else class="flex h-full items-center justify-center text-sm text-slate-400">Sem fotografias</div>
+                <div v-else class="flex h-full items-center justify-center bg-gradient-to-br text-white" :class="CARD_ACCENTS[index % CARD_ACCENTS.length]">
+                  <svg viewBox="0 0 24 24" class="size-16 opacity-80" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 18v-6a2 2 0 012-2h14a2 2 0 012 2v6M3 18h18M3 18v2M21 18v2M6 10V7a2 2 0 012-2h8a2 2 0 012 2v3" /></svg>
+                </div>
+                <span class="absolute top-3 left-3 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-slate-800 shadow">
+                  Ate {{ room.capacity }} {{ room.capacity === 1 ? 'pessoa' : 'pessoas' }}
+                </span>
+                <span v-if="results" class="absolute top-3 right-3 rounded-full px-3 py-1 text-xs font-semibold text-white shadow" :class="room.available <= 2 ? 'bg-rose-500' : 'bg-emerald-500'">
+                  {{ room.available <= 2 ? `So ${room.available} disponive${room.available === 1 ? 'l' : 'is'}` : `${room.available} disponiveis` }}
+                </span>
                 <template v-if="room.images.length > 1">
-                  <button class="absolute top-1/2 left-2 -translate-y-1/2 rounded-full bg-white/85 px-2.5 py-1 text-lg shadow" type="button" aria-label="Foto anterior" @click.stop="step(room, -1)">‹</button>
-                  <button class="absolute top-1/2 right-2 -translate-y-1/2 rounded-full bg-white/85 px-2.5 py-1 text-lg shadow" type="button" aria-label="Foto seguinte" @click.stop="step(room, 1)">›</button>
-                  <span class="absolute right-2 bottom-2 rounded bg-black/50 px-1.5 text-xs text-white">{{ (photo[room.type] ?? 0) + 1 }}/{{ room.images.length }}</span>
+                  <button class="absolute top-1/2 left-2 -translate-y-1/2 rounded-full bg-white/85 px-2.5 py-1 text-lg opacity-0 shadow transition group-hover:opacity-100" type="button" aria-label="Foto anterior" @click="stepPhoto(room, -1)">‹</button>
+                  <button class="absolute top-1/2 right-2 -translate-y-1/2 rounded-full bg-white/85 px-2.5 py-1 text-lg opacity-0 shadow transition group-hover:opacity-100" type="button" aria-label="Foto seguinte" @click="stepPhoto(room, 1)">›</button>
+                  <div class="absolute bottom-3 left-1/2 flex -translate-x-1/2 gap-1.5">
+                    <span v-for="(_, dot) in room.images" :key="dot" class="size-1.5 rounded-full" :class="dot === (photo[room.type] ?? 0) ? 'bg-white' : 'bg-white/50'" />
+                  </div>
                 </template>
               </div>
-              <div class="space-y-2 p-4">
-                <h2 class="text-lg font-semibold">{{ room.type }}</h2>
-                <p class="text-sm text-slate-600">
-                  Ate {{ room.capacity }} pessoas<template v-if="results"> · {{ room.available }} disponiveis</template>
-                </p>
-                <p v-if="room.description" class="text-sm whitespace-pre-line">{{ room.description }}</p>
-                <p v-if="results" class="text-lg font-semibold">
-                  {{ money(room.total ?? room.pricePerNight) }}
-                  <span class="text-sm font-normal text-slate-500">{{ room.nights }} {{ room.nights === 1 ? 'noite' : 'noites' }}</span>
-                </p>
-                <p v-else class="text-lg font-semibold">
-                  desde {{ money(room.pricePerNight) }}
-                  <span class="text-sm font-normal text-slate-500">/ noite</span>
-                </p>
-                <p v-if="results && needsDeposit && room.deposit" class="text-sm text-slate-600">
-                  Sinal de {{ hotel.depositPercent }}%: <strong>{{ money(room.deposit) }}</strong>
-                </p>
-                <button v-if="results" class="btn w-full" type="button" @click.stop="chosen = room">
-                  {{ chosen?.type === room.type ? 'Escolhido' : 'Escolher' }}
-                </button>
+              <div class="flex flex-1 flex-col gap-3 p-5">
+                <h3 class="text-xl font-semibold text-slate-900">{{ room.type }}</h3>
+                <p v-if="room.description" class="text-sm leading-relaxed whitespace-pre-line text-slate-600">{{ room.description }}</p>
+                <div class="mt-auto flex items-end justify-between gap-3 border-t border-slate-100 pt-4">
+                  <div>
+                    <template v-if="results">
+                      <p class="text-2xl font-bold text-indigo-700">{{ money(room.total ?? room.pricePerNight) }}</p>
+                      <p class="text-xs text-slate-500">
+                        {{ room.nights }} {{ room.nights === 1 ? 'noite' : 'noites' }}
+                        <template v-if="needsDeposit && room.deposit"> · sinal {{ money(room.deposit) }}</template>
+                      </p>
+                    </template>
+                    <template v-else>
+                      <p class="text-xs text-slate-500">desde</p>
+                      <p class="text-2xl font-bold text-indigo-700">{{ money(room.pricePerNight) }}<span class="text-sm font-normal text-slate-500"> / noite</span></p>
+                    </template>
+                  </div>
+                  <button
+                    v-if="results"
+                    type="button"
+                    class="rounded-lg px-4 py-2 text-sm font-semibold shadow"
+                    :class="chosen?.type === room.type ? 'bg-emerald-500 text-white' : 'bg-gradient-to-r from-amber-400 to-orange-500 text-white hover:brightness-105'"
+                    @click="choose(room)"
+                  >
+                    {{ chosen?.type === room.type ? 'Escolhido ✓' : 'Escolher' }}
+                  </button>
+                  <button v-else type="button" class="rounded-lg bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100" @click="scrollToId('reservar')">
+                    Ver datas
+                  </button>
+                </div>
               </div>
             </article>
           </div>
+        </section>
 
-          <form v-if="chosen" class="card grid gap-3 sm:grid-cols-2" @submit.prevent="book">
-            <h2 class="text-lg font-semibold sm:col-span-2">Os seus dados · {{ chosen.type }}</h2>
-            <input v-model="guest.firstName" class="input" placeholder="Nome" required />
-            <input v-model="guest.lastName" class="input" placeholder="Apelido" required />
-            <input v-model="guest.email" class="input" type="email" placeholder="Email" required />
-            <input v-model="guest.phone" class="input" placeholder="Telefone" />
-            <textarea v-model="guest.notes" class="input sm:col-span-2" rows="2" placeholder="Pedidos especiais" />
+        <section v-if="chosen && !booking" ref="bookingForm" class="scroll-mt-20">
+          <form class="grid gap-4 rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-100 lg:grid-cols-[1fr_340px]" @submit.prevent="book">
+            <div class="grid content-start gap-3 sm:grid-cols-2">
+              <h2 class="text-2xl font-bold text-slate-900 sm:col-span-2">Os seus dados</h2>
+              <input v-model="guest.firstName" class="input" placeholder="Nome" autocomplete="given-name" required />
+              <input v-model="guest.lastName" class="input" placeholder="Apelido" autocomplete="family-name" required />
+              <input v-model="guest.email" class="input" type="email" placeholder="Email" autocomplete="email" required />
+              <input v-model="guest.phone" class="input" placeholder="Telefone" autocomplete="tel" />
+              <textarea v-model="guest.notes" class="input sm:col-span-2" rows="2" placeholder="Pedidos especiais (hora de chegada, cama extra...)" />
 
-            <section v-if="needsDeposit" class="space-y-3 rounded-md border border-indigo-100 bg-indigo-50/60 p-4 sm:col-span-2">
-              <h3 class="font-semibold">Pagamento do sinal ({{ hotel.depositPercent }}%)</h3>
-              <div class="grid gap-1 text-sm sm:grid-cols-3">
-                <p>Total da estadia: <strong>{{ money(chosen.total ?? 0) }}</strong></p>
-                <p>Sinal a pagar agora: <strong class="text-indigo-700">{{ money(chosen.deposit ?? 0) }}</strong></p>
-                <p>Restante no hotel: <strong>{{ money(remaining) }}</strong></p>
-              </div>
-              <p v-if="hotel.paymentInstructions" class="rounded-md bg-white p-3 text-sm whitespace-pre-line text-slate-700">{{ hotel.paymentInstructions }}</p>
-              <p v-else class="text-sm text-slate-600">Contacte o hotel para obter os dados de pagamento.</p>
-              <div class="grid gap-3 sm:grid-cols-2">
-                <label v-if="hotel.paymentTypes.length" class="text-sm">
-                  Pagou por
-                  <select v-model.number="guest.depositPaymentTypeId" class="input">
-                    <option v-for="type in hotel.paymentTypes" :key="type.id" :value="type.id">{{ type.name }}</option>
-                  </select>
-                </label>
-                <label class="text-sm">
-                  Referencia do pagamento
-                  <input v-model="guest.depositReference" class="input" maxlength="100" placeholder="Codigo da transacao ou n.o do comprovativo" required />
-                </label>
-              </div>
-              <p class="text-xs text-slate-500">A reserva fica confirmada depois de o hotel verificar o pagamento do sinal.</p>
-            </section>
+              <section v-if="needsDeposit" class="space-y-3 rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 p-4 ring-1 ring-amber-200 sm:col-span-2">
+                <h3 class="font-semibold text-orange-900">Pagamento do sinal ({{ hotel.depositPercent }}%)</h3>
+                <p v-if="hotel.paymentInstructions" class="rounded-lg bg-white p-3 text-sm whitespace-pre-line text-slate-700 shadow-sm">{{ hotel.paymentInstructions }}</p>
+                <p v-else class="text-sm text-slate-600">Contacte o hotel para obter os dados de pagamento.</p>
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <label v-if="hotel.paymentTypes.length" class="text-sm font-medium text-slate-700">
+                    Pagou por
+                    <select v-model.number="guest.depositPaymentTypeId" class="input mt-1">
+                      <option v-for="type in hotel.paymentTypes" :key="type.id" :value="type.id">{{ type.name }}</option>
+                    </select>
+                  </label>
+                  <label class="text-sm font-medium text-slate-700">
+                    Referencia do pagamento
+                    <input v-model="guest.depositReference" class="input mt-1" maxlength="100" placeholder="Codigo da transacao" required />
+                  </label>
+                </div>
+                <p class="text-xs text-orange-900/70">A reserva fica confirmada depois de verificarmos o pagamento do sinal.</p>
+              </section>
+            </div>
 
-            <button class="btn sm:col-span-2 sm:justify-self-end" type="submit" :disabled="loading">
-              {{ needsDeposit ? 'Enviar pedido de reserva com sinal' : 'Pedir reserva' }}
-            </button>
+            <aside class="space-y-3 self-start rounded-xl bg-gradient-to-br from-indigo-600 to-violet-700 p-5 text-white shadow-lg">
+              <p class="text-xs font-semibold tracking-widest text-indigo-200 uppercase">Resumo</p>
+              <h3 class="text-xl font-semibold">{{ chosen.type }}</h3>
+              <img v-if="chosen.images.length" :src="fileUrl(chosen.images[0])" :alt="chosen.type" class="aspect-video w-full rounded-lg object-cover" />
+              <dl class="space-y-1 text-sm">
+                <div class="flex justify-between"><dt class="text-indigo-200">Entrada</dt><dd>{{ formatDate(search.checkIn) }}</dd></div>
+                <div class="flex justify-between"><dt class="text-indigo-200">Saida</dt><dd>{{ formatDate(search.checkOut) }}</dd></div>
+                <div class="flex justify-between"><dt class="text-indigo-200">Hospedes</dt><dd>{{ search.adults + search.children }}</dd></div>
+                <div class="flex justify-between border-t border-white/20 pt-2 text-base font-semibold"><dt>Total</dt><dd>{{ money(chosen.total ?? 0) }}</dd></div>
+                <template v-if="needsDeposit">
+                  <div class="flex justify-between text-amber-300"><dt>Sinal agora</dt><dd class="font-semibold">{{ money(chosen.deposit ?? 0) }}</dd></div>
+                  <div class="flex justify-between"><dt class="text-indigo-200">Restante no hotel</dt><dd>{{ money(remaining) }}</dd></div>
+                </template>
+              </dl>
+              <button class="w-full rounded-lg bg-gradient-to-r from-amber-400 to-orange-500 px-4 py-3 font-semibold text-white shadow hover:brightness-105 disabled:opacity-60" type="submit" :disabled="loading">
+                {{ loading ? 'A enviar...' : needsDeposit ? 'Enviar pedido com sinal' : 'Pedir reserva' }}
+              </button>
+            </aside>
           </form>
-        </template>
+        </section>
+
+        <section id="como-reservar" class="scroll-mt-20 space-y-6">
+          <div class="text-center">
+            <p class="text-sm font-semibold tracking-widest text-orange-500 uppercase">Simples e rapido</p>
+            <h2 class="text-3xl font-bold text-slate-900">Como reservar</h2>
+          </div>
+          <ol class="grid gap-5 md:grid-cols-3">
+            <li
+              v-for="(item, index) in [
+                { title: 'Escolha datas e quarto', text: 'Veja a disponibilidade em tempo real e o preco total da estadia.', color: 'from-indigo-500 to-violet-500' },
+                needsDeposit
+                  ? { title: `Pague o sinal de ${hotel.depositPercent}%`, text: 'Siga as instrucoes de pagamento e indique a referencia da transacao.', color: 'from-amber-400 to-orange-500' }
+                  : { title: 'Envie o pedido', text: 'Basta o nome e o email. Nao paga nada agora.', color: 'from-amber-400 to-orange-500' },
+                { title: 'Receba a confirmacao', text: needsDeposit ? 'Enviamos o comprovativo por email. O restante paga no hotel.' : 'Confirmamos a reserva por email.', color: 'from-emerald-400 to-teal-500' },
+              ]"
+              :key="item.title"
+              class="rounded-2xl bg-white p-6 shadow-md ring-1 ring-slate-100"
+            >
+              <span class="mb-4 flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br text-xl font-bold text-white shadow" :class="item.color">{{ index + 1 }}</span>
+              <h3 class="text-lg font-semibold text-slate-900">{{ item.title }}</h3>
+              <p class="mt-1 text-sm text-slate-600">{{ item.text }}</p>
+            </li>
+          </ol>
+        </section>
       </main>
 
-      <div v-if="viewer" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4" @click="viewer = null">
-        <img :src="fileUrl(viewer.images[viewer.index])" alt="" class="max-h-full max-w-full rounded object-contain" />
+      <footer id="contactos" class="scroll-mt-20 bg-gradient-to-br from-slate-900 via-indigo-950 to-violet-950 text-slate-200">
+        <div class="mx-auto grid max-w-6xl gap-8 px-4 py-12 md:grid-cols-3">
+          <div class="space-y-3">
+            <img v-if="hotel.logoFile" :src="fileUrl(hotel.logoFile)" :alt="hotel.name" class="max-h-14 max-w-40 rounded-lg bg-white p-1.5 object-contain" />
+            <p class="text-xl font-semibold text-white">{{ hotel.name }}</p>
+            <p v-if="hotel.publicDescription" class="text-sm text-slate-400 line-clamp-4">{{ hotel.publicDescription }}</p>
+          </div>
+          <div class="space-y-2 text-sm">
+            <p class="font-semibold tracking-widest text-amber-300 uppercase">Contactos</p>
+            <a v-if="hotel.phone" :href="`tel:${hotel.phone.replace(/\s/g, '')}`" class="block hover:text-white">Telefone: {{ hotel.phone }}</a>
+            <a v-if="hotel.email" :href="`mailto:${hotel.email}`" class="block hover:text-white">Email: {{ hotel.email }}</a>
+            <a v-if="mapsUrl" :href="mapsUrl" target="_blank" rel="noopener" class="block hover:text-white">{{ place }} · ver no mapa</a>
+          </div>
+          <div class="space-y-3 text-sm">
+            <p class="font-semibold tracking-widest text-amber-300 uppercase">Reserve ja</p>
+            <p class="text-slate-400">Reserva direta, sem intermediarios.</p>
+            <button type="button" class="rounded-lg bg-gradient-to-r from-amber-400 to-orange-500 px-5 py-2 font-semibold text-white shadow hover:brightness-105" @click="scrollToId('reservar')">
+              Ver disponibilidade
+            </button>
+          </div>
+        </div>
+        <p class="border-t border-white/10 py-4 text-center text-xs text-slate-500">© {{ new Date().getFullYear() }} {{ hotel.name }}</p>
+      </footer>
+
+      <div v-if="viewer" class="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4" @click="viewer = null">
+        <img :src="fileUrl(viewer.images[viewer.index])" alt="" class="max-h-full max-w-full rounded-lg object-contain shadow-2xl" />
         <template v-if="viewer.images.length > 1">
           <button class="absolute top-1/2 left-4 -translate-y-1/2 rounded-full bg-white/85 px-3 py-1 text-2xl" type="button" aria-label="Foto anterior" @click.stop="viewer.index = (viewer.index - 1 + viewer.images.length) % viewer.images.length">‹</button>
           <button class="absolute top-1/2 right-4 -translate-y-1/2 rounded-full bg-white/85 px-3 py-1 text-2xl" type="button" aria-label="Foto seguinte" @click.stop="viewer.index = (viewer.index + 1) % viewer.images.length">›</button>

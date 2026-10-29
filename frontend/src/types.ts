@@ -105,6 +105,18 @@ export interface DashboardSummary {
   occupancy: number;
   arrivals: Reservation[];
   departures: Reservation[];
+  kpis: {
+    arrivalsToday: number;
+    departuresToday: number;
+    pendingRequests: number;
+    pendingDeposits: number;
+    openOrders: number;
+    openSessions: number;
+    revenueToday: string | null;
+  };
+  forecast: { date: string; confirmed: number; pending: number; arrivals: number; departures: number; occupancy: number }[];
+  revenue: { date: string; accommodation: string; restaurant: string; bar: string; extra: string }[] | null;
+  sources: { source: ReservationSource; count: number }[];
 }
 
 export interface PublicRoomType {
