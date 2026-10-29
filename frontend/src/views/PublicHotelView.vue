@@ -168,24 +168,25 @@ async function book() {
       <header id="inicio" class="relative isolate overflow-hidden">
         <img v-if="heroImage" :src="fileUrl(heroImage)" alt="" class="absolute inset-0 -z-20 h-full w-full object-cover" />
         <div class="absolute inset-0 -z-10" :class="heroImage ? 'bg-gradient-to-br from-indigo-950/85 via-violet-900/70 to-orange-700/50' : 'bg-gradient-to-br from-indigo-700 via-violet-600 to-orange-500'" />
-        <div class="absolute -top-24 -left-24 -z-10 size-80 rounded-full bg-amber-300/30 blur-3xl" />
-        <div class="absolute -right-16 bottom-0 -z-10 size-96 rounded-full bg-fuchsia-400/25 blur-3xl" />
-        <div class="mx-auto max-w-6xl px-4 pt-16 pb-36 text-white sm:pt-24">
-          <img v-if="hotel.logoFile" :src="fileUrl(hotel.logoFile)" :alt="hotel.name" class="mb-6 max-h-20 max-w-52 rounded-xl bg-white/90 object-contain p-2 shadow-lg" />
-          <p v-if="place" class="mb-2 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-sm backdrop-blur">
-            <svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 21s7-6.2 7-12a7 7 0 10-14 0c0 5.8 7 12 7 12z" /><circle cx="12" cy="9" r="2.5" /></svg>
-            {{ place }}
-          </p>
-          <h1 class="max-w-3xl text-4xl font-bold tracking-tight drop-shadow sm:text-6xl">{{ hotel.name }}</h1>
-          <p v-if="hotel.publicDescription" class="mt-4 max-w-2xl text-lg leading-relaxed text-white/90 line-clamp-3">{{ hotel.publicDescription }}</p>
-          <p v-if="hotel.roomTypes.length" class="mt-6 text-white/90">
-            Quartos desde <span class="text-2xl font-bold text-amber-300">{{ money(lowestPrice) }}</span> / noite
+        <div class="absolute -top-20 -left-20 -z-10 size-56 rounded-full bg-amber-300/30 blur-3xl" />
+        <div class="absolute -right-16 -bottom-10 -z-10 size-64 rounded-full bg-fuchsia-400/25 blur-3xl" />
+        <div class="mx-auto flex max-w-6xl flex-wrap items-end justify-between gap-x-8 gap-y-3 px-4 pt-8 pb-24 text-white sm:pt-10">
+          <div class="min-w-0 max-w-2xl">
+            <p v-if="place" class="mb-2 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-0.5 text-xs backdrop-blur">
+              <svg viewBox="0 0 24 24" class="size-3.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 21s7-6.2 7-12a7 7 0 10-14 0c0 5.8 7 12 7 12z" /><circle cx="12" cy="9" r="2.5" /></svg>
+              {{ place }}
+            </p>
+            <h1 class="text-3xl font-bold tracking-tight drop-shadow sm:text-4xl">{{ hotel.name }}</h1>
+            <p v-if="hotel.publicDescription" class="mt-2 text-sm leading-relaxed text-white/85 line-clamp-2 sm:text-base">{{ hotel.publicDescription }}</p>
+          </div>
+          <p v-if="hotel.roomTypes.length" class="shrink-0 rounded-xl bg-white/15 px-4 py-2 text-sm text-white/90 backdrop-blur">
+            Quartos desde <span class="block text-2xl leading-tight font-bold text-amber-300">{{ money(lowestPrice) }}<span class="text-sm font-normal text-white/80"> / noite</span></span>
           </p>
         </div>
       </header>
 
-      <main class="mx-auto -mt-24 max-w-6xl space-y-16 px-4 pb-16">
-        <section id="reservar" class="scroll-mt-20 rounded-2xl bg-white p-5 shadow-xl ring-1 shadow-indigo-900/10 ring-slate-100 sm:p-6">
+      <main class="mx-auto -mt-16 max-w-6xl space-y-16 px-4 pb-16">
+        <section id="reservar" class="relative z-10 scroll-mt-20 rounded-2xl bg-white p-5 shadow-xl ring-1 shadow-indigo-900/10 ring-slate-100 sm:p-6">
           <ol class="mb-5 flex flex-wrap gap-2 text-xs font-medium">
             <li
               v-for="(label, index) in STEPS"
