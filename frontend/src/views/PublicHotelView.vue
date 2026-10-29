@@ -186,6 +186,30 @@ async function book() {
       </header>
 
       <main class="mx-auto -mt-16 max-w-6xl space-y-16 px-4 pb-16">
+        <div class="relative z-10 space-y-6">
+        <section id="como-reservar" class="scroll-mt-20" aria-labelledby="como-reservar-titulo">
+          <h2 id="como-reservar-titulo" class="sr-only">Como reservar</h2>
+          <ol class="grid gap-3 md:grid-cols-3">
+            <li
+              v-for="(item, index) in [
+                { title: 'Escolha datas e quarto', text: 'Veja a disponibilidade e o preco total da estadia.', color: 'from-indigo-500 to-violet-500' },
+                needsDeposit
+                  ? { title: `Pague o sinal de ${hotel.depositPercent}%`, text: 'Siga as instrucoes de pagamento e indique a referencia.', color: 'from-amber-400 to-orange-500' }
+                  : { title: 'Envie o pedido', text: 'Basta o nome e o email. Nao paga nada agora.', color: 'from-amber-400 to-orange-500' },
+                { title: 'Receba a confirmacao', text: needsDeposit ? 'Enviamos o comprovativo por email. O restante paga no hotel.' : 'Confirmamos a reserva por email.', color: 'from-emerald-400 to-teal-500' },
+              ]"
+              :key="item.title"
+              class="flex items-start gap-3 rounded-2xl bg-white p-4 shadow-lg ring-1 shadow-indigo-900/10 ring-slate-100"
+            >
+              <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-lg font-bold text-white shadow" :class="item.color">{{ index + 1 }}</span>
+              <span>
+                <span class="block font-semibold text-slate-900">{{ item.title }}</span>
+                <span class="block text-sm text-slate-600">{{ item.text }}</span>
+              </span>
+            </li>
+          </ol>
+        </section>
+
         <section id="reservar" class="relative z-10 scroll-mt-20 rounded-2xl bg-white p-5 shadow-xl ring-1 shadow-indigo-900/10 ring-slate-100 sm:p-6">
           <ol class="mb-5 flex flex-wrap gap-2 text-xs font-medium">
             <li
@@ -261,6 +285,7 @@ async function book() {
           </form>
           <p v-if="error" class="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{{ error }}</p>
         </section>
+        </div>
 
         <section v-if="!booking" id="quartos" ref="roomsSection" class="scroll-mt-20 space-y-6">
           <div class="flex flex-wrap items-end justify-between gap-3">
@@ -395,29 +420,6 @@ async function book() {
           </form>
         </section>
 
-        <section id="como-reservar" class="scroll-mt-20 space-y-6">
-          <div class="text-center">
-            <p class="text-sm font-semibold tracking-widest text-orange-500 uppercase">Simples e rapido</p>
-            <h2 class="text-3xl font-bold text-slate-900">Como reservar</h2>
-          </div>
-          <ol class="grid gap-5 md:grid-cols-3">
-            <li
-              v-for="(item, index) in [
-                { title: 'Escolha datas e quarto', text: 'Veja a disponibilidade em tempo real e o preco total da estadia.', color: 'from-indigo-500 to-violet-500' },
-                needsDeposit
-                  ? { title: `Pague o sinal de ${hotel.depositPercent}%`, text: 'Siga as instrucoes de pagamento e indique a referencia da transacao.', color: 'from-amber-400 to-orange-500' }
-                  : { title: 'Envie o pedido', text: 'Basta o nome e o email. Nao paga nada agora.', color: 'from-amber-400 to-orange-500' },
-                { title: 'Receba a confirmacao', text: needsDeposit ? 'Enviamos o comprovativo por email. O restante paga no hotel.' : 'Confirmamos a reserva por email.', color: 'from-emerald-400 to-teal-500' },
-              ]"
-              :key="item.title"
-              class="rounded-2xl bg-white p-6 shadow-md ring-1 ring-slate-100"
-            >
-              <span class="mb-4 flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br text-xl font-bold text-white shadow" :class="item.color">{{ index + 1 }}</span>
-              <h3 class="text-lg font-semibold text-slate-900">{{ item.title }}</h3>
-              <p class="mt-1 text-sm text-slate-600">{{ item.text }}</p>
-            </li>
-          </ol>
-        </section>
       </main>
 
       <footer id="contactos" class="scroll-mt-20 bg-gradient-to-br from-slate-900 via-indigo-950 to-violet-950 text-slate-200">
