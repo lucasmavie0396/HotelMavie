@@ -10,6 +10,7 @@ import { sumMoney, toMoney } from '../common/money';
 import { PrismaService } from '../prisma/prisma.service';
 import { FolioService } from './folio.service';
 import { InvoicesService, seriesCode } from './invoices.service';
+import { PaymentTypesService } from './payment-types';
 
 export class ReceiptLineDto {
   @IsInt()
@@ -25,8 +26,13 @@ export class CreateReceiptDto {
   @IsInt()
   hotelId?: number;
 
+  @IsOptional()
   @IsEnum(PaymentMethod)
-  method: PaymentMethod;
+  method?: PaymentMethod;
+
+  @IsOptional()
+  @IsInt()
+  paymentTypeId?: number;
 
   @IsOptional()
   @IsInt()
@@ -76,6 +82,7 @@ export class ReceiptsService {
     private readonly prisma: PrismaService,
     private readonly folio: FolioService,
     private readonly invoices: InvoicesService,
+    private readonly paymentTypes: PaymentTypesService,
   ) {}
 
   async openInvoices(query: OpenInvoicesQueryDto, user: JwtPayload) {
@@ -164,6 +171,7 @@ export class ReceiptsService {
         }
       }
 
+      const paymentType = await this.paymentTypes.resolve(tx, hotelId, dto);
       const issuedAt = new Date();
       const code = seriesCode(issuedAt);
       const [series] = await tx.$queryRaw<{ id: number; code: string; nextNumber: number; atValidationCode: string | null }[]>`
@@ -187,7 +195,8 @@ export class ReceiptsService {
           customerName: reference.customerName,
           customerTaxId: reference.customerTaxId,
           amount,
-          method: dto.method,
+          method: paymentType.method,
+          paymentTypeId: paymentType.paymentTypeId,
           reference: dto.reference,
           createdById: user.sub,
           lines: { createMany: { data: dto.lines.map((line) => ({ invoiceId: line.invoiceId, amount: line.amount })) } },
@@ -198,7 +207,16 @@ export class ReceiptsService {
 
       const payment = await this.folio.recordPayment(
         tx,
-        { hotelId, amount, method: dto.method, cashSessionId: dto.cashSessionId, reference: dto.reference, notes: receipt.fullNumber, createdById: user.sub },
+        {
+          hotelId,
+          amount,
+          method: paymentType.method,
+          paymentTypeId: paymentType.paymentTypeId,
+          cashSessionId: dto.cashSessionId,
+          reference: dto.reference,
+          notes: receipt.fullNumber,
+          createdById: user.sub,
+        },
         user,
       );
       await tx.payment.update({ where: { id: payment.id }, data: { receiptId: receipt.id } });
@@ -222,6 +240,7 @@ export class ReceiptsService {
           hotelId: receipt.hotelId,
           amount: toMoney(receipt.amount).neg(),
           method: receipt.method,
+          paymentTypeId: receipt.paymentTypeId,
           cashSessionId: dto.cashSessionId,
           notes: `Anulacao ${receipt.fullNumber}`,
           createdById: user.sub,

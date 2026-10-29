@@ -1,13 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { Hotel, Invoice, InvoiceLine, InvoiceType } from '@prisma/client';
+import { Hotel, PaperWidth } from '@prisma/client';
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
-import { printedHash, qrCodeContent } from '../at/at-format';
-import { AtSigningService } from '../at/at-signing.service';
 
-const WIDTH = 226.77;
-const MARGIN = 10;
-const INNER = WIDTH - MARGIN * 2;
+const PAPER: Record<PaperWidth, { width: number; margin: number; right: number; chars: number }> = {
+  MM58: { width: 164.41, margin: 6, right: 52, chars: 32 },
+  MM80: { width: 226.77, margin: 10, right: 62, chars: 48 },
+  A4: { width: 595.28, margin: 50, right: 110, chars: 90 },
+};
+const A4_HEIGHT = 841.89;
 const TIME_ZONE = process.env.AT_TIMEZONE ?? 'Europe/Lisbon';
 
 type Row =
@@ -15,18 +16,12 @@ type Row =
   | { kind: 'cols'; left: string; right: string; size?: number; bold?: boolean }
   | { kind: 'rule' }
   | { kind: 'space'; height?: number }
-  | { kind: 'image'; buffer: Buffer; size: number };
-
-const DOC_TITLES: Record<InvoiceType, string> = {
-  INVOICE: 'Fatura',
-  INVOICE_RECEIPT: 'Fatura-Recibo',
-  CREDIT_NOTE: 'Nota de Credito',
-  RECEIPT: 'Recibo',
-};
+  | { kind: 'qr'; data: string; size: number };
 
 export interface TicketLine {
   quantity: { toString(): string };
   description: string;
+  unitPrice?: { toString(): string };
   total?: { toString(): string };
   notes?: string | null;
   struck?: boolean;
@@ -35,7 +30,7 @@ export interface TicketLine {
 export class Ticket {
   readonly rows: Row[] = [];
 
-  constructor(private readonly currency = 'EUR') {}
+  constructor(readonly currency = 'EUR') {}
 
   money(value: { toString(): string } | number) {
     return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: this.currency }).format(Number(value.toString()));
@@ -61,27 +56,40 @@ export class Ticket {
     return this;
   }
 
-  image(buffer: Buffer, size: number) {
-    this.rows.push({ kind: 'image', buffer, size });
+  qr(data: string, size = 110) {
+    this.rows.push({ kind: 'qr', data, size });
     return this;
   }
 
   header(hotel: Hotel) {
-    this.text(hotel.legalName ?? hotel.name, { bold: true, size: 11, align: 'center' });
+    this.text(hotel.name, { bold: true, size: 12, align: 'center' });
+    if (hotel.legalName && hotel.legalName !== hotel.name) this.text(hotel.legalName, { align: 'center', size: 8 });
     if (hotel.taxId) this.text(`NIF ${hotel.taxId}`, { align: 'center', size: 8 });
-    if (hotel.address) this.text(hotel.address, { align: 'center', size: 8 });
+    const address = [hotel.address, [hotel.postalCode, hotel.city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+    if (address) this.text(address, { align: 'center', size: 8 });
+    const contacts = [hotel.phone && `Tel. ${hotel.phone}`, hotel.email].filter(Boolean).join(' · ');
+    if (contacts) this.text(contacts, { align: 'center', size: 8 });
     return this.rule();
+  }
+
+  footer(hotel: Hotel, operator?: string | null) {
+    this.space();
+    if (operator) this.text(`Atendido por: ${operator}`, { size: 8, align: 'center' });
+    this.text(hotel.ticketFooter || 'Obrigado pela preferencia', { size: 8, align: 'center' });
+    return this;
   }
 
   lines(items: TicketLine[], withPrices = true) {
     for (const item of items) {
-      const label = `${Number(item.quantity.toString())} x ${item.description}${item.struck ? ' (ANULADO)' : ''}`;
+      const quantity = Number(item.quantity.toString());
+      const label = `${quantity} x ${item.description}${item.struck ? ' (ANULADO)' : ''}`;
       if (withPrices && item.total !== undefined) {
-        this.cols(label, item.struck ? '0,00' : this.money(item.total));
+        this.cols(label, item.struck ? this.money(0) : this.money(item.total));
+        if (item.unitPrice !== undefined && quantity !== 1) this.text(`   ${quantity} x ${this.money(item.unitPrice)}`, { size: 7 });
       } else {
-        this.text(label, { size: 11, bold: true });
+        this.text(label, { size: 12, bold: true });
       }
-      if (item.notes) this.text(`  > ${item.notes}`, { size: 8 });
+      if (item.notes) this.text(`  > ${item.notes}`, { size: withPrices ? 8 : 10, bold: !withPrices });
     }
     return this;
   }
@@ -89,123 +97,171 @@ export class Ticket {
   static when(date: Date) {
     return date.toLocaleString('pt-PT', { timeZone: TIME_ZONE, dateStyle: 'short', timeStyle: 'short' });
   }
+
+  static day(date: Date) {
+    return date.toLocaleDateString('pt-PT', { timeZone: TIME_ZONE });
+  }
+}
+
+function plain(text: string) {
+  return text
+    .replace(/€/g, 'EUR')
+    .replace(/[  ]/g, ' ')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^\x20-\x7e\n]/g, '?');
+}
+
+function wrap(text: string, width: number) {
+  const lines: string[] = [];
+  for (const paragraph of text.split('\n')) {
+    let line = '';
+    for (const word of paragraph.split(' ')) {
+      if (!line) line = word;
+      else if ((line + ' ' + word).length <= width) line += ' ' + word;
+      else {
+        lines.push(line);
+        line = word;
+      }
+      while (line.length > width) {
+        lines.push(line.slice(0, width));
+        line = line.slice(width);
+      }
+    }
+    lines.push(line);
+  }
+  return lines;
 }
 
 @Injectable()
 export class TicketPdfService {
-  constructor(private readonly signing: AtSigningService) {}
-
-  render(ticket: Ticket) {
-    const probe = new PDFDocument({ size: [WIDTH, 1000], margin: MARGIN });
-    let height = MARGIN * 2;
-    for (const row of ticket.rows) height += this.rowHeight(probe, row);
+  async render(ticket: Ticket, paper: PaperWidth = PaperWidth.MM80) {
+    const spec = PAPER[paper];
+    const qrImages = new Map<Row, Buffer>();
+    for (const row of ticket.rows) {
+      if (row.kind === 'qr') qrImages.set(row, await QRCode.toBuffer(row.data, { errorCorrectionLevel: 'M', margin: 0, width: 300 }));
+    }
+    const inner = spec.width - spec.margin * 2;
+    const scale = paper === PaperWidth.A4 ? 1.15 : 1;
+    const probe = new PDFDocument({ size: [spec.width, 1000], margin: spec.margin });
+    const heights = ticket.rows.map((row) => this.rowHeight(probe, row, inner, spec.right, scale));
     probe.end();
+    const total = heights.reduce((sum, h) => sum + h, spec.margin * 2) + 4;
+    const pageHeight = paper === PaperWidth.A4 ? A4_HEIGHT : Math.ceil(total);
 
     return new Promise<Buffer>((resolve, reject) => {
-      const doc = new PDFDocument({ size: [WIDTH, Math.ceil(height) + 4], margin: MARGIN, autoFirstPage: true });
+      const doc = new PDFDocument({ size: [spec.width, pageHeight], margin: spec.margin });
       const chunks: Buffer[] = [];
       doc.on('data', (chunk: Buffer) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
-      let y = MARGIN;
-      for (const row of ticket.rows) {
-        y = this.drawRow(doc, row, y);
-      }
+      let y = spec.margin;
+      ticket.rows.forEach((row, index) => {
+        if (y + heights[index] > pageHeight - spec.margin) {
+          doc.addPage({ size: [spec.width, pageHeight], margin: spec.margin });
+          y = spec.margin;
+        }
+        this.drawRow(doc, row, y, spec.margin, inner, spec.right, scale, qrImages.get(row));
+        y += heights[index];
+      });
       doc.end();
     });
   }
 
-  async invoice(invoice: Invoice & { lines: InvoiceLine[]; creditOf?: { fullNumber: string } | null }, hotel: Hotel) {
-    const ticket = new Ticket(invoice.currency).header(hotel);
-    ticket.text(`${DOC_TITLES[invoice.type]} ${invoice.fullNumber}`, { bold: true, align: 'center' });
-    ticket.text(Ticket.when(invoice.issuedAt), { align: 'center', size: 8 });
-    ticket.text(`ATCUD: ${invoice.atcud ?? '0'}`, { align: 'center', size: 8 });
-    if (invoice.creditOf) ticket.text(`Ref.: ${invoice.creditOf.fullNumber}`, { align: 'center', size: 8 });
-    ticket.rule();
-    ticket.text(`Cliente: ${invoice.customerName}`, { size: 8 });
-    ticket.text(`NIF: ${invoice.customerTaxId ?? 'Consumidor final'}`, { size: 8 });
-    ticket.rule();
-    ticket.lines(invoice.lines.map((line) => ({ quantity: line.quantity, description: `${line.description} (${Number(line.taxRate)}%)`, total: line.grossAmount })));
-    ticket.rule();
-    const rates = new Map<string, { base: number; tax: number }>();
-    for (const line of invoice.lines) {
-      const key = `${Number(line.taxRate)}%`;
-      const current = rates.get(key) ?? { base: 0, tax: 0 };
-      current.base += Number(line.netAmount);
-      current.tax += Number(line.taxAmount);
-      rates.set(key, current);
+  escpos(ticket: Ticket, paper: PaperWidth = PaperWidth.MM80) {
+    const width = paper === PaperWidth.MM58 ? 32 : 48;
+    const out: number[] = [0x1b, 0x40];
+    const push = (...bytes: number[]) => out.push(...bytes);
+    const write = (text: string) => {
+      for (const char of plain(text)) out.push(char.charCodeAt(0));
+    };
+    for (const row of ticket.rows) {
+      const big = (row.kind === 'text' || row.kind === 'cols') && (row.size ?? 9) >= 12;
+      const chars = big ? Math.floor(width / 2) : width;
+      switch (row.kind) {
+        case 'text':
+          push(0x1b, 0x61, row.align === 'center' ? 1 : row.align === 'right' ? 2 : 0);
+          push(0x1b, 0x45, row.bold ? 1 : 0);
+          push(0x1d, 0x21, big ? 0x11 : 0x00);
+          for (const line of wrap(row.text, chars)) {
+            write(line);
+            push(0x0a);
+          }
+          break;
+        case 'cols': {
+          push(0x1b, 0x61, 0, 0x1b, 0x45, row.bold ? 1 : 0, 0x1d, 0x21, big ? 0x11 : 0x00);
+          const right = plain(row.right);
+          const leftLines = wrap(row.left, Math.max(chars - right.length - 1, 8));
+          leftLines.forEach((line, index) => {
+            const content = index === leftLines.length - 1 ? `${plain(line)}${' '.repeat(Math.max(chars - plain(line).length - right.length, 1))}${right}` : plain(line);
+            write(content);
+            push(0x0a);
+          });
+          break;
+        }
+        case 'rule':
+          push(0x1b, 0x61, 0, 0x1b, 0x45, 0, 0x1d, 0x21, 0);
+          write('-'.repeat(width));
+          push(0x0a);
+          break;
+        case 'space':
+          push(0x0a);
+          break;
+        case 'qr': {
+          const data = Buffer.from(row.data, 'utf8');
+          const length = data.length + 3;
+          push(0x1b, 0x61, 1);
+          push(0x1d, 0x28, 0x6b, 4, 0, 0x31, 0x41, 0x32, 0);
+          push(0x1d, 0x28, 0x6b, 3, 0, 0x31, 0x43, paper === PaperWidth.MM58 ? 4 : 5);
+          push(0x1d, 0x28, 0x6b, 3, 0, 0x31, 0x45, 0x31);
+          push(0x1d, 0x28, 0x6b, length & 0xff, length >> 8, 0x31, 0x50, 0x30, ...data);
+          push(0x1d, 0x28, 0x6b, 3, 0, 0x31, 0x51, 0x30);
+          push(0x0a);
+          break;
+        }
+      }
     }
-    for (const [rate, values] of rates) {
-      ticket.cols(`IVA ${rate} s/ ${ticket.money(values.base)}`, ticket.money(values.tax), { size: 8 });
-    }
-    ticket.cols('TOTAL', ticket.money(invoice.grossTotal), { bold: true, size: 12 });
-    ticket.space();
-    const qr = await QRCode.toBuffer(
-      qrCodeContent({
-        issuerTaxId: hotel.taxId,
-        customerTaxId: invoice.customerTaxId,
-        type: invoice.type,
-        issuedAt: invoice.issuedAt,
-        invoiceNo: invoice.fullNumber,
-        atcud: invoice.atcud,
-        lines: invoice.lines,
-        taxTotal: invoice.taxTotal,
-        grossTotal: invoice.grossTotal,
-        signature: invoice.hash,
-        certificateNumber: this.signing.certificateNumber,
-      }),
-      { errorCorrectionLevel: 'M', margin: 0, width: 300 },
-    );
-    ticket.image(qr, 110);
-    ticket.space();
-    ticket.text(
-      this.signing.certified
-        ? `${printedHash(invoice.hash)}-Processado por programa certificado n.o ${this.signing.certificateNumber}/AT`
-        : `${printedHash(invoice.hash)}-Software nao certificado pela AT. Sem validade fiscal.`,
-      { size: 7, align: 'center' },
-    );
-    if (invoice.type === 'INVOICE') ticket.text('Este documento nao serve de recibo.', { size: 7, align: 'center' });
-    return this.render(ticket);
+    push(0x1b, 0x61, 0, 0x1d, 0x21, 0, 0x1b, 0x45, 0);
+    push(0x0a, 0x0a, 0x0a, 0x1d, 0x56, 0x42, 0x00);
+    return Buffer.from(out);
   }
 
-  private rowHeight(doc: PDFKit.PDFDocument, row: Row) {
+  private rowHeight(doc: PDFKit.PDFDocument, row: Row, inner: number, right: number, scale: number) {
     switch (row.kind) {
       case 'rule':
         return 8;
       case 'space':
         return row.height ?? 6;
-      case 'image':
+      case 'qr':
         return row.size + 2;
       case 'text':
-        doc.font(row.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(row.size ?? 9);
-        return doc.heightOfString(row.text, { width: INNER }) + 2;
+        doc.font(row.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize((row.size ?? 9) * scale);
+        return doc.heightOfString(row.text, { width: inner }) + 2;
       case 'cols':
-        doc.font(row.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(row.size ?? 9);
-        return Math.max(doc.heightOfString(row.left, { width: INNER - 60 }), doc.heightOfString(row.right, { width: 60 })) + 2;
+        doc.font(row.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize((row.size ?? 9) * scale);
+        return Math.max(doc.heightOfString(row.left, { width: inner - right }), doc.heightOfString(row.right, { width: right })) + 2;
     }
   }
 
-  private drawRow(doc: PDFKit.PDFDocument, row: Row, y: number) {
-    const height = this.rowHeight(doc, row);
+  private drawRow(doc: PDFKit.PDFDocument, row: Row, y: number, margin: number, inner: number, right: number, scale: number, image?: Buffer) {
     switch (row.kind) {
       case 'rule':
-        doc.moveTo(MARGIN, y + 3).lineTo(WIDTH - MARGIN, y + 3).dash(2, { space: 2 }).stroke('#000000').undash();
+        doc.moveTo(margin, y + 3).lineTo(margin + inner, y + 3).dash(2, { space: 2 }).stroke('#000000').undash();
         break;
-      case 'image':
-        doc.image(row.buffer, (WIDTH - row.size) / 2, y, { width: row.size });
+      case 'qr':
+        if (image) doc.image(image, margin + (inner - row.size) / 2, y, { width: row.size });
         break;
       case 'text':
-        doc.font(row.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(row.size ?? 9);
-        doc.text(row.text, MARGIN, y, { width: INNER, align: row.align ?? 'left' });
+        doc.font(row.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize((row.size ?? 9) * scale);
+        doc.text(row.text, margin, y, { width: inner, align: row.align ?? 'left' });
         break;
       case 'cols':
-        doc.font(row.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(row.size ?? 9);
-        doc.text(row.left, MARGIN, y, { width: INNER - 60 });
-        doc.text(row.right, WIDTH - MARGIN - 60, y, { width: 60, align: 'right' });
+        doc.font(row.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize((row.size ?? 9) * scale);
+        doc.text(row.left, margin, y, { width: inner - right });
+        doc.text(row.right, margin + inner - right, y, { width: right, align: 'right' });
         break;
       case 'space':
         break;
     }
-    return y + height;
   }
 }

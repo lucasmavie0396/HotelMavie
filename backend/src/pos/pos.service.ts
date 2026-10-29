@@ -69,8 +69,13 @@ export class OrderItemDto {
 }
 
 export class OrderPaymentDto {
+  @IsOptional()
   @IsEnum(PaymentMethod)
-  method: PaymentMethod;
+  method?: PaymentMethod;
+
+  @IsOptional()
+  @IsInt()
+  paymentTypeId?: number;
 
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
@@ -126,7 +131,7 @@ const orderInclude = {
   items: {
     orderBy: { createdAt: 'asc' },
     include: {
-      product: { select: { category: { select: { prepStation: true } } } },
+      product: { select: { category: { select: { prepStation: true, printerId: true } } } },
       voidedBy: { select: { name: true } },
     },
   },
@@ -234,63 +239,98 @@ export class PosService {
     }
     const sentAt = new Date();
     await this.prisma.orderItem.updateMany({ where: { id: { in: pending.map((item) => item.id) } }, data: { sentAt } });
-    const stations = [...new Set(pending.map((item) => this.stationOf(order, item)))].filter((station) => station !== PrepStation.NONE);
-    return { sentAt, stations };
+    const targets = new Map<string, { station: PrepStation; printerId: number | null }>();
+    for (const item of pending) {
+      const target = this.targetOf(order, item);
+      if (target.station !== PrepStation.NONE || target.printerId) targets.set(`${target.station}:${target.printerId ?? ''}`, target);
+    }
+    return {
+      sentAt,
+      targets: [...targets.values()],
+      stations: [...new Set([...targets.values()].map((target) => target.station))],
+    };
   }
 
-  async ticket(orderId: number, station: PrepStation, sentAt: string | undefined, user: JwtPayload) {
+  async buildTicket(orderId: number, station: PrepStation, printerId: number | null | undefined, sentAt: string | undefined, user: JwtPayload) {
     const order = await this.findOne(orderId, user);
-    const hotel = await this.prisma.hotel.findUniqueOrThrow({ where: { id: order.hotelId } });
-    const sent = order.items.filter((item) => item.sentAt && this.stationOf(order, item) === station);
+    const sent = order.items.filter((item) => {
+      if (!item.sentAt) return false;
+      const target = this.targetOf(order, item);
+      return target.station === station && (printerId === undefined || target.printerId === printerId);
+    });
     const batch = sentAt ? new Date(sentAt).getTime() : Math.max(0, ...sent.map((item) => item.sentAt!.getTime()));
     const items = sent.filter((item) => item.sentAt!.getTime() === batch);
     if (!items.length) {
       throw new NotFoundException('Nao ha linhas enviadas para este posto');
     }
-    const ticket = new Ticket(hotel.currency);
-    ticket.text(station === PrepStation.BAR ? 'PEDIDO BAR' : 'PEDIDO COZINHA', { bold: true, size: 14, align: 'center' });
-    ticket.text(`${order.tableLabel ?? `Pedido #${order.id}`}`, { bold: true, size: 12, align: 'center' });
+    const ticket = new Ticket();
+    ticket.text(station === PrepStation.BAR ? 'PEDIDO BAR' : station === PrepStation.KITCHEN ? 'PEDIDO COZINHA' : 'PEDIDO', { bold: true, size: 14, align: 'center' });
+    ticket.text(`${order.tableLabel ?? `Pedido #${order.id}`}`, { bold: true, size: 14, align: 'center' });
     ticket.text(`${Ticket.when(new Date(batch))} · ${order.openedBy?.name ?? ''}`, { size: 8, align: 'center' });
+    if (sent.some((item) => item.sentAt!.getTime() < batch)) ticket.text('(pedido adicional)', { size: 9, align: 'center', bold: true });
     ticket.rule();
     ticket.lines(items.map((item) => ({ quantity: item.quantity, description: item.description, notes: item.notes, struck: Boolean(item.voidedAt) })), false);
-    return this.tickets.render(ticket);
+    ticket.rule();
+    ticket.text(`${items.reduce((sum, item) => sum + Number(item.quantity), 0)} artigos`, { size: 8, align: 'right' });
+    return { ticket, hotelId: order.hotelId, station, printerId: printerId ?? this.targetOf(order, items[0]).printerId };
   }
 
-  async voidTicket(orderId: number, itemId: number, user: JwtPayload) {
+  async ticket(orderId: number, station: PrepStation, sentAt: string | undefined, user: JwtPayload) {
+    return this.tickets.render((await this.buildTicket(orderId, station, undefined, sentAt, user)).ticket);
+  }
+
+  async buildVoidTicket(orderId: number, itemId: number, user: JwtPayload) {
     const order = await this.findOne(orderId, user);
     const item = order.items.find((line) => line.id === itemId && line.voidedAt);
     if (!item) {
       throw new NotFoundException('Linha anulada nao encontrada');
     }
+    const target = this.targetOf(order, item);
     const ticket = new Ticket();
     ticket.text('*** ANULAR ***', { bold: true, size: 14, align: 'center' });
-    ticket.text(this.stationOf(order, item) === PrepStation.BAR ? 'BAR' : 'COZINHA', { bold: true, align: 'center' });
-    ticket.text(`${order.tableLabel ?? `Pedido #${order.id}`}`, { bold: true, size: 12, align: 'center' });
+    ticket.text(target.station === PrepStation.BAR ? 'BAR' : 'COZINHA', { bold: true, align: 'center' });
+    ticket.text(`${order.tableLabel ?? `Pedido #${order.id}`}`, { bold: true, size: 14, align: 'center' });
     ticket.text(Ticket.when(item.voidedAt!), { size: 8, align: 'center' });
     ticket.rule();
     ticket.lines([{ quantity: item.quantity, description: item.description }], false);
-    ticket.text(`Motivo: ${item.voidReason ?? ''}`, { size: 9 });
+    ticket.text(`Motivo: ${item.voidReason ?? ''}`, { size: 10, bold: true });
     if (item.voidedBy) ticket.text(`Por: ${item.voidedBy.name}`, { size: 8 });
-    return this.tickets.render(ticket);
+    return { ticket, hotelId: order.hotelId, station: target.station, printerId: target.printerId };
   }
 
-  async prebill(orderId: number, user: JwtPayload) {
+  async voidTicket(orderId: number, itemId: number, user: JwtPayload) {
+    return this.tickets.render((await this.buildVoidTicket(orderId, itemId, user)).ticket);
+  }
+
+  async buildPrebill(orderId: number, user: JwtPayload) {
     const order = await this.findOne(orderId, user);
     const hotel = await this.prisma.hotel.findUniqueOrThrow({ where: { id: order.hotelId } });
+    const operator = await this.prisma.user.findUnique({ where: { id: user.sub }, select: { name: true } });
+    const items = order.items.filter((item) => !item.voidedAt);
     const ticket = new Ticket(hotel.currency).header(hotel);
     ticket.text('CONSULTA DE MESA', { bold: true, size: 12, align: 'center' });
     ticket.text(`${order.tableLabel ?? `Pedido #${order.id}`} · ${Ticket.when(new Date())}`, { size: 8, align: 'center' });
+    if (order.reservation) ticket.text(`Lancado no quarto ${order.reservation.room.number}`, { size: 8, align: 'center' });
     ticket.rule();
-    ticket.lines(order.items.filter((item) => !item.voidedAt).map((item) => ({ quantity: item.quantity, description: item.description, total: item.total })));
+    ticket.lines(items.map((item) => ({ quantity: item.quantity, description: item.description, unitPrice: item.unitPrice, total: item.total })));
     ticket.rule();
-    ticket.cols('TOTAL', ticket.money(order.total), { bold: true, size: 12 });
+    ticket.cols(`${items.reduce((sum, item) => sum + Number(item.quantity), 0)} artigos`, '', { size: 8 });
+    ticket.cols('TOTAL (IVA incluido)', ticket.money(order.total), { bold: true, size: 13 });
     ticket.space();
     ticket.text('Este documento nao serve de fatura. Peca a fatura no pagamento.', { size: 7, align: 'center' });
-    return this.tickets.render(ticket);
+    ticket.footer(hotel, operator?.name);
+    return { ticket, hotelId: order.hotelId };
   }
 
-  private stationOf(order: { outlet: Outlet }, item: { product: { category: { prepStation: PrepStation } | null } }) {
-    return item.product.category?.prepStation ?? (order.outlet === Outlet.BAR ? PrepStation.BAR : PrepStation.KITCHEN);
+  async prebill(orderId: number, user: JwtPayload) {
+    return this.tickets.render((await this.buildPrebill(orderId, user)).ticket);
+  }
+
+  private targetOf(order: { outlet: Outlet }, item: { product: { category: { prepStation: PrepStation; printerId: number | null } | null } }) {
+    return {
+      station: item.product.category?.prepStation ?? (order.outlet === Outlet.BAR ? PrepStation.BAR : PrepStation.KITCHEN),
+      printerId: item.product.category?.printerId ?? null,
+    };
   }
 
   async cancel(orderId: number, user: JwtPayload) {
@@ -375,6 +415,7 @@ export class PosService {
               invoiceId: invoice.id,
               amount: payment.amount,
               method: payment.method,
+              paymentTypeId: payment.paymentTypeId,
               cashSessionId: payment.cashSessionId,
               reference: payment.reference,
               createdById: user.sub,

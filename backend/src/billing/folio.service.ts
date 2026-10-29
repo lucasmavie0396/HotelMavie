@@ -5,6 +5,7 @@ import { canAccessHotel } from '../common/hotel-scope';
 import { DecimalLike, sumMoney, toMoney } from '../common/money';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateChargeDto, CreatePaymentDto } from './billing.dto';
+import { PaymentTypesService } from './payment-types';
 
 export interface ChargeInput {
   hotelId: number;
@@ -24,7 +25,8 @@ export interface PaymentInput {
   reservationId?: number | null;
   invoiceId?: number | null;
   amount: DecimalLike;
-  method: PaymentMethod;
+  method?: PaymentMethod;
+  paymentTypeId?: number | null;
   cashSessionId?: number | null;
   reference?: string;
   notes?: string;
@@ -39,7 +41,10 @@ const ON_GUEST_ACCOUNT: Prisma.ChargeWhereInput = {
 
 @Injectable()
 export class FolioService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly paymentTypes: PaymentTypesService,
+  ) {}
 
   async getFolio(reservationId: number, user: JwtPayload) {
     const reservation = await this.findReservation(reservationId, user);
@@ -107,6 +112,7 @@ export class FolioService {
       reservationId,
       amount: dto.amount,
       method: dto.method,
+      paymentTypeId: dto.paymentTypeId,
       cashSessionId: dto.cashSessionId,
       reference: dto.reference,
       notes: dto.notes,
@@ -148,8 +154,13 @@ export class FolioService {
     if (amount.isNegative() && user.role === UserRole.RECEPTION) {
       throw new ForbiddenException('Devolucoes so podem ser feitas por um gestor');
     }
+    const type = await this.paymentTypes.resolve(tx, input.hotelId, {
+      method: input.method,
+      paymentTypeId: input.paymentTypeId,
+      reference: amount.isNegative() ? 'estorno' : input.reference,
+    });
     let cashSessionId: number | null = null;
-    if (input.method === PaymentMethod.CASH) {
+    if (type.method === PaymentMethod.CASH) {
       if (!input.cashSessionId) {
         throw new BadRequestException('Pagamentos em numerario precisam de uma caixa aberta');
       }
@@ -168,7 +179,8 @@ export class FolioService {
         reservationId: input.reservationId ?? null,
         invoiceId: input.invoiceId ?? null,
         amount,
-        method: input.method,
+        method: type.method,
+        paymentTypeId: type.paymentTypeId,
         cashSessionId,
         reference: input.reference,
         notes: input.notes,

@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
-import { api, errorMessage, openInvoicePdf, openPdf } from '@/services/api';
+import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
+import { api, errorMessage } from '@/services/api';
+import { printDocument, type PrintRequest } from '@/services/print';
 import { useHotelsStore } from '@/stores/hotels';
-import type { CashRegister, Folio, PaymentMethod, Reservation } from '@/types';
+import { usePaymentTypesStore } from '@/stores/paymentTypes';
+import type { CashRegister, Folio, Reservation } from '@/types';
 import { CHARGE_TYPE_LABELS, formatDateTime, formatMoney, PAYMENT_METHOD_LABELS } from '@/utils/format';
 
 const hotels = useHotelsStore();
@@ -13,7 +16,8 @@ const folio = ref<Folio | null>(null);
 const error = ref('');
 const notice = ref('');
 const busy = ref(false);
-const pay = reactive({ amount: 0, method: 'CARD' as PaymentMethod, cashSessionId: 0, reference: '', invoice: true, customerTaxId: '' });
+const pay = reactive({ amount: 0, paymentTypeId: 0, cashSessionId: 0, reference: '', invoice: true, customerTaxId: '' });
+const paymentTypes = usePaymentTypesStore();
 
 const money = (value: string | number) => formatMoney(value, hotels.currency);
 const selected = computed(() => inHouse.value.find((reservation) => reservation.id === selectedId.value) ?? null);
@@ -48,7 +52,6 @@ async function loadFolio() {
     folio.value = (await api.get<Folio>(`/reservations/${selectedId.value}/folio`)).data;
     Object.assign(pay, {
       amount: Math.max(Number(folio.value.balance), 0),
-      cashSessionId: openSessions.value[0]?.id ?? 0,
       reference: '',
       invoice: uninvoiced.value.length > 0,
       customerTaxId: '',
@@ -76,12 +79,12 @@ async function receive() {
     }
     const { data: payment } = await api.post<{ id: number }>(`/reservations/${selectedId.value}/payments`, {
       amount: pay.amount,
-      method: pay.method,
-      cashSessionId: pay.method === 'CASH' ? pay.cashSessionId || undefined : undefined,
+      paymentTypeId: pay.paymentTypeId,
+      cashSessionId: pay.cashSessionId || undefined,
       reference: pay.reference || undefined,
     });
-    if (invoiceId) await openInvoicePdf(invoiceId, 'invoices', 'ticket');
-    await openPdf(`/payments/${payment.id}/slip`);
+    if (invoiceId) await printDocument({ document: 'INVOICE', invoiceId });
+    await printDocument({ document: 'PAYMENT', paymentId: payment.id });
     notice.value = invoiceId ? 'Pagamento registado e fatura-recibo emitida' : 'Pagamento registado';
     await loadFolio();
   } catch (e) {
@@ -91,8 +94,10 @@ async function receive() {
   }
 }
 
-function print(path: string, params?: Record<string, unknown>) {
-  openPdf(path, params).catch((e) => (error.value = errorMessage(e)));
+function print(request: PrintRequest) {
+  printDocument(request)
+    .then((message) => (notice.value = message))
+    .catch((e) => (error.value = errorMessage(e)));
 }
 
 onMounted(async () => {
@@ -124,7 +129,7 @@ defineExpose({ load });
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h2 class="font-semibold">Quarto {{ selected.room.number }} · {{ selected.guest.firstName }} {{ selected.guest.lastName }}</h2>
         <div class="flex gap-2">
-          <button class="btn-secondary" type="button" @click="print(`/reservations/${selected.id}/statement`)">Imprimir conta</button>
+          <button class="btn-secondary" type="button" @click="print({ document: 'STATEMENT', reservationId: selected.id })">Imprimir conta</button>
           <RouterLink :to="{ name: 'reservation', params: { id: selected.id } }" class="btn-secondary">Abrir reserva</RouterLink>
         </div>
       </div>
@@ -141,7 +146,7 @@ defineExpose({ load });
                 <span class="text-xs text-slate-500">· {{ CHARGE_TYPE_LABELS[charge.type] }}</span>
               </td>
               <td class="py-1.5 text-xs">
-                <button v-if="charge.invoice" class="text-indigo-600 hover:underline" type="button" @click="openInvoicePdf(charge.invoice.id, 'invoices', 'ticket')">
+                <button v-if="charge.invoice" class="text-indigo-600 hover:underline" type="button" @click="print({ document: 'INVOICE', invoiceId: charge.invoice.id })">
                   {{ charge.invoice.fullNumber }}
                 </button>
                 <span v-else class="text-amber-700">por faturar</span>
@@ -149,9 +154,9 @@ defineExpose({ load });
               <td class="py-1.5 text-right">{{ money(charge.total) }}</td>
             </tr>
             <tr v-for="payment in folio.payments" :key="`p${payment.id}`" class="border-b border-slate-100 text-emerald-700">
-              <td class="py-1.5">Pagamento · {{ PAYMENT_METHOD_LABELS[payment.method] }} <span class="text-xs text-slate-500">{{ formatDateTime(payment.createdAt) }}</span></td>
+              <td class="py-1.5">Pagamento · {{ paymentTypes.byId(payment.paymentTypeId)?.name ?? PAYMENT_METHOD_LABELS[payment.method] }} <span class="text-xs text-slate-500">{{ formatDateTime(payment.createdAt) }}</span></td>
               <td class="py-1.5 text-xs">
-                <button class="text-indigo-600 hover:underline" type="button" @click="print(`/payments/${payment.id}/slip`)">comprovativo</button>
+                <button class="text-indigo-600 hover:underline" type="button" @click="print({ document: 'PAYMENT', paymentId: payment.id })">comprovativo</button>
               </td>
               <td class="py-1.5 text-right">-{{ money(payment.amount) }}</td>
             </tr>
@@ -165,20 +170,13 @@ defineExpose({ load });
       <form class="grid gap-3 rounded-md bg-slate-50 p-3 sm:grid-cols-2" @submit.prevent="receive">
         <h3 class="text-sm font-semibold sm:col-span-2">Receber</h3>
         <input v-model.number="pay.amount" class="input" type="number" min="0.01" step="0.01" aria-label="Valor" required />
-        <select v-model="pay.method" class="input">
-          <option v-for="(label, method) in PAYMENT_METHOD_LABELS" :key="method" :value="method">{{ label }}</option>
-        </select>
-        <select v-if="pay.method === 'CASH'" v-model.number="pay.cashSessionId" class="input" required>
-          <option v-if="!openSessions.length" :value="0" disabled>Nenhuma caixa aberta</option>
-          <option v-for="session in openSessions" :key="session.id" :value="session.id">Caixa {{ session.label }}</option>
-        </select>
-        <input v-model="pay.reference" class="input" placeholder="Referencia (opcional)" />
+        <PaymentTypeSelect v-model:type-id="pay.paymentTypeId" v-model:cash-session-id="pay.cashSessionId" v-model:reference="pay.reference" :registers="registers" />
         <label class="flex items-center gap-2 text-sm sm:col-span-2" :class="uninvoiced.length ? '' : 'text-slate-400'">
           <input v-model="pay.invoice" type="checkbox" :disabled="!uninvoiced.length" />
           Emitir fatura-recibo dos {{ uninvoiced.length }} lancamentos por faturar ({{ money(uninvoicedTotal) }})
         </label>
         <input v-if="pay.invoice && uninvoiced.length" v-model="pay.customerTaxId" class="input" placeholder="NIF do cliente (opcional)" />
-        <button class="btn sm:col-start-2" type="submit" :disabled="busy || (pay.method === 'CASH' && !pay.cashSessionId)">
+        <button class="btn sm:col-start-2" type="submit" :disabled="busy || !pay.paymentTypeId">
           Receber {{ money(pay.amount || 0) }}
         </button>
       </form>

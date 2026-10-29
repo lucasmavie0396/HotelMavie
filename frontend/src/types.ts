@@ -30,6 +30,7 @@ export interface Hotel {
   city: string | null;
   postalCode: string | null;
   country: string;
+  ticketFooter: string | null;
 }
 
 export interface Room {
@@ -135,6 +136,7 @@ export interface Payment {
   id: number;
   amount: string;
   method: PaymentMethod;
+  paymentTypeId?: number | null;
   reference: string | null;
   createdAt: string;
   reservation?: { id: number; code: string } | null;
@@ -199,6 +201,7 @@ export interface ProductCategory {
   name: string;
   outlet: Outlet | null;
   prepStation: PrepStation;
+  printerId: number | null;
   sortOrder: number;
 }
 
@@ -321,6 +324,7 @@ export interface ReceiptDoc {
   customerTaxId: string | null;
   amount: string;
   method: PaymentMethod;
+  paymentTypeId?: number | null;
   reference: string | null;
   cancelReason: string | null;
   lines: { id: number; amount: string; invoice: { id: number; fullNumber: string } }[];
@@ -383,4 +387,30 @@ export interface MonthlyRow {
   differenceMinutes: number;
   openEntries: number;
   editedEntries: number;
+}
+
+export type PrinterPurpose = 'RECEIPT' | 'KITCHEN' | 'BAR' | 'OTHER';
+export type PaperWidth = 'MM58' | 'MM80' | 'A4';
+
+export interface Printer {
+  id: number;
+  name: string;
+  purpose: PrinterPurpose;
+  connection: 'BROWSER' | 'NETWORK';
+  host: string | null;
+  port: number;
+  paperWidth: PaperWidth;
+  copies: number;
+  isDefault: boolean;
+  active: boolean;
+}
+
+export interface PaymentType {
+  id: number;
+  name: string;
+  kind: PaymentMethod;
+  mechanism: string | null;
+  requiresReference: boolean;
+  active: boolean;
+  sortOrder: number;
 }

@@ -23,6 +23,10 @@ export class CreateCategoryDto {
 
   @IsOptional()
   @IsInt()
+  printerId?: number | null;
+
+  @IsOptional()
+  @IsInt()
   sortOrder?: number;
 }
 

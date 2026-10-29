@@ -38,7 +38,10 @@ function truncate(value: string | null | undefined, max: number, fallback = 'Des
 }
 
 type FullInvoice = Invoice & { lines: InvoiceLine[]; creditOf: { fullNumber: string } | null };
-type FullReceipt = Receipt & { lines: { amount: Prisma.Decimal; invoice: { fullNumber: string; issuedAt: Date } }[] };
+type FullReceipt = Receipt & {
+  lines: { amount: Prisma.Decimal; invoice: { fullNumber: string; issuedAt: Date } }[];
+  paymentType: { mechanism: string | null } | null;
+};
 
 @Injectable()
 export class SaftService {
@@ -71,7 +74,10 @@ export class SaftService {
 
     const receipts: FullReceipt[] = await this.prisma.receipt.findMany({
       where: { hotelId, issuedAt: { gte: from, lt: to } },
-      include: { lines: { include: { invoice: { select: { fullNumber: true, issuedAt: true } } }, orderBy: { id: 'asc' } } },
+      include: {
+        lines: { include: { invoice: { select: { fullNumber: true, issuedAt: true } } }, orderBy: { id: 'asc' } },
+        paymentType: { select: { mechanism: true } },
+      },
       orderBy: [{ issuedAt: 'asc' }, { number: 'asc' }],
     });
 
@@ -196,7 +202,7 @@ export class SaftService {
       el('SourcePayment', 'P'),
       '</DocumentStatus>',
       '<PaymentMethod>',
-      el('PaymentMechanism', PAYMENT_MECHANISM[receipt.method]),
+      el('PaymentMechanism', receipt.paymentType?.mechanism ?? PAYMENT_MECHANISM[receipt.method]),
       el('PaymentAmount', amount(receipt.amount)),
       el('PaymentDate', issued.date),
       '</PaymentMethod>',

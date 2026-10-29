@@ -4,7 +4,7 @@ import RecipeEditor from '@/components/RecipeEditor.vue';
 import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
-import type { Outlet, PrepStation, Product, ProductCategory, TaxRate } from '@/types';
+import type { Outlet, PrepStation, Printer, Product, ProductCategory, TaxRate } from '@/types';
 import { formatMoney } from '@/utils/format';
 
 const auth = useAuthStore();
@@ -29,7 +29,9 @@ function emptyProduct() {
 }
 
 const form = reactive(emptyProduct());
-const category = reactive({ name: '', outlet: '' as Outlet | '', prepStation: 'KITCHEN' as PrepStation });
+const category = reactive({ name: '', outlet: '' as Outlet | '', prepStation: 'KITCHEN' as PrepStation, printerId: 0 });
+const printers = ref<Printer[]>([]);
+const printerName = (id: number | null) => printers.value.find((printer) => printer.id === id)?.name;
 const STATION_LABELS: Record<PrepStation, string> = { KITCHEN: 'Cozinha', BAR: 'Bar', NONE: 'Sem preparacao' };
 
 async function load() {
@@ -43,6 +45,7 @@ async function load() {
     products.value = p.data;
     categories.value = c.data;
     taxRates.value = t.data.filter((rate) => rate.active);
+    printers.value = (await api.get<Printer[]>('/printers', { params })).data;
   } catch (e) {
     error.value = errorMessage(e);
   }
@@ -101,8 +104,9 @@ const addCategory = () =>
       name: category.name,
       outlet: category.outlet || null,
       prepStation: category.prepStation,
+      printerId: category.printerId || null,
     });
-    Object.assign(category, { name: '', outlet: '', prepStation: 'KITCHEN' });
+    Object.assign(category, { name: '', outlet: '', prepStation: 'KITCHEN', printerId: 0 });
   });
 
 onMounted(load);
@@ -161,6 +165,10 @@ onMounted(load);
           <select v-model="category.prepStation" class="input" aria-label="Onde se prepara">
             <option v-for="(label, value) in STATION_LABELS" :key="value" :value="value">Prepara: {{ label }}</option>
           </select>
+          <select v-model.number="category.printerId" class="input col-span-2" aria-label="Impressora">
+            <option :value="0">Impressora principal do posto</option>
+            <option v-for="printer in printers.filter((p) => p.active)" :key="printer.id" :value="printer.id">Imprimir em: {{ printer.name }}</option>
+          </select>
           <button class="btn col-span-2" type="submit" :disabled="busy">Adicionar categoria</button>
         </form>
         <ul class="divide-y divide-slate-100 text-sm">
@@ -168,6 +176,7 @@ onMounted(load);
             {{ item.name }}
             <span class="text-slate-500">
               {{ item.outlet === 'BAR' ? 'Bar' : item.outlet === 'RESTAURANT' ? 'Restaurante' : 'Ambos' }} · {{ STATION_LABELS[item.prepStation] }}
+              <template v-if="item.printerId"> · {{ printerName(item.printerId) }}</template>
             </span>
           </li>
         </ul>

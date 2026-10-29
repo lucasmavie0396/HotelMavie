@@ -7,15 +7,14 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  NotFoundException,
   Param,
   ParseIntPipe,
   Post,
   Query,
   Res,
 } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
-import { IsEmail, IsOptional } from 'class-validator';
+import { PaperWidth, UserRole } from '@prisma/client';
+import { IsEmail, IsEnum, IsIn, IsOptional } from 'class-validator';
 import { MailService } from '../mail/mail.service';
 import { invoiceEmail } from '../mail/templates';
 import type { Response } from 'express';
@@ -35,18 +34,20 @@ import {
 import { FolioService } from './folio.service';
 import { InvoicePdfService } from './invoice-pdf.service';
 import { InvoicesService } from './invoices.service';
-import { Ticket, TicketPdfService } from './ticket-pdf.service';
-import { canAccessHotel } from '../common/hotel-scope';
+import { DocumentsService } from './documents.service';
+import { TicketPdfService } from './ticket-pdf.service';
 import { CancelReceiptDto, CreateReceiptDto, OpenInvoicesQueryDto, ReceiptsService } from './receipts.service';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 
-const PAYMENT_LABELS: Record<string, string> = {
-  CASH: 'Numerario',
-  CARD: 'Cartao',
-  TRANSFER: 'Transferencia',
-  MOBILE: 'Pagamento movel',
-  OTHER: 'Outro',
-};
+export class PaperQueryDto {
+  @IsOptional()
+  @IsEnum(PaperWidth)
+  paper?: PaperWidth;
+
+  @IsOptional()
+  @IsIn(['ticket'])
+  format?: string;
+}
 
 class EmailInvoiceDto {
   @IsOptional()
@@ -65,6 +66,7 @@ export class BillingController {
     private readonly mail: MailService,
     private readonly receipts: ReceiptsService,
     private readonly tickets: TicketPdfService,
+    private readonly documents: DocumentsService,
   ) {}
 
   private sendPdf(res: Response, buffer: Buffer, name: string) {
@@ -111,86 +113,26 @@ export class BillingController {
   }
 
   @Get('reservations/:id/statement')
-  async statement(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload, @Res() res: Response) {
-    const folio = await this.folio.getFolio(id, user);
-    const reservation = await this.prisma.reservation.findUniqueOrThrow({
-      where: { id },
-      include: { guest: true, room: true, hotel: true },
-    });
-    const ticket = new Ticket(reservation.hotel.currency).header(reservation.hotel);
-    ticket.text(`CONTA DO QUARTO ${reservation.room.number}`, { bold: true, size: 11, align: 'center' });
-    ticket.text(`${reservation.guest.firstName} ${reservation.guest.lastName} · ${reservation.code}`, { align: 'center', size: 8 });
-    ticket.text(Ticket.when(new Date()), { align: 'center', size: 8 });
-    ticket.rule();
-    for (const charge of folio.charges) {
-      ticket.cols(`${Number(charge.quantity)} x ${charge.description}`, ticket.money(charge.total), { size: 8 });
-      if (charge.invoice) {
-        ticket.text(`  ${charge.onCustomerAccount ? 'na conta corrente' : 'faturado'}: ${charge.invoice.fullNumber}`, { size: 7 });
-      }
-    }
-    if (folio.payments.length) {
-      ticket.rule();
-      for (const payment of folio.payments) {
-        ticket.cols(`Pagamento ${Ticket.when(payment.createdAt)}`, `-${ticket.money(payment.amount)}`, { size: 8 });
-      }
-    }
-    ticket.rule();
-    if (Number(folio.customerAccountTotal) > 0) {
-      ticket.cols('Faturado a pagar (conta corrente)', ticket.money(folio.customerAccountTotal), { size: 8 });
-    }
-    ticket.cols('SALDO A PAGAR', ticket.money(folio.balance), { bold: true, size: 12 });
-    ticket.space();
-    ticket.text('Documento de consulta. Nao serve de fatura.', { size: 7, align: 'center' });
-    this.sendPdf(res, await this.tickets.render(ticket), `conta-${reservation.code}`);
+  async statement(@Param('id', ParseIntPipe) id: number, @Query() query: PaperQueryDto, @CurrentUser() user: JwtPayload, @Res() res: Response) {
+    const { ticket } = await this.documents.statement(id, user);
+    this.sendPdf(res, await this.tickets.render(ticket, query.paper), `conta-${id}`);
   }
 
   @Get('payments/:id/slip')
-  async paymentSlip(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload, @Res() res: Response) {
-    const payment = await this.prisma.payment.findUnique({
-      where: { id },
-      include: {
-        hotel: true,
-        reservation: { select: { code: true, room: { select: { number: true } }, guest: { select: { firstName: true, lastName: true } } } },
-        invoice: { select: { fullNumber: true } },
-        receipt: { select: { fullNumber: true } },
-        createdBy: { select: { name: true } },
-      },
-    });
-    if (!payment || !canAccessHotel(user, payment.hotelId)) {
-      throw new NotFoundException('Pagamento nao encontrado');
-    }
-    const ticket = new Ticket(payment.hotel.currency).header(payment.hotel);
-    ticket.text(Number(payment.amount) < 0 ? 'COMPROVATIVO DE DEVOLUCAO' : 'COMPROVATIVO DE PAGAMENTO', { bold: true, align: 'center' });
-    ticket.text(`N.o ${payment.id} · ${Ticket.when(payment.createdAt)}`, { align: 'center', size: 8 });
-    ticket.rule();
-    if (payment.reservation) {
-      ticket.text(`Quarto ${payment.reservation.room.number} · ${payment.reservation.code}`, { size: 9 });
-      ticket.text(`${payment.reservation.guest.firstName} ${payment.reservation.guest.lastName}`, { size: 9 });
-    }
-    ticket.cols('Meio', PAYMENT_LABELS[payment.method], { size: 9 });
-    if (payment.reference) ticket.cols('Referencia', payment.reference, { size: 9 });
-    if (payment.createdBy) ticket.cols('Atendido por', payment.createdBy.name, { size: 9 });
-    ticket.rule();
-    ticket.cols('VALOR', ticket.money(payment.amount), { bold: true, size: 12 });
-    ticket.space();
-    const document = payment.invoice?.fullNumber ?? payment.receipt?.fullNumber;
-    ticket.text(document ? `Documento fiscal: ${document}` : 'Comprovativo interno. Nao serve de fatura nem de recibo.', { size: 7, align: 'center' });
-    this.sendPdf(res, await this.tickets.render(ticket), `pagamento-${payment.id}`);
+  async paymentSlip(@Param('id', ParseIntPipe) id: number, @Query() query: PaperQueryDto, @CurrentUser() user: JwtPayload, @Res() res: Response) {
+    const { ticket } = await this.documents.payment(id, user);
+    this.sendPdf(res, await this.tickets.render(ticket, query.paper), `pagamento-${id}`);
   }
 
   @Get('invoices/:id/pdf')
-  async invoicePdf(
-    @Param('id', ParseIntPipe) id: number,
-    @Query('format') format: string | undefined,
-    @CurrentUser() user: JwtPayload,
-    @Res() res: Response,
-  ) {
+  async invoicePdf(@Param('id', ParseIntPipe) id: number, @Query() query: PaperQueryDto, @CurrentUser() user: JwtPayload, @Res() res: Response) {
     const invoice = await this.invoices.findOne(id, user);
+    if (query.format === 'ticket' || query.paper === PaperWidth.MM58 || query.paper === PaperWidth.MM80) {
+      const { ticket } = await this.documents.invoice(id, user);
+      return this.sendPdf(res, await this.tickets.render(ticket, query.paper ?? PaperWidth.MM80), invoice.fullNumber);
+    }
     const hotel = await this.prisma.hotel.findUniqueOrThrow({ where: { id: invoice.hotelId } });
-    const buffer = format === 'ticket' ? await this.tickets.invoice(invoice, hotel) : await this.pdf.render(invoice, hotel);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${invoice.fullNumber.replace('/', '-')}.pdf"`);
-    res.send(buffer);
+    this.sendPdf(res, await this.pdf.render(invoice, hotel), invoice.fullNumber);
   }
 
   @Post('invoices/:id/email')
@@ -254,12 +196,14 @@ export class BillingController {
   }
 
   @Get('receipts/:id/pdf')
-  async receiptPdf(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload, @Res() res: Response) {
+  async receiptPdf(@Param('id', ParseIntPipe) id: number, @Query() query: PaperQueryDto, @CurrentUser() user: JwtPayload, @Res() res: Response) {
     const receipt = await this.receipts.findOne(id, user);
+    if (query.format === 'ticket' || query.paper === PaperWidth.MM58 || query.paper === PaperWidth.MM80) {
+      const { ticket } = await this.documents.receipt(id, user);
+      return this.sendPdf(res, await this.tickets.render(ticket, query.paper ?? PaperWidth.MM80), receipt.fullNumber);
+    }
     const hotel = await this.prisma.hotel.findUniqueOrThrow({ where: { id: receipt.hotelId } });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${receipt.fullNumber.replace(/[^\w-]+/g, '-')}.pdf"`);
-    res.send(await this.pdf.renderReceipt(receipt, hotel));
+    this.sendPdf(res, await this.pdf.renderReceipt(receipt, hotel), receipt.fullNumber);
   }
 
   @Get('cash-registers')

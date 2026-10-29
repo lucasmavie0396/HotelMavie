@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
 import { api, errorMessage, openInvoicePdf } from '@/services/api';
+import { printDocument } from '@/services/print';
+import { usePaymentTypesStore } from '@/stores/paymentTypes';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
-import type { CashRegister, CustomerAccount, OpenInvoice, PaymentMethod, ReceiptDoc } from '@/types';
+import type { CashRegister, CustomerAccount, OpenInvoice, ReceiptDoc } from '@/types';
 import { formatDate, formatDateTime, formatMoney, PAYMENT_METHOD_LABELS } from '@/utils/format';
 
 const auth = useAuthStore();
@@ -14,7 +17,8 @@ const registers = ref<CashRegister[]>([]);
 const selected = ref<CustomerAccount | null>(null);
 const openInvoices = ref<OpenInvoice[]>([]);
 const amounts = reactive<Record<number, number>>({});
-const payment = reactive({ method: 'TRANSFER' as PaymentMethod, cashSessionId: 0, reference: '' });
+const payment = reactive({ paymentTypeId: 0, cashSessionId: 0, reference: '' });
+const paymentTypes = usePaymentTypesStore();
 const error = ref('');
 const busy = ref(false);
 
@@ -53,7 +57,7 @@ async function select(account: CustomerAccount) {
     openInvoices.value = (await api.get<OpenInvoice[]>('/invoices-open', { params: { hotelId: hotels.selectedId, customer: account.customerKey } })).data;
     for (const key of Object.keys(amounts)) delete amounts[Number(key)];
     for (const invoice of openInvoices.value) amounts[invoice.id] = Number(invoice.open);
-    payment.cashSessionId = openSessions.value[0]?.id ?? 0;
+    payment.reference = '';
   } catch (e) {
     error.value = errorMessage(e);
   }
@@ -68,15 +72,15 @@ async function issue() {
       .map((invoice) => ({ invoiceId: invoice.id, amount: Number(amounts[invoice.id]) }));
     const { data } = await api.post<ReceiptDoc>('/receipts', {
       hotelId: hotels.selectedId,
-      method: payment.method,
-      cashSessionId: payment.method === 'CASH' ? payment.cashSessionId || undefined : undefined,
+      paymentTypeId: payment.paymentTypeId,
+      cashSessionId: payment.cashSessionId || undefined,
       reference: payment.reference || undefined,
       lines,
     });
     selected.value = null;
     payment.reference = '';
     await load();
-    await openInvoicePdf(data.id, 'receipts');
+    await printDocument({ document: 'RECEIPT', receiptId: data.id });
   } catch (e) {
     error.value = errorMessage(e);
   } finally {
@@ -99,6 +103,10 @@ async function cancel(receipt: ReceiptDoc) {
 }
 
 function pdf(id: number) {
+  printDocument({ document: 'RECEIPT', receiptId: id }).catch((e) => (error.value = errorMessage(e)));
+}
+
+function pdfA4(id: number) {
   openInvoicePdf(id, 'receipts').catch((e) => (error.value = errorMessage(e)));
 }
 
@@ -173,15 +181,13 @@ onMounted(load);
         </tbody>
       </table>
       <div class="grid gap-3 sm:grid-cols-4">
-        <select v-model="payment.method" class="input">
-          <option v-for="(label, method) in PAYMENT_METHOD_LABELS" :key="method" :value="method">{{ label }}</option>
-        </select>
-        <select v-if="payment.method === 'CASH'" v-model.number="payment.cashSessionId" class="input" required>
-          <option v-if="!openSessions.length" :value="0" disabled>Nenhuma caixa aberta</option>
-          <option v-for="session in openSessions" :key="session.id" :value="session.id">Caixa {{ session.label }}</option>
-        </select>
-        <input v-model="payment.reference" class="input" placeholder="Referencia (n.o da transferencia...)" />
-        <button class="btn" type="submit" :disabled="busy || total <= 0">Emitir recibo de {{ money(total) }}</button>
+        <PaymentTypeSelect
+          v-model:type-id="payment.paymentTypeId"
+          v-model:cash-session-id="payment.cashSessionId"
+          v-model:reference="payment.reference"
+          :registers="registers"
+        />
+        <button class="btn" type="submit" :disabled="busy || total <= 0 || !payment.paymentTypeId">Emitir recibo de {{ money(total) }}</button>
       </div>
     </form>
 
@@ -207,7 +213,7 @@ onMounted(load);
             <td class="px-4 py-2">{{ formatDateTime(item.issuedAt) }}</td>
             <td class="px-4 py-2">{{ item.customerName }}</td>
             <td class="px-4 py-2">{{ item.lines.map((line) => line.invoice.fullNumber).join(', ') }}</td>
-            <td class="px-4 py-2">{{ PAYMENT_METHOD_LABELS[item.method] }}</td>
+            <td class="px-4 py-2">{{ paymentTypes.byId(item.paymentTypeId)?.name ?? PAYMENT_METHOD_LABELS[item.method] }}</td>
             <td class="px-4 py-2 text-right">{{ money(item.amount) }}</td>
             <td class="px-4 py-2 text-right">
               <button

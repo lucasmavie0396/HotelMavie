@@ -28,8 +28,13 @@ export class CreatePaymentDto {
   @NotEquals(0)
   amount: number;
 
+  @IsOptional()
   @IsEnum(PaymentMethod)
-  method: PaymentMethod;
+  method?: PaymentMethod;
+
+  @IsOptional()
+  @IsInt()
+  paymentTypeId?: number;
 
   @IsOptional()
   @IsInt()

@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import RoomAccountPanel from '@/components/RoomAccountPanel.vue';
-import { api, errorMessage, openInvoicePdf, openPdf } from '@/services/api';
+import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
+import { api, errorMessage } from '@/services/api';
+import { printDocument } from '@/services/print';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
-import type { CashRegister, Order, OrderItem, Outlet, PaymentMethod, Product, Reservation } from '@/types';
-import { formatMoney, PAYMENT_METHOD_LABELS } from '@/utils/format';
+import type { CashRegister, Order, OrderItem, Outlet, Product, Reservation } from '@/types';
+import { formatMoney } from '@/utils/format';
 
 type Mode = Outlet | 'ROOMS';
 
@@ -34,7 +36,7 @@ const close = reactive({
   mode: 'PAY' as 'PAY' | 'ROOM',
   reservationId: 0,
   customerTaxId: '',
-  payments: [{ method: 'CARD' as PaymentMethod, amount: 0, cashSessionId: 0 }],
+  payments: [{ paymentTypeId: 0, amount: 0, cashSessionId: 0, reference: '' }],
 });
 
 const isManager = computed(() => auth.user?.role !== 'RECEPTION');
@@ -138,25 +140,29 @@ const voidItem = (item: OrderItem) => {
   if (!reason) return;
   run(async () => {
     const { data } = await api.post<Order>(`/orders/${current.value!.id}/items/${item.id}/void`, { reason });
-    await openPdf(`/orders/${data.id}/items/${item.id}/void-ticket`);
+    notice.value = await printDocument({ document: 'VOID', orderId: data.id, itemId: item.id });
     return data;
-  }, 'Linha anulada; talao de anulacao enviado para impressao');
+  }, 'Linha anulada; talao de anulacao enviado');
 };
 
 const sendOrder = () =>
   run(async () => {
     const order = current.value!;
-    const { data } = await api.post<{ sentAt: string; stations: ('KITCHEN' | 'BAR')[] }>(`/orders/${order.id}/send`);
-    for (const target of data.stations) {
-      await openPdf(`/orders/${order.id}/ticket`, { station: target, sentAt: data.sentAt });
+    const { data } = await api.post<{ sentAt: string; targets: { station: 'KITCHEN' | 'BAR' | 'NONE'; printerId: number | null }[] }>(`/orders/${order.id}/send`);
+    for (const target of data.targets) {
+      await printDocument({ document: 'ORDER', orderId: order.id, station: target.station, printerId: target.printerId, sentAt: data.sentAt });
     }
     return (await api.get<Order>(`/orders/${order.id}`)).data;
   }, 'Pedido enviado');
 
-const reprint = (target: 'KITCHEN' | 'BAR') =>
-  openPdf(`/orders/${current.value!.id}/ticket`, { station: target }).catch((e) => (error.value = errorMessage(e)));
+const print = (request: Parameters<typeof printDocument>[0]) =>
+  printDocument(request)
+    .then((message) => (notice.value = message))
+    .catch((e) => (error.value = errorMessage(e)));
 
-const prebill = () => openPdf(`/orders/${current.value!.id}/prebill`).catch((e) => (error.value = errorMessage(e)));
+const reprint = (target: 'KITCHEN' | 'BAR') => print({ document: 'ORDER', orderId: current.value!.id, station: target });
+
+const prebill = () => print({ document: 'PREBILL', orderId: current.value!.id });
 
 const cancelOrder = () =>
   run(async () => {
@@ -170,13 +176,13 @@ function startClose() {
     mode: 'PAY',
     reservationId: inHouse.value[0]?.id ?? 0,
     customerTaxId: '',
-    payments: [{ method: 'CARD', amount: Number(current.value!.total), cashSessionId: openSessions.value[0]?.id ?? 0 }],
+    payments: [{ paymentTypeId: 0, amount: Number(current.value!.total), cashSessionId: 0, reference: '' }],
   });
   closing.value = true;
 }
 
 function addPaymentLine() {
-  close.payments.push({ method: 'CASH', amount: Math.max(Number(current.value!.total) - paidTotal.value, 0), cashSessionId: openSessions.value[0]?.id ?? 0 });
+  close.payments.push({ paymentTypeId: 0, amount: Math.max(Number(current.value!.total) - paidTotal.value, 0), cashSessionId: 0, reference: '' });
 }
 
 const confirmClose = () =>
@@ -187,14 +193,14 @@ const confirmClose = () =>
       customerTaxId: close.customerTaxId || undefined,
       payments:
         close.mode === 'PAY'
-          ? close.payments.map((p) => ({ method: p.method, amount: p.amount, cashSessionId: p.method === 'CASH' ? p.cashSessionId || undefined : undefined }))
+          ? close.payments.map((p) => ({ paymentTypeId: p.paymentTypeId, amount: p.amount, cashSessionId: p.cashSessionId || undefined, reference: p.reference || undefined }))
           : undefined,
     });
     closing.value = false;
     current.value = null;
     const invoice = data.charges.find((charge) => charge.invoice)?.invoice;
     if (invoice) {
-      await openInvoicePdf(invoice.id, 'invoices', 'ticket');
+      notice.value = await printDocument({ document: 'INVOICE', invoiceId: invoice.id });
     }
   }, close.mode === 'ROOM' ? 'Consumo lancado na conta do quarto' : 'Conta fechada');
 
@@ -336,15 +342,14 @@ onMounted(load);
                 </option>
               </select>
               <template v-else>
-                <div v-for="(payment, index) in close.payments" :key="index" class="grid grid-cols-2 gap-2">
-                  <select v-model="payment.method" class="input">
-                    <option v-for="(label, method) in PAYMENT_METHOD_LABELS" :key="method" :value="method">{{ label }}</option>
-                  </select>
-                  <input v-model.number="payment.amount" class="input" type="number" min="0.01" step="0.01" />
-                  <select v-if="payment.method === 'CASH'" v-model.number="payment.cashSessionId" class="input col-span-2">
-                    <option v-if="!openSessions.length" :value="0" disabled>Nenhuma caixa aberta</option>
-                    <option v-for="session in openSessions" :key="session.id" :value="session.id">Caixa {{ session.label }}</option>
-                  </select>
+                <div v-for="(payment, index) in close.payments" :key="index" class="grid grid-cols-2 gap-2 rounded border border-slate-200 bg-white p-2">
+                  <input v-model.number="payment.amount" class="input col-span-2" type="number" min="0.01" step="0.01" aria-label="Valor" />
+                  <PaymentTypeSelect
+                    v-model:type-id="payment.paymentTypeId"
+                    v-model:cash-session-id="payment.cashSessionId"
+                    v-model:reference="payment.reference"
+                    :registers="registers"
+                  />
                 </div>
                 <button class="text-xs text-indigo-600 hover:underline" type="button" @click="addPaymentLine">+ dividir pagamento</button>
                 <p :class="Math.abs(paidTotal - Number(current.total)) < 0.005 ? 'text-emerald-700' : 'text-rose-600'">

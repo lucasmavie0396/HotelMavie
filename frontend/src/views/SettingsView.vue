@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import PaymentTypesTab from '@/components/settings/PaymentTypesTab.vue';
+import PrintersTab from '@/components/settings/PrintersTab.vue';
 import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
@@ -13,7 +16,27 @@ const error = ref('');
 const saved = ref('');
 const busy = ref(false);
 
-const fiscal = reactive({ legalName: '', taxId: '', invoiceFooter: '', accommodationTaxRateId: 0, city: '', postalCode: '', country: 'PT' });
+type Tab = 'fiscal' | 'taxes' | 'payments' | 'printers' | 'at' | 'emails';
+const TABS: { value: Tab; label: string }[] = [
+  { value: 'fiscal', label: 'Dados do hotel' },
+  { value: 'taxes', label: 'IVA' },
+  { value: 'payments', label: 'Pagamentos' },
+  { value: 'printers', label: 'Impressoras' },
+  { value: 'at', label: 'Autoridade Tributaria' },
+  { value: 'emails', label: 'Emails' },
+];
+const route = useRoute();
+const router = useRouter();
+const tab = ref<Tab>(TABS.some((item) => item.value === route.query.tab) ? (route.query.tab as Tab) : 'fiscal');
+
+function selectTab(value: Tab) {
+  tab.value = value;
+  error.value = '';
+  saved.value = '';
+  router.replace({ query: { ...route.query, tab: value } });
+}
+
+const fiscal = reactive({ legalName: '', taxId: '', invoiceFooter: '', ticketFooter: '', accommodationTaxRateId: 0, city: '', postalCode: '', country: 'PT' });
 const series = ref<{ id: number; type: InvoiceType; code: string; nextNumber: number; atValidationCode: string | null }[]>([]);
 const seriesCodes = reactive<Record<number, string>>({});
 const atStatus = ref<{ certified: boolean; certificateNumber: string } | null>(null);
@@ -42,6 +65,7 @@ async function load() {
       legalName: hotel?.legalName ?? '',
       taxId: hotel?.taxId ?? '',
       invoiceFooter: hotel?.invoiceFooter ?? '',
+      ticketFooter: hotel?.ticketFooter ?? '',
       accommodationTaxRateId: hotel?.accommodationTaxRateId ?? 0,
       city: hotel?.city ?? '',
       postalCode: hotel?.postalCode ?? '',
@@ -75,6 +99,7 @@ const saveFiscal = () =>
         legalName: fiscal.legalName || undefined,
         taxId: fiscal.taxId || undefined,
         invoiceFooter: fiscal.invoiceFooter || undefined,
+        ticketFooter: fiscal.ticketFooter || null,
         accommodationTaxRateId: fiscal.accommodationTaxRateId || null,
         city: fiscal.city || undefined,
         postalCode: fiscal.postalCode || undefined,
@@ -140,12 +165,28 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <h1 class="text-2xl font-semibold">Configuracao Â· {{ hotels.selected?.name }}</h1>
+    <h1 class="text-2xl font-semibold">Configuração · {{ hotels.selected?.name }}</h1>
+
+    <nav class="flex flex-wrap gap-1 border-b border-slate-200" aria-label="Separadores da configuracao">
+      <button
+        v-for="item in TABS"
+        :key="item.value"
+        type="button"
+        class="-mb-px rounded-t-md border px-4 py-2 text-sm"
+        :class="tab === item.value ? 'border-slate-200 border-b-white bg-white font-medium text-indigo-700' : 'border-transparent text-slate-600 hover:text-slate-900'"
+        @click="selectTab(item.value)"
+      >
+        {{ item.label }}
+      </button>
+    </nav>
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
     <p v-if="saved" class="text-sm text-emerald-700">{{ saved }}</p>
 
-    <form class="card grid gap-3 sm:grid-cols-2" @submit.prevent="saveFiscal">
+    <PaymentTypesTab v-if="tab === 'payments'" />
+    <PrintersTab v-if="tab === 'printers'" />
+
+    <form v-if="tab === 'fiscal'" class="card grid gap-3 sm:grid-cols-2" @submit.prevent="saveFiscal">
       <h2 class="font-semibold sm:col-span-2">Dados fiscais</h2>
       <input v-model="fiscal.legalName" class="input" placeholder="Denominacao social" />
       <input v-model="fiscal.taxId" class="input" placeholder="NIF do hotel" />
@@ -163,13 +204,14 @@ onMounted(load);
         <input v-model="fiscal.postalCode" class="input" placeholder="Codigo postal" />
         <input v-model="fiscal.country" class="input w-20" maxlength="2" placeholder="PT" aria-label="Pais" />
       </div>
-      <textarea v-model="fiscal.invoiceFooter" class="input sm:col-span-2" rows="2" placeholder="Rodape das faturas (IBAN, condicoes...)" />
+      <textarea v-model="fiscal.invoiceFooter" class="input sm:col-span-2" rows="2" placeholder="Rodape das faturas A4 (IBAN, condicoes...)" />
+      <input v-model="fiscal.ticketFooter" class="input sm:col-span-2" maxlength="255" placeholder="Rodape dos taloes (ex.: Obrigado pela visita! Wi-Fi: Mavie2026)" />
       <div class="flex justify-end sm:col-span-2">
         <button class="btn" type="submit" :disabled="busy">Guardar</button>
       </div>
     </form>
 
-    <div class="card space-y-4">
+    <div v-if="tab === 'taxes'" class="card space-y-4">
       <h2 class="font-semibold">Taxas de IVA</h2>
       <form class="grid gap-3 sm:grid-cols-6" @submit.prevent="addRate">
         <input v-model="rate.name" class="input sm:col-span-2" placeholder="Nome (ex.: Taxa normal)" required />
@@ -194,7 +236,7 @@ onMounted(load);
             <td class="py-2">{{ item.name }}</td>
             <td class="py-2">{{ Number(item.rate) }}%</td>
             <td class="py-2">{{ CATEGORY_LABELS[item.atCategory] }}</td>
-            <td class="py-2">{{ item.exemptionCode ? `${item.exemptionCode} Â· ${item.exemptionReason}` : '-' }}</td>
+            <td class="py-2">{{ item.exemptionCode ? `${item.exemptionCode} · ${item.exemptionReason}` : '-' }}</td>
             <td class="py-2">{{ item.active ? 'Ativa' : 'Inativa' }}</td>
             <td class="py-2 text-right">
               <button class="text-xs text-indigo-600 hover:underline" type="button" @click="toggleRate(item)">
@@ -206,7 +248,7 @@ onMounted(load);
       </table>
     </div>
 
-    <div class="card space-y-4">
+    <div v-if="tab === 'at'" class="card space-y-4">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h2 class="font-semibold">Autoridade Tributaria</h2>
         <span
@@ -260,7 +302,7 @@ onMounted(load);
       </form>
     </div>
 
-    <div v-if="emails" class="card space-y-3">
+    <div v-if="tab === 'emails' && emails" class="card space-y-3">
       <h2 class="font-semibold">Emails</h2>
       <p v-if="!emails.smtpConfigured" class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
         O servidor de email (SMTP) nao esta configurado: os emails ficam registados mas nao sao enviados. Configura SMTP_HOST,

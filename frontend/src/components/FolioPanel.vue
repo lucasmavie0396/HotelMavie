@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
 import { api, emailInvoice, errorMessage, openInvoicePdf } from '@/services/api';
+import { printDocument, type PrintRequest } from '@/services/print';
+import { usePaymentTypesStore } from '@/stores/paymentTypes';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
-import type { CashRegister, ChargeType, Folio, InvoiceType, PaymentMethod, Reservation, TaxRate } from '@/types';
+import type { CashRegister, ChargeType, Folio, InvoiceType, Reservation, TaxRate } from '@/types';
 import {
   CHARGE_TYPE_LABELS,
   formatDateTime,
@@ -32,7 +35,12 @@ const openSessions = computed(() =>
 const uninvoiced = computed(() => folio.value?.charges.filter((charge) => !charge.invoiceId) ?? []);
 
 const charge = reactive({ description: '', type: 'EXTRA' as ChargeType, quantity: 1, unitPrice: 0, taxRateId: 0 });
-const payment = reactive({ amount: 0, method: 'CARD' as PaymentMethod, cashSessionId: 0, reference: '' });
+const payment = reactive({ amount: 0, paymentTypeId: 0, cashSessionId: 0, reference: '' });
+const paymentTypes = usePaymentTypesStore();
+
+function print(request: PrintRequest) {
+  printDocument(request).catch((e) => (error.value = errorMessage(e)));
+}
 const invoice = reactive({ type: 'INVOICE_RECEIPT' as InvoiceType, customerName: '', customerTaxId: '', customerAddress: '' });
 
 async function load() {
@@ -67,7 +75,7 @@ async function run(action: () => Promise<unknown>) {
 
 function openPayment() {
   payment.amount = Math.max(Number(folio.value?.balance ?? 0), 0);
-  payment.cashSessionId = openSessions.value[0]?.id ?? 0;
+  payment.reference = '';
   panel.value = 'payment';
 }
 
@@ -93,8 +101,8 @@ const addPayment = () =>
   run(() =>
     api.post(`/reservations/${props.reservation.id}/payments`, {
       amount: payment.amount,
-      method: payment.method,
-      cashSessionId: payment.method === 'CASH' ? payment.cashSessionId || undefined : undefined,
+      paymentTypeId: payment.paymentTypeId,
+      cashSessionId: payment.cashSessionId || undefined,
       reference: payment.reference || undefined,
     }),
   );
@@ -132,6 +140,9 @@ defineExpose({ load });
         <button class="btn-secondary px-3 py-1 text-xs" type="button" @click="panel = panel === 'charge' ? null : 'charge'">
           Lancar extra
         </button>
+        <button class="btn-secondary px-3 py-1 text-xs" type="button" @click="print({ document: 'STATEMENT', reservationId: reservation.id })">
+          Imprimir conta
+        </button>
         <button class="btn-secondary px-3 py-1 text-xs" type="button" @click="openPayment">Registar pagamento</button>
         <button class="btn px-3 py-1 text-xs" type="button" :disabled="!uninvoiced.length" @click="openInvoice">
           Faturar ({{ uninvoiced.length }})
@@ -160,15 +171,13 @@ defineExpose({ load });
 
     <form v-if="panel === 'payment'" class="grid gap-3 rounded-md bg-slate-50 p-3 sm:grid-cols-5" @submit.prevent="addPayment">
       <input v-model.number="payment.amount" class="input" type="number" step="0.01" placeholder="Valor" required />
-      <select v-model="payment.method" class="input">
-        <option v-for="(label, method) in PAYMENT_METHOD_LABELS" :key="method" :value="method">{{ label }}</option>
-      </select>
-      <select v-if="payment.method === 'CASH'" v-model.number="payment.cashSessionId" class="input" required>
-        <option v-if="!openSessions.length" :value="0" disabled>Nenhuma caixa aberta</option>
-        <option v-for="session in openSessions" :key="session.id" :value="session.id">Caixa {{ session.label }}</option>
-      </select>
-      <input v-model="payment.reference" class="input" placeholder="Referencia (opcional)" />
-      <button class="btn" type="submit" :disabled="busy || (payment.method === 'CASH' && !payment.cashSessionId)">
+      <PaymentTypeSelect
+        v-model:type-id="payment.paymentTypeId"
+        v-model:cash-session-id="payment.cashSessionId"
+        v-model:reference="payment.reference"
+        :registers="registers"
+      />
+      <button class="btn" type="submit" :disabled="busy || !payment.paymentTypeId">
         Registar
       </button>
       <p v-if="payment.amount < 0" class="text-xs text-slate-500 sm:col-span-5">Valor negativo = devolucao (so gestores).</p>
@@ -234,8 +243,11 @@ defineExpose({ load });
           </tr>
           <tr v-for="item in folio.payments" :key="`p${item.id}`" class="border-b border-slate-100 text-emerald-700">
             <td class="py-2" colspan="4">
-              Pagamento · {{ PAYMENT_METHOD_LABELS[item.method] }}
+              Pagamento · {{ paymentTypes.byId(item.paymentTypeId)?.name ?? PAYMENT_METHOD_LABELS[item.method] }}
               <span class="text-xs text-slate-500">{{ item.reference ?? '' }} {{ formatDateTime(item.createdAt) }}</span>
+              <button class="ml-2 text-xs text-indigo-600 hover:underline" type="button" @click="print({ document: 'PAYMENT', paymentId: item.id })">
+                comprovativo
+              </button>
             </td>
             <td class="py-2 text-right">-{{ money(item.amount) }}</td>
             <td colspan="2"></td>
@@ -274,6 +286,9 @@ defineExpose({ load });
           @click="emailInvoice(doc.id, doc.fullNumber).catch((e) => (error = errorMessage(e)))"
         >
           Enviar por email
+        </button>
+        <button class="text-xs text-indigo-600 hover:underline" type="button" @click="print({ document: 'INVOICE', invoiceId: doc.id })">
+          Imprimir talao
         </button>
       </div>
     </div>

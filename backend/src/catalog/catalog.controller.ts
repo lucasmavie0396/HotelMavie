@@ -26,8 +26,10 @@ export class CatalogController {
 
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
   @Post('product-categories')
-  createCategory(@Body() { hotelId, ...data }: CreateCategoryDto, @CurrentUser() user: JwtPayload) {
-    return this.prisma.productCategory.create({ data: { ...data, hotelId: this.requireHotel(user, hotelId) } });
+  async createCategory(@Body() { hotelId, ...data }: CreateCategoryDto, @CurrentUser() user: JwtPayload) {
+    const scoped = this.requireHotel(user, hotelId);
+    await this.assertPrinter(scoped, data.printerId);
+    return this.prisma.productCategory.create({ data: { ...data, hotelId: scoped } });
   }
 
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
@@ -37,6 +39,7 @@ export class CatalogController {
     if (!category || !canAccessHotel(user, category.hotelId)) {
       throw new NotFoundException('Categoria nao encontrada');
     }
+    await this.assertPrinter(category.hotelId, dto.printerId);
     return this.prisma.productCategory.update({ where: { id }, data: dto });
   }
 
@@ -90,6 +93,14 @@ export class CatalogController {
   @Put('products/:id/recipe')
   setRecipe(@Param('id', ParseIntPipe) id: number, @Body() dto: RecipeDto, @CurrentUser() user: JwtPayload) {
     return this.recipes.set(id, dto, user);
+  }
+
+  private async assertPrinter(hotelId: number, printerId?: number | null) {
+    if (!printerId) return;
+    const printer = await this.prisma.printer.findUnique({ where: { id: printerId } });
+    if (printer?.hotelId !== hotelId) {
+      throw new BadRequestException('Impressora invalida para este hotel');
+    }
   }
 
   private requireHotel(user: JwtPayload, hotelId?: number) {
