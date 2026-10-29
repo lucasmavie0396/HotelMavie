@@ -37,6 +37,8 @@ export interface StaySummary {
   adults: number;
   children: number;
   totalAmount: { toString(): string };
+  depositAmount?: { toString(): string } | null;
+  depositReference?: string | null;
 }
 
 function stayTable(stay: StaySummary, currency: string) {
@@ -48,6 +50,10 @@ function stayTable(stay: StaySummary, currency: string) {
     ['Hospedes', `${stay.adults} adultos${stay.children ? `, ${stay.children} criancas` : ''}`],
     ['Total', formatMoney(stay.totalAmount, currency)],
   ];
+  if (stay.depositAmount) {
+    rows.push(['Sinal', formatMoney(stay.depositAmount, currency)]);
+    if (stay.depositReference) rows.push(['Referencia do pagamento', escapeHtml(stay.depositReference)]);
+  }
   return `<table role="presentation" cellpadding="6" style="border-collapse:collapse;margin:12px 0">${rows
     .map(([label, value]) => `<tr><td style="color:#64748b">${label}</td><td>${value}</td></tr>`)
     .join('')}</table>`;
@@ -59,7 +65,11 @@ export function bookingRequestEmail(hotel: Hotel, stay: StaySummary) {
     html: layout(
       hotel,
       'Recebemos o seu pedido de reserva',
-      `<p>Ola ${escapeHtml(stay.guestName)},</p><p>Obrigado pelo seu pedido. A reserva fica pendente ate o hotel a confirmar; vai receber um novo email nessa altura.</p>${stayTable(stay, hotel.currency)}<p>Para qualquer alteracao responda a este email indicando o codigo da reserva.</p>`,
+      `<p>Ola ${escapeHtml(stay.guestName)},</p><p>Obrigado pelo seu pedido. ${
+        stay.depositAmount
+          ? 'A reserva fica pendente ate o hotel confirmar a rececao do sinal; vai receber o comprovativo por email nessa altura.'
+          : 'A reserva fica pendente ate o hotel a confirmar; vai receber um novo email nessa altura.'
+      }</p>${stayTable(stay, hotel.currency)}<p>Para qualquer alteracao responda a este email indicando o codigo da reserva.</p>`,
     ),
   };
 }
@@ -82,6 +92,17 @@ export function bookingConfirmedEmail(hotel: Hotel, stay: StaySummary) {
       hotel,
       'A sua reserva esta confirmada',
       `<p>Ola ${escapeHtml(stay.guestName)},</p><p>Temos o prazer de confirmar a sua reserva.</p>${stayTable(stay, hotel.currency)}<p>Ate breve!</p>`,
+    ),
+  };
+}
+
+export function depositConfirmedEmail(hotel: Hotel, stay: StaySummary, remaining: { toString(): string }) {
+  return {
+    subject: `Reserva ${stay.code} confirmada - sinal recebido - ${hotel.name}`,
+    html: layout(
+      hotel,
+      'Sinal recebido: a sua reserva esta confirmada',
+      `<p>Ola ${escapeHtml(stay.guestName)},</p><p>Confirmamos a rececao do sinal e a sua reserva. Segue em anexo o comprovativo.</p>${stayTable(stay, hotel.currency)}<p>O valor restante, <strong>${formatMoney(remaining, hotel.currency)}</strong>, sera cobrado no check-in ou no check-out, juntamente com os consumos.</p><p>Ate breve!</p>`,
     ),
   };
 }

@@ -31,6 +31,16 @@ export interface Hotel {
   postalCode: string | null;
   country: string;
   ticketFooter: string | null;
+  logoFile: string | null;
+  publicDescription: string | null;
+  depositPercent: string;
+  paymentInstructions: string | null;
+}
+
+export interface RoomImage {
+  id: number;
+  file: string;
+  sortOrder: number;
 }
 
 export interface Room {
@@ -43,6 +53,7 @@ export interface Room {
   status: RoomStatus;
   floor: number | null;
   description: string | null;
+  images: RoomImage[];
 }
 
 export interface Guest {
@@ -78,6 +89,13 @@ export interface Reservation {
   notes: string | null;
   guest: Pick<Guest, 'id' | 'firstName' | 'lastName' | 'email' | 'phone'>;
   room: Pick<Room, 'id' | 'number' | 'type'>;
+  depositAmount: string | null;
+  depositReference: string | null;
+  depositPaymentTypeId: number | null;
+  depositPaymentId: number | null;
+  depositConfirmedAt: string | null;
+  depositPaymentType: { id: number; name: string } | null;
+  depositConfirmedBy: { name: string } | null;
 }
 
 export interface DashboardSummary {
@@ -95,11 +113,16 @@ export interface PublicRoomType {
   pricePerNight: string;
   description: string | null;
   available: number;
+  images: string[];
   nights?: number;
   total?: string;
+  deposit?: string;
 }
 
-export interface PublicHotel extends Pick<Hotel, 'name' | 'publicSlug' | 'email' | 'phone' | 'address' | 'currency'> {
+export interface PublicHotel
+  extends Pick<Hotel, 'name' | 'publicSlug' | 'email' | 'phone' | 'address' | 'city' | 'currency' | 'logoFile' | 'publicDescription' | 'paymentInstructions'> {
+  depositPercent: number;
+  paymentTypes: { id: number; name: string; requiresReference: boolean }[];
   roomTypes: PublicRoomType[];
 }
 
@@ -391,14 +414,16 @@ export interface MonthlyRow {
 
 export type PrinterPurpose = 'RECEIPT' | 'KITCHEN' | 'BAR' | 'OTHER';
 export type PaperWidth = 'MM58' | 'MM80' | 'A4';
+export type PrinterConnection = 'BROWSER' | 'NETWORK' | 'LOCAL';
 
 export interface Printer {
   id: number;
   name: string;
   purpose: PrinterPurpose;
-  connection: 'BROWSER' | 'NETWORK';
+  connection: PrinterConnection;
   host: string | null;
   port: number;
+  localName: string | null;
   paperWidth: PaperWidth;
   copies: number;
   isDefault: boolean;

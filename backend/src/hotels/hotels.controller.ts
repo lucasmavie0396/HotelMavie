@@ -3,6 +3,7 @@ import { UserRole } from '@prisma/client';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { ImageUploadDto } from '../uploads/uploads';
 import { CreateHotelDto } from './dto/create-hotel.dto';
 import { UpdateHotelDto } from './dto/update-hotel.dto';
 import { HotelsService } from './hotels.service';
@@ -31,6 +32,18 @@ export class HotelsController {
   @Patch(':id')
   update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateHotelDto) {
     return this.hotelsService.update(id, dto);
+  }
+
+  @Roles(UserRole.ADMIN)
+  @Post(':id/logo')
+  setLogo(@Param('id', ParseIntPipe) id: number, @Body() dto: ImageUploadDto, @CurrentUser() user: JwtPayload) {
+    return this.hotelsService.setLogo(id, dto.data, user);
+  }
+
+  @Roles(UserRole.ADMIN)
+  @Delete(':id/logo')
+  removeLogo(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.hotelsService.setLogo(id, null, user);
   }
 
   @Roles(UserRole.ADMIN)

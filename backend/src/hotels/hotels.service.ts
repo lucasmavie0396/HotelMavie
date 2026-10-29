@@ -3,12 +3,16 @@ import { UserRole } from '@prisma/client';
 import { JwtPayload } from '../auth/jwt-payload';
 import { canAccessHotel } from '../common/hotel-scope';
 import { PrismaService } from '../prisma/prisma.service';
+import { UploadsService } from '../uploads/uploads';
 import { CreateHotelDto } from './dto/create-hotel.dto';
 import { UpdateHotelDto } from './dto/update-hotel.dto';
 
 @Injectable()
 export class HotelsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly uploads: UploadsService,
+  ) {}
 
   findAll(user: JwtPayload) {
     return this.prisma.hotel.findMany({
@@ -37,6 +41,14 @@ export class HotelsService {
       }
     }
     return this.prisma.hotel.update({ where: { id }, data: dto });
+  }
+
+  async setLogo(id: number, data: string | null, user: JwtPayload) {
+    const hotel = await this.findOne(id, user);
+    const logoFile = data ? await this.uploads.saveImage(data, ['png', 'jpg']) : null;
+    const updated = await this.prisma.hotel.update({ where: { id }, data: { logoFile } });
+    await this.uploads.remove(hotel.logoFile);
+    return updated;
   }
 
   remove(id: number) {

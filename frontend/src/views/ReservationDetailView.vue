@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute } from 'vue-router';
+import DepositPanel from '@/components/DepositPanel.vue';
 import FolioPanel from '@/components/FolioPanel.vue';
 import ReservationActions from '@/components/ReservationActions.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
@@ -100,8 +101,14 @@ onMounted(load);
         <h2 class="mb-2 font-semibold">Valores</h2>
         <p>{{ formatMoney(reservation.pricePerNight, hotels.currency) }} / noite</p>
         <p class="text-xl font-semibold">{{ formatMoney(reservation.totalAmount, hotels.currency) }}</p>
+        <p v-if="reservation.depositPaymentId" class="text-emerald-700">
+          Sinal pago {{ formatMoney(reservation.depositAmount ?? 0, hotels.currency) }} · restante
+          {{ formatMoney(Number(reservation.totalAmount) - Number(reservation.depositAmount ?? 0), hotels.currency) }}
+        </p>
       </div>
     </div>
+
+    <DepositPanel :reservation="reservation" @updated="fill" />
 
     <FolioPanel ref="folioPanel" :reservation="reservation" />
 

@@ -7,6 +7,7 @@ export function configureApp(app: NestExpressApplication) {
   const corsOrigin = app.get(ConfigService).get<string>('CORS_ORIGIN');
   app.set('trust proxy', 1);
   app.setGlobalPrefix('api');
+  app.useBodyParser('json', { limit: '8mb' });
   app.enableCors({
     origin: corsOrigin ? corsOrigin.split(',').map((origin) => origin.trim()) : true,
     credentials: true,

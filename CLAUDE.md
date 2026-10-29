@@ -119,6 +119,11 @@ docker compose exec backend npm run db:seed
 | Backups | `backups/` (mysqldump para `BACKUP_DIR`) | Utilizadores |
 | Contas correntes | `billing/receipts.service.ts` (FT em aberto, recibos RG) | Contas correntes |
 | Recursos humanos | `hr/` (fichas, escalas, ponto, mapa mensal) | Recursos humanos |
+| Site público e sinal | `uploads/` (imagens em `UPLOAD_DIR`, servidas em `/api/public/files`), `reservations/deposit.service.ts` (sinal, comprovativo A4) | `/h/:slug`, Configuração → Site e reservas, Quartos |
+| Impressão local | `print-agent/` (Node sem dependências, escuta em 127.0.0.1:9123, imprime ESC/POS RAW no Windows) | Configuração → Impressoras |
+
+- **Sinal:** `Hotel.depositPercent` (60 por defeito; 0 desliga). A reserva online guarda o valor e a referência indicada pelo cliente; ao confirmar (`POST /reservations/:id/deposit/confirm`, qualquer papel) cria um `Payment` normal na conta da estadia, aprova a reserva e envia o comprovativo em PDF. O comprovativo é interno (sem valor fiscal): a fatura sai no check-out com tudo e o sinal já descontado no saldo.
+- **Imagens:** só PNG/JPG/WEBP (logotipo só PNG/JPG, por causa do pdfkit), verificadas pelos bytes iniciais, até 4 MB, nome aleatório. Nunca aceitar SVG.
 
 ## Testes
 

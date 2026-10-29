@@ -124,7 +124,17 @@ onMounted(load);
             <td class="px-4 py-3">{{ formatDate(reservation.checkOut) }}</td>
             <td class="px-4 py-3">{{ formatMoney(reservation.totalAmount, hotels.currency) }}</td>
             <td class="px-4 py-3">{{ RESERVATION_SOURCE_LABELS[reservation.source] }}</td>
-            <td class="px-4 py-3"><StatusBadge :status="reservation.status" /></td>
+            <td class="px-4 py-3">
+              <StatusBadge :status="reservation.status" />
+              <span v-if="reservation.depositPaymentId" class="mt-1 block text-xs text-emerald-700">sinal recebido</span>
+              <RouterLink
+                v-else-if="reservation.depositAmount !== null && reservation.status === 'PENDING'"
+                :to="{ name: 'reservation', params: { id: reservation.id } }"
+                class="mt-1 block text-xs font-medium text-amber-700 hover:underline"
+              >
+                sinal por confirmar
+              </RouterLink>
+            </td>
             <td class="px-4 py-3">
               <ReservationActions :reservation="reservation" @updated="replace" @error="error = $event" />
             </td>

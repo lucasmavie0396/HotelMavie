@@ -3,6 +3,7 @@ import { UserRole } from '@prisma/client';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { ImageUploadDto } from '../uploads/uploads';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { RoomQueryDto } from './dto/room-query.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
@@ -31,6 +32,22 @@ export class RoomsController {
   @Patch(':id')
   update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateRoomDto, @CurrentUser() user: JwtPayload) {
     return this.roomsService.update(id, dto, user);
+  }
+
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Post(':id/images')
+  addImage(@Param('id', ParseIntPipe) id: number, @Body() dto: ImageUploadDto, @CurrentUser() user: JwtPayload) {
+    return this.roomsService.addImage(id, dto.data, user);
+  }
+
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Delete(':id/images/:imageId')
+  removeImage(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('imageId', ParseIntPipe) imageId: number,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.roomsService.removeImage(id, imageId, user);
   }
 
   @Roles(UserRole.ADMIN, UserRole.MANAGER)

@@ -188,6 +188,9 @@ export class DocumentsService {
     ticket.cols('Reserva', reservation.code, { size: 8 });
     ticket.cols('Entrada / saida', `${Ticket.day(reservation.checkIn)} - ${Ticket.day(reservation.checkOut)}`, { size: 8 });
     ticket.cols('Noites / pessoas', `${nightsBetween(reservation.checkIn, reservation.checkOut)} / ${reservation.adults + reservation.children}`, { size: 8 });
+    if (reservation.depositPaymentId && reservation.depositAmount) {
+      ticket.cols('Sinal pago na reserva', ticket.money(reservation.depositAmount), { size: 8 });
+    }
     ticket.rule();
 
     const byType = new Map<ChargeType, number>();
@@ -203,7 +206,8 @@ export class DocumentsService {
     if (payments.length) {
       ticket.rule();
       for (const payment of payments) {
-        ticket.cols(`${Ticket.day(payment.createdAt).slice(0, 5)} ${paymentLabel(payment)}${payment.reference ? ` (${payment.reference})` : ''}`, `-${ticket.money(payment.amount)}`, { size: 8 });
+        const label = `${payment.id === reservation.depositPaymentId ? 'Sinal ' : ''}${paymentLabel(payment)}`;
+        ticket.cols(`${Ticket.day(payment.createdAt).slice(0, 5)} ${label}${payment.reference ? ` (${payment.reference})` : ''}`, `-${ticket.money(payment.amount)}`, { size: 8 });
       }
       ticket.cols('Total pago', `-${ticket.money(folio.paymentsTotal)}`, { size: 9 });
     }

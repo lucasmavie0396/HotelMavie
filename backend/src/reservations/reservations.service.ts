@@ -5,6 +5,7 @@ import { JwtPayload } from '../auth/jwt-payload';
 import { FolioService } from '../billing/folio.service';
 import { addDays, assertStayRange, parseDate, todayUtc } from '../common/dates';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
+import { toMoney } from '../common/money';
 import { MailService } from '../mail/mail.service';
 import { bookingConfirmedEmail } from '../mail/templates';
 import { PrismaService } from '../prisma/prisma.service';
@@ -23,6 +24,8 @@ const EDITABLE_STATUSES: ReservationStatus[] = [ReservationStatus.PENDING, Reser
 export const reservationInclude = {
   guest: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
   room: { select: { id: true, number: true, type: true } },
+  depositPaymentType: { select: { id: true, name: true } },
+  depositConfirmedBy: { select: { name: true } },
 } satisfies Prisma.ReservationInclude;
 
 export interface BookingInput {
@@ -37,6 +40,7 @@ export interface BookingInput {
   pricePerNight?: number;
   notes?: string;
   createdById?: number;
+  deposit?: { percent: Prisma.Decimal; reference?: string; paymentTypeId?: number | null };
 }
 
 function generateCode() {
@@ -105,8 +109,9 @@ export class ReservationsService {
     return this.findAvailableRooms(hotelId, checkIn, checkOut, query.guests ?? 1, undefined, query.excludeReservationId);
   }
 
-  findAvailableRooms(hotelId: number, checkIn: Date, checkOut: Date, guests: number, type?: string, excludeId?: number) {
+  findAvailableRooms(hotelId: number, checkIn: Date, checkOut: Date, guests: number, type?: string, excludeId?: number, withImages = false) {
     return this.prisma.room.findMany({
+      include: withImages ? { images: { select: { file: true }, orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] } } : undefined,
       where: {
         hotelId,
         type,
@@ -150,6 +155,14 @@ export class ReservationsService {
       await this.assertRoomFree(tx, room.id, input.checkIn, input.checkOut);
 
       const pricePerNight = new Prisma.Decimal(input.pricePerNight ?? room.pricePerNight);
+      const totalAmount = pricePerNight.mul(nights);
+      const deposit = input.deposit
+        ? {
+            depositAmount: toMoney(totalAmount.mul(input.deposit.percent).div(100)),
+            depositReference: input.deposit.reference,
+            depositPaymentTypeId: input.deposit.paymentTypeId ?? null,
+          }
+        : {};
       return tx.reservation.create({
         data: {
           code: generateCode(),
@@ -162,9 +175,10 @@ export class ReservationsService {
           children: input.children,
           source: input.source,
           pricePerNight,
-          totalAmount: pricePerNight.mul(nights),
+          totalAmount,
           notes: input.notes,
           createdById: input.createdById,
+          ...deposit,
         },
         include: reservationInclude,
       });

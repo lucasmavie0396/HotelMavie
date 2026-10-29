@@ -16,6 +16,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { PublicModule } from './public/public.module';
 import { ReservationsModule } from './reservations/reservations.module';
 import { RoomsModule } from './rooms/rooms.module';
+import { UploadsModule } from './uploads/uploads';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -24,6 +25,7 @@ import { UsersModule } from './users/users.module';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     PrismaModule,
     MailModule,
+    UploadsModule,
     AuthModule,
     UsersModule,
     HotelsModule,

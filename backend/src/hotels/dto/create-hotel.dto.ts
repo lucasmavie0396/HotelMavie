@@ -1,4 +1,4 @@
-import { IsBoolean, IsEmail, IsInt, IsISO4217CurrencyCode, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsInt, IsISO4217CurrencyCode, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
 
 export class CreateHotelDto {
   @IsString()
@@ -51,6 +51,22 @@ export class CreateHotelDto {
   @IsString()
   @MaxLength(255)
   ticketFooter?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  publicDescription?: string | null;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  depositPercent?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  paymentInstructions?: string | null;
 
   @IsOptional()
   @IsString()

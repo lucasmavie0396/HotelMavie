@@ -63,4 +63,13 @@ export class PublicBookingDto {
   @IsString()
   @MaxLength(1000)
   notes?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  depositReference?: string;
+
+  @IsOptional()
+  @IsInt()
+  depositPaymentTypeId?: number;
 }

@@ -243,7 +243,7 @@ defineExpose({ load });
           </tr>
           <tr v-for="item in folio.payments" :key="`p${item.id}`" class="border-b border-slate-100 text-emerald-700">
             <td class="py-2" colspan="4">
-              Pagamento · {{ paymentTypes.byId(item.paymentTypeId)?.name ?? PAYMENT_METHOD_LABELS[item.method] }}
+              {{ item.id === reservation.depositPaymentId ? 'Sinal' : 'Pagamento' }} · {{ paymentTypes.byId(item.paymentTypeId)?.name ?? PAYMENT_METHOD_LABELS[item.method] }}
               <span class="text-xs text-slate-500">{{ item.reference ?? '' }} {{ formatDateTime(item.createdAt) }}</span>
               <button class="ml-2 text-xs text-indigo-600 hover:underline" type="button" @click="print({ document: 'PAYMENT', paymentId: item.id })">
                 comprovativo

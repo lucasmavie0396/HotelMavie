@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import PaymentTypesTab from '@/components/settings/PaymentTypesTab.vue';
 import PrintersTab from '@/components/settings/PrintersTab.vue';
+import PublicSiteTab from '@/components/settings/PublicSiteTab.vue';
 import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
@@ -16,9 +17,10 @@ const error = ref('');
 const saved = ref('');
 const busy = ref(false);
 
-type Tab = 'fiscal' | 'taxes' | 'payments' | 'printers' | 'at' | 'emails';
+type Tab = 'fiscal' | 'site' | 'taxes' | 'payments' | 'printers' | 'at' | 'emails';
 const TABS: { value: Tab; label: string }[] = [
   { value: 'fiscal', label: 'Dados do hotel' },
+  { value: 'site', label: 'Site e reservas' },
   { value: 'taxes', label: 'IVA' },
   { value: 'payments', label: 'Pagamentos' },
   { value: 'printers', label: 'Impressoras' },
@@ -50,6 +52,7 @@ const EMAIL_KINDS: Record<string, string> = {
   BOOKING_REQUEST: 'Pedido de reserva (hospede)',
   BOOKING_ALERT: 'Nova reserva (hotel)',
   BOOKING_CONFIRMED: 'Reserva confirmada',
+  DEPOSIT_CONFIRMED: 'Sinal recebido (comprovativo)',
   INVOICE: 'Fatura',
 };
 const rate = reactive({ name: '', rate: 23, atCategory: 'NOR' as TaxRate['atCategory'], exemptionReason: '', exemptionCode: '' });
@@ -183,6 +186,7 @@ onMounted(load);
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
     <p v-if="saved" class="text-sm text-emerald-700">{{ saved }}</p>
 
+    <PublicSiteTab v-if="tab === 'site'" />
     <PaymentTypesTab v-if="tab === 'payments'" />
     <PrintersTab v-if="tab === 'printers'" />
 

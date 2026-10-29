@@ -18,7 +18,7 @@ import {
 import { OmitType, PartialType } from '@nestjs/mapped-types';
 import { PaperWidth, PrepStation, Printer, PrinterConnection, PrinterPurpose, UserRole } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsEnum, IsIn, IsInt, IsISO8601, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateIf } from 'class-validator';
+import { IsBoolean, IsEnum, IsIn, IsInt, IsISO8601, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 import type { Response } from 'express';
 import { createConnection } from 'node:net';
 import { JwtPayload } from '../auth/jwt-payload';
@@ -72,6 +72,12 @@ export class PrinterDto {
   @Min(1)
   @Max(65535)
   port?: number;
+
+  @ValidateIf((dto: PrinterDto) => dto.connection === PrinterConnection.LOCAL)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  localName?: string | null;
 
   @IsOptional()
   @IsEnum(PaperWidth)
@@ -211,6 +217,15 @@ export class PrintService {
       }
       return { status: 'printed' as const, printer: { id: printer.id, name: printer.name } };
     }
+    if (printer?.connection === PrinterConnection.LOCAL && printer.localName && printer.paperWidth !== PaperWidth.A4) {
+      const bytes = this.tickets.escpos(built.ticket, printer.paperWidth);
+      return {
+        status: 'local' as const,
+        printer: { id: printer.id, name: printer.name, localName: printer.localName },
+        copies: printer.copies,
+        data: bytes.toString('base64'),
+      };
+    }
     return {
       status: 'browser' as const,
       paper: printer?.paperWidth ?? (built.purpose === PrinterPurpose.RECEIPT ? PaperWidth.MM80 : PaperWidth.MM80),
@@ -269,6 +284,9 @@ export class PrintingController {
     const host = dto.host === undefined ? printer.host : dto.host;
     if (connection === PrinterConnection.NETWORK && !host) {
       throw new BadRequestException('Uma impressora de rede precisa do endereco IP');
+    }
+    if (connection === PrinterConnection.LOCAL && !(dto.localName === undefined ? printer.localName : dto.localName)) {
+      throw new BadRequestException('Escolhe a impressora instalada no computador');
     }
     return this.prisma.$transaction(async (tx) => {
       if (dto.isDefault) {

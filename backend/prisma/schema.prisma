@@ -36,6 +36,10 @@ model Hotel {
   taxId                  String?           @db.VarChar(30)
   invoiceFooter          String?           @db.Text
   ticketFooter           String?           @db.VarChar(255)
+  logoFile               String?           @db.VarChar(100)
+  publicDescription      String?           @db.Text
+  depositPercent         Decimal           @default(60) @db.Decimal(5, 2)
+  paymentInstructions    String?           @db.Text
   accommodationTaxRateId Int?
   accommodationTaxRate   TaxRate?          @relation("AccommodationTaxRate", fields: [accommodationTaxRateId], references: [id], onDelete: SetNull)
   createdAt              DateTime          @default(now())
@@ -93,6 +97,7 @@ model User {
   employee          Employee?
   timeEntriesEdited TimeEntry[]     @relation("TimeEntryEditedBy")
   voidedOrderItems  OrderItem[]     @relation("OrderItemVoidedBy")
+  depositsConfirmed Reservation[]   @relation("DepositConfirmedBy")
 
   @@index([hotelId])
   @@map("users")
@@ -112,9 +117,22 @@ model Room {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   reservations  Reservation[]
+  images        RoomImage[]
 
   @@unique([hotelId, number])
   @@map("rooms")
+}
+
+model RoomImage {
+  id        Int      @id @default(autoincrement())
+  roomId    Int
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  file      String   @db.VarChar(100)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([roomId])
+  @@map("room_images")
 }
 
 enum ReservationStatus {
@@ -158,34 +176,43 @@ model Guest {
 }
 
 model Reservation {
-  id            Int               @id @default(autoincrement())
-  code          String            @unique @db.VarChar(20)
-  hotelId       Int
-  hotel         Hotel             @relation(fields: [hotelId], references: [id], onDelete: Cascade)
-  guestId       Int
-  guest         Guest             @relation(fields: [guestId], references: [id], onDelete: Restrict)
-  roomId        Int
-  room          Room              @relation(fields: [roomId], references: [id], onDelete: Restrict)
-  checkIn       DateTime          @db.Date
-  checkOut      DateTime          @db.Date
-  adults        Int               @default(1)
-  children      Int               @default(0)
-  status        ReservationStatus @default(PENDING)
-  source        ReservationSource @default(DESK)
-  pricePerNight Decimal           @db.Decimal(10, 2)
-  totalAmount   Decimal           @db.Decimal(12, 2)
-  notes         String?           @db.Text
-  checkedInAt   DateTime?
-  checkedOutAt  DateTime?
-  cancelledAt   DateTime?
-  createdById   Int?
-  createdBy     User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
-  charges       Charge[]
-  payments      Payment[]
-  orders        Order[]
-  invoices      Invoice[]
+  id                   Int               @id @default(autoincrement())
+  code                 String            @unique @db.VarChar(20)
+  hotelId              Int
+  hotel                Hotel             @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  guestId              Int
+  guest                Guest             @relation(fields: [guestId], references: [id], onDelete: Restrict)
+  roomId               Int
+  room                 Room              @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  checkIn              DateTime          @db.Date
+  checkOut             DateTime          @db.Date
+  adults               Int               @default(1)
+  children             Int               @default(0)
+  status               ReservationStatus @default(PENDING)
+  source               ReservationSource @default(DESK)
+  pricePerNight        Decimal           @db.Decimal(10, 2)
+  totalAmount          Decimal           @db.Decimal(12, 2)
+  notes                String?           @db.Text
+  checkedInAt          DateTime?
+  checkedOutAt         DateTime?
+  cancelledAt          DateTime?
+  depositAmount        Decimal?          @db.Decimal(12, 2)
+  depositReference     String?           @db.VarChar(100)
+  depositPaymentTypeId Int?
+  depositPaymentType   PaymentType?      @relation(fields: [depositPaymentTypeId], references: [id], onDelete: SetNull)
+  depositPaymentId     Int?              @unique
+  depositPayment       Payment?          @relation("DepositPayment", fields: [depositPaymentId], references: [id], onDelete: SetNull)
+  depositConfirmedAt   DateTime?
+  depositConfirmedById Int?
+  depositConfirmedBy   User?             @relation("DepositConfirmedBy", fields: [depositConfirmedById], references: [id], onDelete: SetNull)
+  createdById          Int?
+  createdBy            User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  charges              Charge[]
+  payments             Payment[]
+  orders               Order[]
+  invoices             Invoice[]
 
   @@index([hotelId, checkIn])
   @@index([hotelId, checkOut])
@@ -300,6 +327,7 @@ model Payment {
   createdById   Int?
   createdBy     User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
   createdAt     DateTime      @default(now())
+  depositOf     Reservation?  @relation("DepositPayment")
 
   @@index([reservationId])
   @@index([cashSessionId])
@@ -869,6 +897,7 @@ enum PrinterPurpose {
 enum PrinterConnection {
   BROWSER
   NETWORK
+  LOCAL
 }
 
 enum PaperWidth {
@@ -886,6 +915,7 @@ model Printer {
   connection PrinterConnection @default(BROWSER)
   host       String?           @db.VarChar(100)
   port       Int               @default(9100)
+  localName  String?           @db.VarChar(200)
   paperWidth PaperWidth        @default(MM80)
   copies     Int               @default(1)
   isDefault  Boolean           @default(false)
@@ -911,6 +941,7 @@ model PaymentType {
   createdAt         DateTime      @default(now())
   payments          Payment[]
   receipts          Receipt[]
+  deposits          Reservation[]
 
   @@unique([hotelId, name])
   @@map("payment_types")

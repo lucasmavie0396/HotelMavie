@@ -18,7 +18,53 @@ export interface PrintRequest {
 
 type PrintResult =
   | { status: 'printed'; printer: { id: number; name: string } }
+  | { status: 'local'; printer: { id: number; name: string; localName: string }; copies: number; data: string }
   | { status: 'browser'; paper: PaperWidth; copies: number; printer: { id: number; name: string } | null };
+
+export interface LocalPrinter {
+  name: string;
+  driver: string;
+  port: string;
+  isDefault: boolean;
+  offline: boolean;
+  shared: boolean;
+}
+
+const AGENT_KEY = 'mavie.printAgentUrl';
+export const DEFAULT_AGENT_URL = 'http://127.0.0.1:9123';
+
+export function agentUrl() {
+  try {
+    return localStorage.getItem(AGENT_KEY) || DEFAULT_AGENT_URL;
+  } catch {
+    return DEFAULT_AGENT_URL;
+  }
+}
+
+export function setAgentUrl(url: string) {
+  try {
+    if (!url || url === DEFAULT_AGENT_URL) localStorage.removeItem(AGENT_KEY);
+    else localStorage.setItem(AGENT_KEY, url.replace(/\/$/, ''));
+  } catch {
+    return;
+  }
+}
+
+async function agent<T>(path: string, init?: RequestInit) {
+  let response: Response;
+  try {
+    response = await fetch(`${agentUrl()}${path}`, { ...init, headers: { 'Content-Type': 'application/json' } });
+  } catch {
+    throw new Error('O agente de impressao nao esta a correr neste computador (print-agent/iniciar.cmd)');
+  }
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.message ?? `Agente de impressao: erro ${response.status}`);
+  return body as T;
+}
+
+export function listLocalPrinters() {
+  return agent<LocalPrinter[]>('/printers');
+}
 
 function printPdf(blob: Blob) {
   return new Promise<void>((resolve) => {
@@ -49,6 +95,10 @@ function printPdf(blob: Blob) {
 export async function printDocument(request: PrintRequest) {
   const { data } = await api.post<PrintResult>('/print', request);
   if (data.status === 'printed') {
+    return `Impresso em ${data.printer.name}`;
+  }
+  if (data.status === 'local') {
+    await agent('/print', { method: 'POST', body: JSON.stringify({ printer: data.printer.localName, data: data.data, copies: data.copies }) });
     return `Impresso em ${data.printer.name}`;
   }
   const params = Object.fromEntries(Object.entries({ ...request, paper: data.paper }).map(([key, value]) => [key, value === null ? 'null' : value]));

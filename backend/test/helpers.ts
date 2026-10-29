@@ -33,10 +33,10 @@ export function day(offset = 0) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-export async function createHotel(prisma: PrismaClient, options: { rooms?: number; accommodationRate?: number | null } = {}) {
+export async function createHotel(prisma: PrismaClient, options: { rooms?: number; accommodationRate?: number | null; depositPercent?: number } = {}) {
   const id = uid();
   const hotel = await prisma.hotel.create({
-    data: { name: `Hotel ${id}`, publicSlug: `hotel-${id}`, publicEnabled: true, currency: 'EUR' },
+    data: { name: `Hotel ${id}`, publicSlug: `hotel-${id}`, publicEnabled: true, currency: 'EUR', depositPercent: options.depositPercent ?? 0 },
   });
   const rooms = [];
   for (let index = 1; index <= (options.rooms ?? 3); index++) {

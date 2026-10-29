@@ -1,0 +1,13 @@
+{
+  "name": "mavie-hgest-print-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Agente local que lista as impressoras do Windows e imprime taloes ESC/POS sem janela de impressao",
+  "scripts": {
+    "start": "node agent.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
