@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api, errorMessage } from '@/services/api';
 import { fileUrl, readImage } from '@/services/files';
 import type { ImageSearchResult, Product } from '@/types';
@@ -7,6 +8,7 @@ import type { ImageSearchResult, Product } from '@/types';
 const props = defineProps<{ product: Product }>();
 const emit = defineEmits<{ updated: [product: Product] }>();
 
+const { t } = useI18n();
 const error = ref('');
 const busy = ref(false);
 const searching = ref(false);
@@ -89,16 +91,16 @@ const remove = () => run(async () => (await api.delete<Product>(`/products/${pro
         </svg>
       </div>
       <div class="space-y-2">
-        <p class="text-sm font-semibold text-slate-700">Foto do produto</p>
+        <p class="text-sm font-semibold text-slate-700">{{ t('image.title') }}</p>
         <div class="flex flex-wrap gap-2">
           <label class="btn-secondary cursor-pointer px-3 py-1.5 text-xs" :class="busy ? 'pointer-events-none opacity-60' : ''">
-            Do computador
+            {{ t('image.computer') }}
             <input class="hidden" type="file" accept="image/png,image/jpeg,image/webp" @change="upload" />
           </label>
-          <button class="btn px-3 py-1.5 text-xs" type="button" :disabled="busy" @click="openSearch">Procurar na internet</button>
-          <button class="btn-secondary px-3 py-1.5 text-xs" type="button" @click="openGoogle">Abrir no Google Imagens</button>
-          <button class="btn-secondary px-3 py-1.5 text-xs" type="button" :disabled="busy" @click="panel = panel === 'link' ? null : 'link'">Colar link</button>
-          <button v-if="product.imageFile" class="px-2 text-xs text-rose-600 hover:underline" type="button" :disabled="busy" @click="remove">Remover</button>
+          <button class="btn px-3 py-1.5 text-xs" type="button" :disabled="busy" @click="openSearch">{{ t('image.search') }}</button>
+          <button class="btn-secondary px-3 py-1.5 text-xs" type="button" @click="openGoogle">{{ t('image.google') }}</button>
+          <button class="btn-secondary px-3 py-1.5 text-xs" type="button" :disabled="busy" @click="panel = panel === 'link' ? null : 'link'">{{ t('image.paste') }}</button>
+          <button v-if="product.imageFile" class="px-2 text-xs text-rose-600 hover:underline" type="button" :disabled="busy" @click="remove">{{ t('common.remove') }}</button>
         </div>
       </div>
     </div>
@@ -106,19 +108,19 @@ const remove = () => run(async () => (await api.delete<Product>(`/products/${pro
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
 
     <p v-if="panel === 'link'" class="text-xs text-slate-600">
-      No Google Imagens: abra a foto, clique com o botao direito e escolha <strong>Copiar endereco da imagem</strong>; depois cole aqui.
+      {{ t('image.linkHint') }}
     </p>
     <form v-if="panel === 'link'" class="flex gap-2" @submit.prevent="fromLink">
       <input v-model="link" class="input" type="url" placeholder="https://.../foto.jpg" required />
-      <button class="btn" type="submit" :disabled="busy">{{ busy ? 'A descarregar...' : 'Usar' }}</button>
+      <button class="btn" type="submit" :disabled="busy">{{ busy ? t('image.downloading') : t('image.use') }}</button>
     </form>
 
     <div v-if="panel === 'search'" class="space-y-3">
       <form class="flex gap-2" @submit.prevent="search">
-        <input v-model="query" class="input" placeholder="Ex.: cerveja 2M, frango assado, mojito" minlength="2" maxlength="80" required />
-        <button class="btn" type="submit" :disabled="searching">{{ searching ? 'A procurar...' : 'Procurar' }}</button>
+        <input v-model="query" class="input" :placeholder="t('image.searchExample')" minlength="2" maxlength="80" required />
+        <button class="btn" type="submit" :disabled="searching">{{ searching ? t('site.search.searching') : t('common.search') }}</button>
       </form>
-      <p v-if="results && !results.length" class="text-sm text-slate-500">Sem resultados. Experimente outras palavras (em ingles costuma haver mais fotos).</p>
+      <p v-if="results && !results.length" class="text-sm text-slate-500">{{ t('image.none') }}</p>
       <div v-if="results?.length" class="grid max-h-80 grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-4">
         <button
           v-for="result in results"
@@ -131,15 +133,14 @@ const remove = () => run(async () => (await api.delete<Product>(`/products/${pro
         >
           <img :src="result.thumb" :alt="result.title" loading="lazy" referrerpolicy="no-referrer" class="h-full w-full object-cover" />
           <span class="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1.5 py-0.5 text-[10px] text-white">{{ result.license ?? result.author ?? (provider === 'google' ? 'Google' : 'Wikimedia') }}</span>
-          <span v-if="choosing === result.url" class="absolute inset-0 flex items-center justify-center bg-white/70 text-xs font-medium text-indigo-700">A guardar...</span>
+          <span v-if="choosing === result.url" class="absolute inset-0 flex items-center justify-center bg-white/70 text-xs font-medium text-indigo-700">{{ t('image.saving') }}</span>
         </button>
       </div>
       <p v-if="provider === 'google'" class="text-[11px] text-slate-500">
-        Resultados do Google Imagens. Muitas fotos tem direitos de autor: use de preferencia fotos dos fabricantes ou proprias.
+        {{ t('image.googleNote') }}
       </p>
       <p v-else class="text-[11px] text-slate-500">
-        Fotos livres do Wikimedia Commons (dominio publico ou Creative Commons). Algumas licencas pedem a atribuicao do autor, que aparece ao passar o rato.
-        Para pesquisar no Google aqui dentro, configure a chave Google no servidor; ou use o botao Abrir no Google Imagens.
+        {{ t('image.wikimediaNote') }}
       </p>
     </div>
   </div>

@@ -1,4 +1,5 @@
 import { reactive } from 'vue';
+import { t, translated } from '@/i18n';
 import { api } from '@/services/api';
 import type { PaperWidth } from '@/types';
 
@@ -37,17 +38,7 @@ export async function previewPdfFrom(path: string, params: Record<string, unknow
 
 export type PrintDocument = 'ORDER' | 'VOID' | 'PREBILL' | 'STATEMENT' | 'INVOICE' | 'RECEIPT' | 'PAYMENT' | 'TEST' | 'REPORT';
 
-const DOCUMENT_TITLES: Record<PrintDocument, string> = {
-  ORDER: 'Pedido',
-  VOID: 'Anulacao',
-  PREBILL: 'Consulta de mesa',
-  STATEMENT: 'Conta',
-  INVOICE: 'Fatura',
-  RECEIPT: 'Recibo',
-  PAYMENT: 'Pagamento',
-  TEST: 'Pagina de teste',
-  REPORT: 'Relatorio',
-};
+const DOCUMENT_TITLES = translated<PrintDocument>('print.documents', ['ORDER', 'VOID', 'PREBILL', 'STATEMENT', 'INVOICE', 'RECEIPT', 'PAYMENT', 'TEST', 'REPORT']);
 
 export interface PrintRequest {
   document: PrintDocument;
@@ -108,10 +99,10 @@ async function agent<T>(path: string, init?: RequestInit) {
   try {
     response = await fetch(`${agentUrl()}${path}`, { ...init, headers: { 'Content-Type': 'application/json' } });
   } catch {
-    throw new Error('O agente de impressao nao esta a correr neste computador (print-agent/iniciar.cmd)');
+    throw new Error(t('print.agentDown'));
   }
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.message ?? `Agente de impressao: erro ${response.status}`);
+  if (!response.ok) throw new Error(body.message ?? t('print.agentError', { status: response.status }));
   return body as T;
 }
 
@@ -153,18 +144,18 @@ export async function printPdfFrom(path: string, params: Record<string, unknown>
 export async function printDocument(request: PrintRequest) {
   const { data } = await api.post<PrintResult>('/print', request);
   if (data.status === 'printed') {
-    return `Impresso em ${data.printer.name}`;
+    return t('print.printedOn', { name: data.printer.name });
   }
   if (data.status === 'local') {
     await agent('/print', { method: 'POST', body: JSON.stringify({ printer: data.printer.localName, data: data.data, copies: data.copies }) });
-    return `Impresso em ${data.printer.name}`;
+    return t('print.printedOn', { name: data.printer.name });
   }
   const params = Object.fromEntries(Object.entries({ ...request, paper: data.paper }).map(([key, value]) => [key, value === null ? 'null' : value]));
   const { data: pdf } = await api.get<Blob>('/print/pdf', { params, responseType: 'blob' });
   if (data.status === 'pdf') {
     showPdf(pdf, `${DOCUMENT_TITLES[request.document]} · ${data.printer.name}`, data.paper);
-    return `PDF aberto (${data.printer.name})`;
+    return t('print.pdfOpened', { name: data.printer.name });
   }
   await printPdf(pdf);
-  return data.printer ? `Enviado para impressao (${data.printer.name})` : 'Enviado para impressao';
+  return data.printer ? t('print.sentTo', { name: data.printer.name }) : t('print.sent');
 }

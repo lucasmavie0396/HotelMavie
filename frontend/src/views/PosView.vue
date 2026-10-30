@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import RoomAccountPanel from '@/components/RoomAccountPanel.vue';
 import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
 import { api, errorMessage } from '@/services/api';
@@ -14,11 +15,12 @@ import { formatMoney } from '@/utils/format';
 type Mode = Outlet | 'ROOMS';
 
 const MODES: { value: Mode; label: string }[] = [
-  { value: 'RESTAURANT', label: 'Restaurante' },
-  { value: 'BAR', label: 'Bar' },
-  { value: 'ROOMS', label: 'Contas de quarto' },
+  { value: 'RESTAURANT', label: 'labels.outlet.RESTAURANT' },
+  { value: 'BAR', label: 'labels.outlet.BAR' },
+  { value: 'ROOMS', label: 'pos.roomAccounts' },
 ];
 
+const { t } = useI18n();
 const auth = useAuthStore();
 const hotels = useHotelsStore();
 const mode = ref<Mode>('RESTAURANT');
@@ -40,8 +42,8 @@ const people = ref(2);
 const moving = reactive({ active: false, target: 'split', quantities: {} as Record<number, number> });
 const tableChecks = computed(() => (current.value?.tableId ? orders.value.filter((order) => order.tableId === current.value!.tableId) : []));
 const moveTargets = computed(() => [
-  ...activeTables.value.filter((table) => table.id !== current.value?.tableId && table.active).map((table) => ({ value: `table:${table.id}`, label: `${table.label}${table.openOrder ? ' (ocupada)' : ''}` })),
-  ...orders.value.filter((order) => order.id !== current.value?.id && !order.tableId).map((order) => ({ value: `order:${order.id}`, label: order.tableLabel ?? `Pedido #${order.id}` })),
+  ...activeTables.value.filter((table) => table.id !== current.value?.tableId && table.active).map((table) => ({ value: `table:${table.id}`, label: `${table.label}${table.openOrder ? ` (${t('pos.busy')})` : ''}` })),
+  ...orders.value.filter((order) => order.id !== current.value?.id && !order.tableId).map((order) => ({ value: `order:${order.id}`, label: order.tableLabel ?? t('pos.order', { id: order.id }) })),
 ]);
 const movingCount = computed(() => Object.values(moving.quantities).filter((quantity) => quantity > 0).length);
 
@@ -152,7 +154,7 @@ const removeItem = (item: OrderItem) =>
   run(async () => (await api.delete<Order>(`/orders/${current.value!.id}/items/${item.id}`)).data);
 
 const addNote = (item: OrderItem) => {
-  const notes = window.prompt(`Nota para ${item.description} (ex.: sem cebola):`, item.notes ?? '');
+  const notes = window.prompt(t('pos.notePrompt', { name: item.description }), item.notes ?? '');
   if (notes === null) return;
   run(async () => {
     const order = current.value!;
@@ -162,13 +164,13 @@ const addNote = (item: OrderItem) => {
 };
 
 const voidItem = (item: OrderItem) => {
-  const reason = window.prompt(`Motivo da anulacao de ${Number(item.quantity)} x ${item.description}:`);
+  const reason = window.prompt(t('pos.voidPrompt', { quantity: Number(item.quantity), name: item.description }));
   if (!reason) return;
   run(async () => {
     const { data } = await api.post<Order>(`/orders/${current.value!.id}/items/${item.id}/void`, { reason });
     notice.value = await printDocument({ document: 'VOID', orderId: data.id, itemId: item.id });
     return data;
-  }, 'Linha anulada; talao de anulacao enviado');
+  }, t('pos.voided'));
 };
 
 const sendOrder = () =>
@@ -179,7 +181,7 @@ const sendOrder = () =>
       await printDocument({ document: 'ORDER', orderId: order.id, station: target.station, printerId: target.printerId, sentAt: data.sentAt });
     }
     return (await api.get<Order>(`/orders/${order.id}`)).data;
-  }, 'Pedido enviado');
+  }, t('pos.sent'));
 
 const print = (request: Parameters<typeof printDocument>[0]) =>
   printDocument(request)
@@ -192,7 +194,7 @@ const prebill = () => print({ document: 'PREBILL', orderId: current.value!.id })
 
 const cancelOrder = () =>
   run(async () => {
-    if (!window.confirm('Anular este pedido?')) return;
+    if (!window.confirm(t('pos.confirmCancel'))) return;
     await api.post(`/orders/${current.value!.id}/cancel`);
     current.value = null;
   });
@@ -245,7 +247,7 @@ const confirmMove = () =>
     });
     moving.active = false;
     return data.from.status === 'OPEN' ? data.from : data.to;
-  }, 'Artigos transferidos');
+  }, t('pos.moved'));
 
 function addPaymentLine() {
   close.payments.push({ paymentTypeId: 0, amount: Math.max(Number(current.value!.total) - paidTotal.value, 0), cashSessionId: 0, reference: '' });
@@ -268,14 +270,14 @@ const confirmClose = () =>
     if (invoice) {
       notice.value = await printDocument({ document: 'INVOICE', invoiceId: invoice.id });
     }
-  }, close.mode === 'ROOM' ? 'Consumo lancado na conta do quarto' : 'Conta fechada');
+  }, close.mode === 'ROOM' ? t('pos.chargedToRoom') : t('pos.closed'));
 
 onMounted(load);
 </script>
 
 <template>
   <section class="space-y-4">
-    <PageHeader section="pos" title="Ponto de venda" subtitle="Restaurante, bar e contas dos quartos">
+    <PageHeader section="pos" :title="t('pos.title')" :subtitle="t('pos.subtitle')">
       <div class="flex rounded-lg bg-white p-0.5 text-sm shadow">
         <button
           v-for="item in MODES"
@@ -285,7 +287,7 @@ onMounted(load);
           :class="mode === item.value ? 'bg-indigo-600 text-white' : 'text-slate-700'"
           @click="switchMode(item.value)"
         >
-          {{ item.label }}
+          {{ t(item.label) }}
         </button>
       </div>
     </PageHeader>
@@ -299,10 +301,10 @@ onMounted(load);
       <div class="grid gap-4 lg:grid-cols-[260px_1fr_360px]">
         <div class="card space-y-3 p-3 lg:max-h-[calc(100dvh-14rem)] lg:overflow-y-auto">
           <div class="flex items-center justify-between">
-            <h2 class="text-sm font-semibold text-slate-700">Mesas</h2>
+            <h2 class="text-sm font-semibold text-slate-700">{{ t('pos.tables') }}</h2>
             <span class="flex gap-2 text-[10px] text-slate-500">
-              <span class="flex items-center gap-1"><span class="size-2 rounded-full bg-emerald-400" />livre</span>
-              <span class="flex items-center gap-1"><span class="size-2 rounded-full bg-rose-500" />ocupada</span>
+              <span class="flex items-center gap-1"><span class="size-2 rounded-full bg-emerald-400" />{{ t('pos.free') }}</span>
+              <span class="flex items-center gap-1"><span class="size-2 rounded-full bg-rose-500" />{{ t('pos.busy') }}</span>
             </span>
           </div>
           <div v-if="activeTables.length" class="grid grid-cols-3 gap-2">
@@ -320,23 +322,23 @@ onMounted(load);
               @click="openTable(table)"
             >
               <span class="text-lg leading-none font-bold">{{ table.number }}</span>
-              <span class="w-full truncate text-[10px] leading-tight">{{ table.openOrder ? money(table.openOrder.total) : `${table.seats} lug.` }}</span>
-              <span v-if="table.openOrder?.pending" class="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-amber-400 text-[10px] font-bold text-amber-950 shadow" title="Artigos por enviar">
+              <span class="w-full truncate text-[10px] leading-tight">{{ table.openOrder ? money(table.openOrder.total) : t('pos.seats', { n: table.seats }) }}</span>
+              <span v-if="table.openOrder?.pending" class="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-amber-400 text-[10px] font-bold text-amber-950 shadow" :title="t('pos.pendingItems')">
                 {{ table.openOrder.pending }}
               </span>
             </button>
           </div>
           <p v-else class="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
-            Ainda nao ha mesas.
-            <RouterLink v-if="isManager" :to="{ name: 'settings', query: { tab: 'tables' } }" class="text-indigo-600 hover:underline">Criar mesas na Configuracao</RouterLink>
-            <template v-else>Peca ao gestor para as criar na Configuracao.</template>
+            {{ t('pos.noTables') }}
+            <RouterLink v-if="isManager" :to="{ name: 'settings', query: { tab: 'tables' } }" class="text-indigo-600 hover:underline">{{ t('pos.createTables') }}</RouterLink>
+            <template v-else>{{ t('pos.askManager') }}</template>
           </p>
 
           <div class="space-y-2 border-t border-slate-100 pt-3">
-            <h2 class="text-sm font-semibold text-slate-700">Sem mesa / balcao</h2>
+            <h2 class="text-sm font-semibold text-slate-700">{{ t('pos.noTable') }}</h2>
             <form class="flex gap-2" @submit.prevent="openOrder">
-              <input v-model="newTable" class="input" placeholder="Nome (opcional)" />
-              <button class="btn px-3" type="submit" :disabled="busy" title="Abrir conta sem mesa">+</button>
+              <input v-model="newTable" class="input" :placeholder="t('pos.optionalName')" />
+              <button class="btn px-3" type="submit" :disabled="busy" :title="t('pos.openLoose')">+</button>
             </form>
             <button
               v-for="order in looseOrders"
@@ -348,7 +350,7 @@ onMounted(load);
             >
               <span class="font-medium">
                 {{ order.tableLabel ?? `#${order.id}` }}
-                <span v-if="order.items.some((i) => !i.sentAt && !i.voidedAt)" class="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800">por enviar</span>
+                <span v-if="order.items.some((i) => !i.sentAt && !i.voidedAt)" class="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800">{{ t('pos.toSend') }}</span>
               </span>
               <span>{{ money(order.total) }}</span>
             </button>
@@ -358,7 +360,7 @@ onMounted(load);
         <div class="card space-y-3 p-3 lg:max-h-[calc(100dvh-14rem)] lg:overflow-y-auto">
           <div class="flex flex-wrap gap-2">
             <button type="button" class="rounded-full px-3 py-1 text-xs" :class="!categoryFilter ? 'bg-slate-900 text-white' : 'bg-slate-100'" @click="categoryFilter = 0">
-              Todos
+              {{ t('common.all') }}
             </button>
             <button
               v-for="[id, name] in categories"
@@ -371,7 +373,7 @@ onMounted(load);
               {{ name }}
             </button>
           </div>
-          <p v-if="!current" class="text-sm text-slate-500">Abre ou escolhe um pedido para adicionar produtos.</p>
+          <p v-if="!current" class="text-sm text-slate-500">{{ t('pos.pickOrder') }}</p>
           <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
             <button
               v-for="product in visibleProducts"
@@ -396,8 +398,8 @@ onMounted(load);
         <div class="card space-y-3 p-3 lg:max-h-[calc(100dvh-14rem)] lg:overflow-y-auto">
           <template v-if="current">
             <div class="flex items-center justify-between">
-              <h2 class="font-semibold">{{ current.tableLabel ?? `Pedido #${current.id}` }}</h2>
-              <button class="text-xs text-rose-600 hover:underline" type="button" @click="cancelOrder">Anular pedido</button>
+              <h2 class="font-semibold">{{ current.tableLabel ?? t('pos.order', { id: current.id }) }}</h2>
+              <button class="text-xs text-rose-600 hover:underline" type="button" @click="cancelOrder">{{ t('pos.cancelOrder') }}</button>
             </div>
             <div v-if="tableChecks.length > 1" class="flex flex-wrap gap-1 text-xs">
               <button
@@ -408,7 +410,7 @@ onMounted(load);
                 :class="check.id === current.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700'"
                 @click="current = check; closing = false; moving.active = false"
               >
-                Conta {{ index + 1 }} · {{ money(check.total) }}
+                {{ t('pos.check', { n: index + 1 }) }} · {{ money(check.total) }}
               </button>
             </div>
             <ul class="divide-y divide-slate-100 text-sm">
@@ -420,7 +422,7 @@ onMounted(load);
                       class="mr-1 align-middle"
                       type="checkbox"
                       :checked="(moving.quantities[item.id] ?? 0) > 0"
-                      :aria-label="`Mover ${item.description}`"
+                      :aria-label="t('pos.moveItem', { name: item.description })"
                       @change="toggleMoveLine(item)"
                     />
                     {{ Number(item.quantity) }}x {{ item.description }}
@@ -429,7 +431,7 @@ onMounted(load);
                       class="ml-1 rounded px-1 text-[10px]"
                       :class="item.readyAt ? 'bg-sky-100 text-sky-800' : item.sentAt ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
                     >
-                      {{ item.readyAt ? 'pronto' : item.sentAt ? (station(item) === 'BAR' ? 'bar' : station(item) === 'NONE' ? 'servido' : 'cozinha') : 'por enviar' }}
+                      {{ item.readyAt ? t('pos.ready') : item.sentAt ? (station(item) === 'BAR' ? t('pos.atBar') : station(item) === 'NONE' ? t('pos.served') : t('pos.atKitchen')) : t('pos.toSend') }}
                     </span>
                   </span>
                   <input
@@ -440,64 +442,64 @@ onMounted(load);
                     min="0.001"
                     :max="Number(item.quantity)"
                     step="1"
-                    aria-label="Quantidade a mover"
+                    :aria-label="t('pos.moveQuantity')"
                   />
                   <span v-else class="flex items-center gap-2 whitespace-nowrap">
-                    {{ item.voidedAt ? 'anulado' : money(item.total) }}
+                    {{ item.voidedAt ? t('pos.voidedLabel') : money(item.total) }}
                     <template v-if="!item.voidedAt">
-                      <button v-if="!item.sentAt" class="text-xs text-indigo-600" type="button" :disabled="busy" @click="addNote(item)">nota</button>
-                      <button v-if="!item.sentAt" class="text-rose-600" type="button" :disabled="busy" aria-label="Remover" @click="removeItem(item)">&times;</button>
-                      <button v-else-if="isManager" class="text-xs text-rose-600 hover:underline" type="button" :disabled="busy" @click="voidItem(item)">anular</button>
+                      <button v-if="!item.sentAt" class="text-xs text-indigo-600" type="button" :disabled="busy" @click="addNote(item)">{{ t('pos.note') }}</button>
+                      <button v-if="!item.sentAt" class="text-rose-600" type="button" :disabled="busy" :aria-label="t('common.remove')" @click="removeItem(item)">&times;</button>
+                      <button v-else-if="isManager" class="text-xs text-rose-600 hover:underline" type="button" :disabled="busy" @click="voidItem(item)">{{ t('pos.void') }}</button>
                     </template>
                   </span>
                 </div>
                 <p v-if="item.notes" class="text-xs text-slate-500">&gt; {{ item.notes }}</p>
-                <p v-if="item.voidedAt" class="text-xs">Anulado: {{ item.voidReason }} ({{ item.voidedBy?.name }})</p>
+                <p v-if="item.voidedAt" class="text-xs">{{ t('pos.voidedBy', { reason: item.voidReason, name: item.voidedBy?.name }) }}</p>
               </li>
             </ul>
             <p class="flex justify-between border-t border-slate-200 pt-2 text-lg font-semibold">
-              Total <span>{{ money(current.total) }}</span>
+              {{ t('common.total') }} <span>{{ money(current.total) }}</span>
             </p>
 
             <div v-if="moving.active" class="space-y-2 rounded-md bg-slate-50 p-3 text-sm">
-              <p class="text-xs text-slate-500">Escolhe os artigos (e a quantidade) e para onde vao.</p>
+              <p class="text-xs text-slate-500">{{ t('pos.moveHint') }}</p>
               <select v-model="moving.target" class="input">
-                <option value="split">Nova conta nesta {{ current.tableId ? 'mesa' : 'venda' }} (dividir)</option>
-                <option v-for="target in moveTargets" :key="target.value" :value="target.value">Transferir para {{ target.label }}</option>
+                <option value="split">{{ current.tableId ? t('pos.splitTable') : t('pos.splitSale') }}</option>
+                <option v-for="target in moveTargets" :key="target.value" :value="target.value">{{ t('pos.transferTo', { target: target.label }) }}</option>
               </select>
               <div class="flex justify-end gap-2">
-                <button class="btn-secondary" type="button" @click="moving.active = false">Voltar</button>
-                <button class="btn" type="button" :disabled="busy || !movingCount" @click="confirmMove">Mover {{ movingCount }} linha(s)</button>
+                <button class="btn-secondary" type="button" @click="moving.active = false">{{ t('common.back') }}</button>
+                <button class="btn" type="button" :disabled="busy || !movingCount" @click="confirmMove">{{ t('pos.moveLines', { n: movingCount }) }}</button>
               </div>
             </div>
 
             <div v-else-if="!closing" class="grid grid-cols-2 gap-2">
               <button class="btn col-span-2" type="button" :disabled="busy || !pendingCount" @click="sendOrder">
-                Enviar pedido{{ pendingCount ? ` (${pendingCount})` : '' }}
+                {{ t('pos.send') }}{{ pendingCount ? ` (${pendingCount})` : '' }}
               </button>
-              <button class="btn-secondary" type="button" :disabled="!activeItems" @click="prebill">Pre-conta</button>
-              <button class="btn" type="button" :disabled="!activeItems" @click="startClose">Fechar conta</button>
-              <button class="btn-secondary col-span-2" type="button" :disabled="!activeItems" @click="startMove">Dividir / transferir artigos</button>
+              <button class="btn-secondary" type="button" :disabled="!activeItems" @click="prebill">{{ t('pos.prebill') }}</button>
+              <button class="btn" type="button" :disabled="!activeItems" @click="startClose">{{ t('pos.closeBill') }}</button>
+              <button class="btn-secondary col-span-2" type="button" :disabled="!activeItems" @click="startMove">{{ t('pos.splitMove') }}</button>
               <div v-if="current.items.some((i) => i.sentAt)" class="col-span-2 flex gap-3 text-xs">
-                Reimprimir:
-                <button class="text-indigo-600 hover:underline" type="button" @click="reprint('KITCHEN')">cozinha</button>
-                <button class="text-indigo-600 hover:underline" type="button" @click="reprint('BAR')">bar</button>
+                {{ t('pos.reprint') }}
+                <button class="text-indigo-600 hover:underline" type="button" @click="reprint('KITCHEN')">{{ t('pos.atKitchen') }}</button>
+                <button class="text-indigo-600 hover:underline" type="button" @click="reprint('BAR')">{{ t('pos.atBar') }}</button>
               </div>
             </div>
 
             <form v-else class="space-y-3 rounded-md bg-slate-50 p-3 text-sm" @submit.prevent="confirmClose">
               <div class="flex gap-4">
-                <label class="flex items-center gap-1"><input v-model="close.mode" type="radio" value="PAY" />Pagar agora</label>
-                <label class="flex items-center gap-1"><input v-model="close.mode" type="radio" value="ROOM" :disabled="!inHouse.length" />Lancar no quarto</label>
+                <label class="flex items-center gap-1"><input v-model="close.mode" type="radio" value="PAY" />{{ t('pos.payNow') }}</label>
+                <label class="flex items-center gap-1"><input v-model="close.mode" type="radio" value="ROOM" :disabled="!inHouse.length" />{{ t('pos.chargeRoom') }}</label>
               </div>
               <select v-if="close.mode === 'ROOM'" v-model.number="close.reservationId" class="input">
                 <option v-for="reservation in inHouse" :key="reservation.id" :value="reservation.id">
-                  Quarto {{ reservation.room.number }} · {{ reservation.guest.firstName }} {{ reservation.guest.lastName }}
+                  {{ t('dashboard.room', { number: reservation.room.number }) }} · {{ reservation.guest.firstName }} {{ reservation.guest.lastName }}
                 </option>
               </select>
               <template v-else>
                 <div v-for="(payment, index) in close.payments" :key="index" class="grid grid-cols-2 gap-2 rounded border border-slate-200 bg-white p-2">
-                  <input v-model.number="payment.amount" class="input col-span-2" type="number" min="0.01" step="0.01" aria-label="Valor" />
+                  <input v-model.number="payment.amount" class="input col-span-2" type="number" min="0.01" step="0.01" :aria-label="t('common.value')" />
                   <PaymentTypeSelect
                     v-model:type-id="payment.paymentTypeId"
                     v-model:cash-session-id="payment.cashSessionId"
@@ -506,27 +508,27 @@ onMounted(load);
                   />
                 </div>
                 <div class="flex flex-wrap items-center gap-2 text-xs">
-                  <button class="text-indigo-600 hover:underline" type="button" @click="addPaymentLine">+ dividir pagamento</button>
+                  <button class="text-indigo-600 hover:underline" type="button" @click="addPaymentLine">{{ t('pos.splitPayment') }}</button>
                   <span class="text-slate-400">|</span>
                   <label class="flex items-center gap-1">
-                    Dividir por
-                    <input v-model.number="people" class="input w-14 py-0.5" type="number" min="2" max="50" aria-label="Numero de pessoas" />
-                    pessoas
+                    {{ t('pos.splitBy') }}
+                    <input v-model.number="people" class="input w-14 py-0.5" type="number" min="2" max="50" :aria-label="t('pos.people')" />
+                    {{ t('pos.people') }}
                   </label>
-                  <button class="text-indigo-600 hover:underline" type="button" @click="splitByPeople">aplicar</button>
+                  <button class="text-indigo-600 hover:underline" type="button" @click="splitByPeople">{{ t('pos.apply') }}</button>
                 </div>
                 <p :class="Math.abs(paidTotal - Number(current.total)) < 0.005 ? 'text-emerald-700' : 'text-rose-600'">
-                  Pago {{ money(paidTotal) }} de {{ money(current.total) }}
+                  {{ t('pos.paidOf', { paid: money(paidTotal), total: money(current.total) }) }}
                 </p>
-                <input v-model="close.customerTaxId" class="input" placeholder="NIF do cliente (opcional)" />
+                <input v-model="close.customerTaxId" class="input" :placeholder="t('pos.taxId')" />
               </template>
               <div class="flex justify-end gap-2">
-                <button class="btn-secondary" type="button" @click="closing = false">Voltar</button>
-                <button class="btn" type="submit" :disabled="busy">Confirmar</button>
+                <button class="btn-secondary" type="button" @click="closing = false">{{ t('common.back') }}</button>
+                <button class="btn" type="submit" :disabled="busy">{{ t('common.confirm') }}</button>
               </div>
             </form>
           </template>
-          <p v-else class="text-sm text-slate-500">Nenhum pedido selecionado</p>
+          <p v-else class="text-sm text-slate-500">{{ t('pos.noneSelected') }}</p>
         </div>
       </div>
     </template>

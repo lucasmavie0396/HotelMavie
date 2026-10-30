@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
 import { api, errorMessage } from '@/services/api';
 import { printDocument, type PrintRequest } from '@/services/print';
@@ -8,6 +9,7 @@ import { usePaymentTypesStore } from '@/stores/paymentTypes';
 import type { CashRegister, Folio, Reservation } from '@/types';
 import { CHARGE_TYPE_LABELS, formatDateTime, formatMoney, PAYMENT_METHOD_LABELS } from '@/utils/format';
 
+const { t } = useI18n();
 const hotels = useHotelsStore();
 const inHouse = ref<Reservation[]>([]);
 const registers = ref<CashRegister[]>([]);
@@ -85,7 +87,7 @@ async function receive() {
     });
     if (invoiceId) await printDocument({ document: 'INVOICE', invoiceId });
     await printDocument({ document: 'PAYMENT', paymentId: payment.id });
-    notice.value = invoiceId ? 'Pagamento registado e fatura-recibo emitida' : 'Pagamento registado';
+    notice.value = invoiceId ? t('roomAccount.paidInvoiced') : t('roomAccount.paid');
     await loadFolio();
   } catch (e) {
     error.value = errorMessage(e);
@@ -110,7 +112,7 @@ defineExpose({ load });
 <template>
   <div class="grid gap-4 lg:grid-cols-[260px_1fr]">
     <div class="card space-y-2 p-3">
-      <h2 class="text-sm font-semibold text-slate-600">Quartos ocupados</h2>
+      <h2 class="text-sm font-semibold text-slate-600">{{ t('roomAccount.occupied') }}</h2>
       <button
         v-for="reservation in inHouse"
         :key="reservation.id"
@@ -119,18 +121,18 @@ defineExpose({ load });
         :class="selectedId === reservation.id ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'"
         @click="selectedId = reservation.id"
       >
-        <span class="font-medium">Quarto {{ reservation.room.number }}</span>
+        <span class="font-medium">{{ t('dashboard.room', { number: reservation.room.number }) }}</span>
         <span class="block text-slate-500">{{ reservation.guest.firstName }} {{ reservation.guest.lastName }}</span>
       </button>
-      <p v-if="!inHouse.length" class="text-sm text-slate-500">Nao ha hospedes em casa</p>
+      <p v-if="!inHouse.length" class="text-sm text-slate-500">{{ t('roomAccount.none') }}</p>
     </div>
 
     <div v-if="selected && folio" class="card space-y-4">
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <h2 class="font-semibold">Quarto {{ selected.room.number }} · {{ selected.guest.firstName }} {{ selected.guest.lastName }}</h2>
+        <h2 class="font-semibold">{{ t('dashboard.room', { number: selected.room.number }) }} · {{ selected.guest.firstName }} {{ selected.guest.lastName }}</h2>
         <div class="flex gap-2">
-          <button class="btn-secondary" type="button" @click="print({ document: 'STATEMENT', reservationId: selected.id })">Imprimir conta</button>
-          <RouterLink :to="{ name: 'reservation', params: { id: selected.id } }" class="btn-secondary">Abrir reserva</RouterLink>
+          <button class="btn-secondary" type="button" @click="print({ document: 'STATEMENT', reservationId: selected.id })">{{ t('folio.print') }}</button>
+          <RouterLink :to="{ name: 'reservation', params: { id: selected.id } }" class="btn-secondary">{{ t('roomAccount.openReservation') }}</RouterLink>
         </div>
       </div>
 
@@ -149,14 +151,14 @@ defineExpose({ load });
                 <button v-if="charge.invoice" class="text-indigo-600 hover:underline" type="button" @click="print({ document: 'INVOICE', invoiceId: charge.invoice.id })">
                   {{ charge.invoice.fullNumber }}
                 </button>
-                <span v-else class="text-amber-700">por faturar</span>
+                <span v-else class="text-amber-700">{{ t('roomAccount.uninvoiced') }}</span>
               </td>
               <td class="py-1.5 text-right">{{ money(charge.total) }}</td>
             </tr>
             <tr v-for="payment in folio.payments" :key="`p${payment.id}`" class="border-b border-slate-100 text-emerald-700">
-              <td class="py-1.5">Pagamento · {{ paymentTypes.byId(payment.paymentTypeId)?.name ?? PAYMENT_METHOD_LABELS[payment.method] }} <span class="text-xs text-slate-500">{{ formatDateTime(payment.createdAt) }}</span></td>
+              <td class="py-1.5">{{ t('folio.payment') }} · {{ paymentTypes.byId(payment.paymentTypeId)?.name ?? PAYMENT_METHOD_LABELS[payment.method] }} <span class="text-xs text-slate-500">{{ formatDateTime(payment.createdAt) }}</span></td>
               <td class="py-1.5 text-xs">
-                <button class="text-indigo-600 hover:underline" type="button" @click="print({ document: 'PAYMENT', paymentId: payment.id })">comprovativo</button>
+                <button class="text-indigo-600 hover:underline" type="button" @click="print({ document: 'PAYMENT', paymentId: payment.id })">{{ t('folio.proof') }}</button>
               </td>
               <td class="py-1.5 text-right">-{{ money(payment.amount) }}</td>
             </tr>
@@ -164,23 +166,23 @@ defineExpose({ load });
         </table>
       </div>
       <p class="flex justify-between border-t border-slate-200 pt-2 text-lg font-semibold">
-        Saldo <span :class="Number(folio.balance) > 0 ? 'text-rose-600' : 'text-emerald-700'">{{ money(folio.balance) }}</span>
+        {{ t('folio.balance') }} <span :class="Number(folio.balance) > 0 ? 'text-rose-600' : 'text-emerald-700'">{{ money(folio.balance) }}</span>
       </p>
 
       <form class="grid gap-3 rounded-md bg-slate-50 p-3 sm:grid-cols-2" @submit.prevent="receive">
-        <h3 class="text-sm font-semibold sm:col-span-2">Receber</h3>
-        <input v-model.number="pay.amount" class="input" type="number" min="0.01" step="0.01" aria-label="Valor" required />
+        <h3 class="text-sm font-semibold sm:col-span-2">{{ t('roomAccount.receive') }}</h3>
+        <input v-model.number="pay.amount" class="input" type="number" min="0.01" step="0.01" :aria-label="t('common.value')" required />
         <PaymentTypeSelect v-model:type-id="pay.paymentTypeId" v-model:cash-session-id="pay.cashSessionId" v-model:reference="pay.reference" :registers="registers" />
         <label class="flex items-center gap-2 text-sm sm:col-span-2" :class="uninvoiced.length ? '' : 'text-slate-400'">
           <input v-model="pay.invoice" type="checkbox" :disabled="!uninvoiced.length" />
-          Emitir fatura-recibo dos {{ uninvoiced.length }} lancamentos por faturar ({{ money(uninvoicedTotal) }})
+          {{ t('roomAccount.issue', { n: uninvoiced.length, amount: money(uninvoicedTotal) }) }}
         </label>
-        <input v-if="pay.invoice && uninvoiced.length" v-model="pay.customerTaxId" class="input" placeholder="NIF do cliente (opcional)" />
+        <input v-if="pay.invoice && uninvoiced.length" v-model="pay.customerTaxId" class="input" :placeholder="t('pos.taxId')" />
         <button class="btn sm:col-start-2" type="submit" :disabled="busy || !pay.paymentTypeId">
-          Receber {{ money(pay.amount || 0) }}
+          {{ t('roomAccount.receiveAmount', { amount: money(pay.amount || 0) }) }}
         </button>
       </form>
     </div>
-    <p v-else class="text-sm text-slate-500">Escolhe um quarto.</p>
+    <p v-else class="text-sm text-slate-500">{{ t('roomAccount.pick') }}</p>
   </div>
 </template>

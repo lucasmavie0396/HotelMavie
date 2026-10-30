@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
 import type { KdsCard } from '@/types';
@@ -9,6 +10,7 @@ import { formatDateTime } from '@/utils/format';
 type Station = 'KITCHEN' | 'BAR';
 
 const STATION_KEY = 'mavie.kdsStation';
+const { t } = useI18n();
 const hotels = useHotelsStore();
 const station = ref<Station>(readStation());
 const pending = ref<KdsCard[]>([]);
@@ -88,12 +90,12 @@ onBeforeUnmount(() => {
 
 <template>
   <section ref="root" class="space-y-4 overflow-y-auto bg-slate-100 p-1">
-    <PageHeader section="kitchen" :subtitle="`${pending.length} pedido(s) em preparacao · ${waiting} artigo(s) · atualiza a cada 10 s`">
+    <PageHeader section="kitchen" :subtitle="t('kitchen.subtitle', { orders: pending.length, items: waiting })">
       <div class="flex rounded-lg bg-white p-0.5 text-sm text-slate-700 shadow">
-        <button type="button" class="rounded px-4 py-1.5" :class="station === 'KITCHEN' ? 'bg-indigo-600 text-white' : ''" @click="setStation('KITCHEN')">Cozinha</button>
-        <button type="button" class="rounded px-4 py-1.5" :class="station === 'BAR' ? 'bg-indigo-600 text-white' : ''" @click="setStation('BAR')">Bar</button>
+        <button type="button" class="rounded px-4 py-1.5" :class="station === 'KITCHEN' ? 'bg-indigo-600 text-white' : ''" @click="setStation('KITCHEN')">{{ t('labels.prepStation.KITCHEN') }}</button>
+        <button type="button" class="rounded px-4 py-1.5" :class="station === 'BAR' ? 'bg-indigo-600 text-white' : ''" @click="setStation('BAR')">{{ t('labels.prepStation.BAR') }}</button>
       </div>
-      <button class="btn-secondary" type="button" @click="fullscreen">Ecra inteiro</button>
+      <button class="btn-secondary" type="button" @click="fullscreen">{{ t('kitchen.fullscreen') }}</button>
     </PageHeader>
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
@@ -103,7 +105,7 @@ onBeforeUnmount(() => {
         <header class="mb-2 flex items-start justify-between gap-2">
           <div>
             <h2 class="text-xl font-bold">{{ card.table }}</h2>
-            <p class="text-xs text-slate-500">{{ card.outlet === 'BAR' ? 'Bar' : 'Restaurante' }} · {{ card.waiter ?? '-' }} · {{ formatDateTime(card.sentAt) }}</p>
+            <p class="text-xs text-slate-500">{{ t(`labels.outlet.${card.outlet}`) }} · {{ card.waiter ?? '-' }} · {{ formatDateTime(card.sentAt) }}</p>
           </div>
           <span class="rounded-full bg-slate-900 px-2.5 py-1 text-sm font-semibold text-white">{{ minutes(card) }} min</span>
         </header>
@@ -114,34 +116,34 @@ onBeforeUnmount(() => {
               class="text-left text-lg leading-tight"
               :class="item.voided ? 'text-rose-600 line-through' : item.readyAt ? 'text-slate-400 line-through' : 'font-semibold'"
               :disabled="busy || item.voided"
-              :title="item.readyAt ? 'Voltar a por em preparacao' : 'Marcar este artigo como pronto'"
+              :title="item.readyAt ? t('kitchen.undo') : t('kitchen.markItem')"
               @click="mark([item.id], Boolean(item.readyAt))"
             >
               {{ Number(item.quantity) }}x {{ item.description }}
-              <span v-if="item.voided" class="ml-1 text-xs font-bold no-underline">ANULADO</span>
+              <span v-if="item.voided" class="ml-1 text-xs font-bold no-underline">{{ t('kitchen.voided') }}</span>
               <span v-if="item.notes" class="block text-sm font-normal text-amber-700">&gt; {{ item.notes }}</span>
             </button>
           </li>
         </ul>
-        <button class="btn mt-3 w-full justify-center py-3 text-base" type="button" :disabled="busy" @click="mark(open(card))">Pronto</button>
+        <button class="btn mt-3 w-full justify-center py-3 text-base" type="button" :disabled="busy" @click="mark(open(card))">{{ t('kitchen.ready') }}</button>
       </article>
     </div>
-    <p v-else class="rounded-2xl bg-white p-10 text-center text-lg text-slate-500 shadow">Sem pedidos em preparacao</p>
+    <p v-else class="rounded-2xl bg-white p-10 text-center text-lg text-slate-500 shadow">{{ t('kitchen.empty') }}</p>
 
     <div v-if="done.length" class="space-y-2">
-      <h2 class="text-sm font-semibold text-slate-600">Prontos nos ultimos 30 minutos</h2>
+      <h2 class="text-sm font-semibold text-slate-600">{{ t('kitchen.done') }}</h2>
       <div class="flex flex-wrap gap-2">
         <button
           v-for="card in done"
           :key="card.key"
           type="button"
           class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-sm shadow-sm hover:border-indigo-400"
-          title="Voltar a por em preparacao"
+          :title="t('kitchen.undo')"
           :disabled="busy"
           @click="mark(card.items.map((item) => item.id), true)"
         >
           <span class="font-semibold">{{ card.table }}</span>
-          <span class="block text-xs text-slate-500">{{ card.items.filter((item) => !item.voided).length }} artigo(s) · {{ formatDateTime(card.readyAt!) }}</span>
+          <span class="block text-xs text-slate-500">{{ t('kitchen.items', { n: card.items.filter((item) => !item.voided).length }) }} · {{ formatDateTime(card.readyAt!) }}</span>
         </button>
       </div>
     </div>

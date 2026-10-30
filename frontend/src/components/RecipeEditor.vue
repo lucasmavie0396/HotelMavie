@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
 import type { Product } from '@/types';
@@ -16,6 +17,7 @@ interface Recipe {
 const props = defineProps<{ product: Product; ingredients: Product[] }>();
 const emit = defineEmits<{ close: [] }>();
 
+const { t } = useI18n();
 const hotels = useHotelsStore();
 const recipe = ref<Recipe | null>(null);
 const lines = ref<{ ingredientId: number; quantity: number }[]>([]);
@@ -57,26 +59,26 @@ onMounted(async () => {
 <template>
   <div class="card space-y-4">
     <div class="flex items-center justify-between">
-      <h2 class="font-semibold">Ficha tecnica · {{ product.name }}</h2>
-      <button class="text-sm text-slate-500 hover:underline" type="button" @click="emit('close')">Fechar</button>
+      <h2 class="font-semibold">{{ t('recipe.title', { name: product.name }) }}</h2>
+      <button class="text-sm text-slate-500 hover:underline" type="button" @click="emit('close')">{{ t('common.close') }}</button>
     </div>
     <p v-if="product.trackStock" class="text-sm text-amber-700">
-      Este produto controla stock proprio. Para usar receita, desativa "Controla stock" no produto.
+      {{ t('recipe.ownStock') }}
     </p>
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
     <p v-if="!available.length" class="text-sm text-slate-500">
-      Cria primeiro os ingredientes como produtos com "Controla stock" (podes desmarcar "Vende-se no POS").
+      {{ t('recipe.noIngredients') }}
     </p>
 
     <div v-for="(line, index) in lines" :key="index" class="grid grid-cols-[1fr_120px_100px_32px] items-center gap-2 text-sm">
       <select v-model.number="line.ingredientId" class="input">
         <option v-for="item in available" :key="item.id" :value="item.id">{{ item.name }} ({{ item.unit }})</option>
       </select>
-      <input v-model.number="line.quantity" class="input" type="number" min="0.001" step="0.001" aria-label="Quantidade" />
+      <input v-model.number="line.quantity" class="input" type="number" min="0.001" step="0.001" :aria-label="t('common.quantity')" />
       <span class="text-right text-slate-600">
         {{ money(line.quantity * Number(available.find((p) => p.id === line.ingredientId)?.cost ?? 0)) }}
       </span>
-      <button class="text-rose-600" type="button" aria-label="Remover" @click="lines.splice(index, 1)">&times;</button>
+      <button class="text-rose-600" type="button" :aria-label="t('common.remove')" @click="lines.splice(index, 1)">&times;</button>
     </div>
     <button
       v-if="available.length"
@@ -84,20 +86,20 @@ onMounted(async () => {
       type="button"
       @click="lines.push({ ingredientId: available[0].id, quantity: 1 })"
     >
-      + ingrediente
+      {{ t('recipe.add') }}
     </button>
 
     <div v-if="recipe" class="grid gap-3 border-t border-slate-200 pt-3 text-sm sm:grid-cols-4">
-      <div><p class="text-xs text-slate-500">Custo do prato</p><p class="font-semibold">{{ money(draftCost) }}</p></div>
-      <div><p class="text-xs text-slate-500">Preco sem IVA</p><p class="font-semibold">{{ money(recipe.netPrice) }}</p></div>
+      <div><p class="text-xs text-slate-500">{{ t('recipe.cost') }}</p><p class="font-semibold">{{ money(draftCost) }}</p></div>
+      <div><p class="text-xs text-slate-500">{{ t('recipe.netPrice') }}</p><p class="font-semibold">{{ money(recipe.netPrice) }}</p></div>
       <div>
-        <p class="text-xs text-slate-500">Margem (gravada)</p>
+        <p class="text-xs text-slate-500">{{ t('recipe.margin') }}</p>
         <p class="font-semibold" :class="recipe.marginPercent < 60 ? 'text-amber-700' : 'text-emerald-700'">
           {{ money(recipe.margin) }} · {{ recipe.marginPercent }}%
         </p>
       </div>
       <div class="flex items-end justify-end">
-        <button class="btn" type="button" :disabled="busy || product.trackStock" @click="save">Guardar receita</button>
+        <button class="btn" type="button" :disabled="busy || product.trackStock" @click="save">{{ t('recipe.save') }}</button>
       </div>
     </div>
   </div>

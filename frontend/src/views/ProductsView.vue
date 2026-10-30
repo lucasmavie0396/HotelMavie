@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { translated } from '@/i18n';
 import ProductImagePicker from '@/components/ProductImagePicker.vue';
 import RecipeEditor from '@/components/RecipeEditor.vue';
 import { api, errorMessage } from '@/services/api';
@@ -35,7 +37,8 @@ const form = reactive(emptyProduct());
 const category = reactive({ name: '', outlet: '' as Outlet | '', prepStation: 'KITCHEN' as PrepStation, printerId: 0 });
 const printers = ref<Printer[]>([]);
 const printerName = (id: number | null) => printers.value.find((printer) => printer.id === id)?.name;
-const STATION_LABELS: Record<PrepStation, string> = { KITCHEN: 'Cozinha', BAR: 'Bar', NONE: 'Sem preparacao' };
+const STATION_LABELS = translated<PrepStation>('labels.prepStation', ['KITCHEN', 'BAR', 'NONE']);
+const { t } = useI18n();
 
 async function load() {
   try {
@@ -109,7 +112,7 @@ async function saveProduct() {
   const created = products.value.find((product) => product.id === createdId);
   if (created) {
     edit(created);
-    notice.value = `Produto criado com o codigo ${created.sku}. Pode agora juntar-lhe uma foto.`;
+    notice.value = t('products.created', { sku: created.sku });
   }
 }
 
@@ -157,8 +160,8 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <PageHeader section="products" title="Produtos e ementa" subtitle="Precos, categorias, receitas e impressoras de preparacao">
-      <input v-model="q" class="input w-64" placeholder="Procurar produto" />
+    <PageHeader section="products" :title="t('products.title')" :subtitle="t('products.subtitle')">
+      <input v-model="q" class="input w-64" :placeholder="t('products.search')" />
     </PageHeader>
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
@@ -166,64 +169,64 @@ onMounted(load);
 
     <div v-if="canManage" class="grid gap-6 lg:grid-cols-3">
       <form class="card grid gap-3 sm:grid-cols-2 lg:col-span-2" @submit.prevent="saveProduct">
-        <h2 class="font-semibold sm:col-span-2">{{ editingId ? 'Editar produto' : 'Novo produto' }}</h2>
+        <h2 class="font-semibold sm:col-span-2">{{ editingId ? t('products.edit') : t('products.new') }}</h2>
         <ProductImagePicker v-if="editingProduct" :key="editingProduct.id" class="sm:col-span-2" :product="editingProduct" @updated="imageUpdated" />
-        <p v-else class="text-xs text-slate-500 sm:col-span-2">Depois de criar o produto pode juntar-lhe uma foto (do computador ou procurada na internet).</p>
-        <input v-model="form.name" class="input" placeholder="Nome" required />
+        <p v-else class="text-xs text-slate-500 sm:col-span-2">{{ t('products.photoHint') }}</p>
+        <input v-model="form.name" class="input" :placeholder="t('common.name')" required />
         <div class="flex gap-2">
           <input
             v-model="form.sku"
             class="input"
-            :placeholder="editingId ? 'Codigo' : nextSku ? `Automatico: ${nextSku}` : 'Codigo automatico'"
-            :title="editingId ? 'Codigo do produto' : 'Deixa vazio para gerar o proximo codigo automaticamente'"
+            :placeholder="editingId ? t('products.code') : nextSku ? t('products.auto', { sku: nextSku }) : t('products.autoCode')"
+            :title="editingId ? t('products.codeTitle') : t('products.autoTitle')"
           />
-          <input v-model="form.unit" class="input w-20" placeholder="Unid." />
+          <input v-model="form.unit" class="input w-20" :placeholder="t('products.unit')" />
         </div>
         <select v-model.number="form.categoryId" class="input">
-          <option :value="0">Sem categoria</option>
+          <option :value="0">{{ t('products.noCategory') }}</option>
           <option v-for="item in categories" :key="item.id" :value="item.id">{{ item.name }}</option>
         </select>
         <select v-model.number="form.taxRateId" class="input">
-          <option :value="0">Sem IVA</option>
+          <option :value="0">{{ t('folio.noVat') }}</option>
           <option v-for="rate in taxRates" :key="rate.id" :value="rate.id">{{ rate.name }} ({{ Number(rate.rate) }}%)</option>
         </select>
-        <label class="text-sm">Preco de venda (c/ IVA)<input v-model.number="form.price" class="input" type="number" min="0" step="0.01" /></label>
-        <label class="text-sm">Custo<input v-model.number="form.cost" class="input" type="number" min="0" step="0.0001" /></label>
+        <label class="text-sm">{{ t('products.salePrice') }}<input v-model.number="form.price" class="input" type="number" min="0" step="0.01" /></label>
+        <label class="text-sm">{{ t('products.cost') }}<input v-model.number="form.cost" class="input" type="number" min="0" step="0.0001" /></label>
         <div class="flex flex-wrap gap-4 text-sm sm:col-span-2">
-          <label class="flex items-center gap-2"><input v-model="form.sellable" type="checkbox" />Vende-se no POS</label>
-          <label class="flex items-center gap-2"><input v-model="form.trackStock" type="checkbox" />Controla stock</label>
-          <label class="flex items-center gap-2"><input v-model="form.active" type="checkbox" />Ativo</label>
+          <label class="flex items-center gap-2"><input v-model="form.sellable" type="checkbox" />{{ t('products.sellable') }}</label>
+          <label class="flex items-center gap-2"><input v-model="form.trackStock" type="checkbox" />{{ t('products.trackStock') }}</label>
+          <label class="flex items-center gap-2"><input v-model="form.active" type="checkbox" />{{ t('common.active') }}</label>
           <label v-if="form.trackStock" class="flex items-center gap-2">
-            Stock minimo <input v-model.number="form.minStock" class="input w-24" type="number" min="0" step="0.001" />
+            {{ t('products.minStock') }} <input v-model.number="form.minStock" class="input w-24" type="number" min="0" step="0.001" />
           </label>
-          <label v-if="form.trackStock" class="flex items-center gap-2"><input v-model="form.trackExpiry" type="checkbox" />Lotes e validades</label>
+          <label v-if="form.trackStock" class="flex items-center gap-2"><input v-model="form.trackExpiry" type="checkbox" />{{ t('products.trackExpiry') }}</label>
         </div>
         <div class="flex justify-end gap-2 sm:col-span-2">
-          <button v-if="editingId" class="btn-secondary" type="button" @click="reset">Cancelar</button>
-          <button class="btn" type="submit" :disabled="busy">{{ editingId ? 'Guardar' : 'Criar produto' }}</button>
+          <button v-if="editingId" class="btn-secondary" type="button" @click="reset">{{ t('common.cancel') }}</button>
+          <button class="btn" type="submit" :disabled="busy">{{ editingId ? t('common.save') : t('products.create') }}</button>
         </div>
       </form>
 
       <div class="card space-y-3">
-        <h2 class="font-semibold">Categorias</h2>
+        <h2 class="font-semibold">{{ t('products.categories') }}</h2>
         <form class="grid grid-cols-2 gap-2" :class="editingCategoryId ? 'rounded-xl bg-indigo-50 p-2 ring-1 ring-indigo-200' : ''" @submit.prevent="saveCategory">
-          <p v-if="editingCategoryId" class="col-span-2 text-xs font-semibold text-indigo-700">A editar categoria</p>
-          <input v-model="category.name" class="input col-span-2" :placeholder="editingCategoryId ? 'Nome da categoria' : 'Nova categoria'" required />
-          <select v-model="category.outlet" class="input" aria-label="Onde se vende">
-            <option value="">Restaurante e bar</option>
-            <option value="RESTAURANT">So restaurante</option>
-            <option value="BAR">So bar</option>
+          <p v-if="editingCategoryId" class="col-span-2 text-xs font-semibold text-indigo-700">{{ t('products.editingCategory') }}</p>
+          <input v-model="category.name" class="input col-span-2" :placeholder="editingCategoryId ? t('products.categoryName') : t('products.newCategory')" required />
+          <select v-model="category.outlet" class="input" :aria-label="t('products.whereSold')">
+            <option value="">{{ t('products.both') }}</option>
+            <option value="RESTAURANT">{{ t('products.restaurantOnly') }}</option>
+            <option value="BAR">{{ t('products.barOnly') }}</option>
           </select>
-          <select v-model="category.prepStation" class="input" aria-label="Onde se prepara">
-            <option v-for="(label, value) in STATION_LABELS" :key="value" :value="value">Prepara: {{ label }}</option>
+          <select v-model="category.prepStation" class="input" :aria-label="t('products.whereMade')">
+            <option v-for="(label, value) in STATION_LABELS" :key="value" :value="value">{{ t('products.prepares', { station: label }) }}</option>
           </select>
-          <select v-model.number="category.printerId" class="input col-span-2" aria-label="Impressora">
-            <option :value="0">Impressora principal do posto</option>
-            <option v-for="printer in printers.filter((p) => p.active)" :key="printer.id" :value="printer.id">Imprimir em: {{ printer.name }}</option>
+          <select v-model.number="category.printerId" class="input col-span-2" :aria-label="t('products.printer')">
+            <option :value="0">{{ t('products.mainPrinter') }}</option>
+            <option v-for="printer in printers.filter((p) => p.active)" :key="printer.id" :value="printer.id">{{ t('products.printOn', { name: printer.name }) }}</option>
           </select>
-          <button v-if="editingCategoryId" class="btn-secondary" type="button" @click="resetCategory">Cancelar</button>
+          <button v-if="editingCategoryId" class="btn-secondary" type="button" @click="resetCategory">{{ t('common.cancel') }}</button>
           <button class="btn" :class="editingCategoryId ? '' : 'col-span-2'" type="submit" :disabled="busy">
-            {{ editingCategoryId ? 'Guardar' : 'Adicionar categoria' }}
+            {{ editingCategoryId ? t('common.save') : t('products.addCategory') }}
           </button>
         </form>
         <ul class="divide-y divide-slate-100 text-sm">
@@ -231,11 +234,11 @@ onMounted(load);
             <span class="min-w-0">
               <span class="block font-medium">{{ item.name }}</span>
               <span class="block text-xs text-slate-500">
-                {{ item.outlet === 'BAR' ? 'Bar' : item.outlet === 'RESTAURANT' ? 'Restaurante' : 'Ambos' }} · {{ STATION_LABELS[item.prepStation] }}
-                · {{ item.printerId ? printerName(item.printerId) ?? 'impressora inativa' : 'impressora principal do posto' }}
+                {{ item.outlet ? t(`labels.outlet.${item.outlet}`) : t('products.bothShort') }} · {{ STATION_LABELS[item.prepStation] }}
+                · {{ item.printerId ? printerName(item.printerId) ?? t('products.printerInactive') : t('products.mainPrinterShort') }}
               </span>
             </span>
-            <button class="shrink-0 text-xs text-indigo-600 hover:underline" type="button" @click="editCategory(item)">Editar</button>
+            <button class="shrink-0 text-xs text-indigo-600 hover:underline" type="button" @click="editCategory(item)">{{ t('common.edit') }}</button>
           </li>
         </ul>
       </div>
@@ -247,11 +250,11 @@ onMounted(load);
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
           <tr>
-            <th class="px-4 py-3">Produto</th>
-            <th class="px-4 py-3">Categoria</th>
-            <th class="px-4 py-3 text-right">Preco</th>
-            <th class="px-4 py-3 text-right">Custo</th>
-            <th class="px-4 py-3">Stock</th>
+            <th class="px-4 py-3">{{ t('common.product') }}</th>
+            <th class="px-4 py-3">{{ t('products.category') }}</th>
+            <th class="px-4 py-3 text-right">{{ t('common.price') }}</th>
+            <th class="px-4 py-3 text-right">{{ t('products.cost') }}</th>
+            <th class="px-4 py-3">{{ t('products.stock') }}</th>
             <th class="px-4 py-3"></th>
           </tr>
         </thead>
@@ -263,14 +266,14 @@ onMounted(load);
                 <span v-else class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-400">{{ product.name.slice(0, 2).toUpperCase() }}</span>
                 <span>
                   {{ product.name }} <span class="text-xs text-slate-500">{{ product.sku }}</span>
-                  <span v-if="!product.sellable" class="ml-1 rounded bg-slate-100 px-1 text-xs">so stock</span>
+                  <span v-if="!product.sellable" class="ml-1 rounded bg-slate-100 px-1 text-xs">{{ t('products.stockOnly') }}</span>
                 </span>
               </span>
             </td>
             <td class="px-4 py-3">{{ product.category?.name ?? '-' }}</td>
             <td class="px-4 py-3 text-right">{{ formatMoney(product.price, hotels.currency) }}</td>
             <td class="px-4 py-3 text-right">{{ formatMoney(product.cost, hotels.currency) }}</td>
-            <td class="px-4 py-3">{{ product.trackStock ? `Sim (min. ${Number(product.minStock)} ${product.unit})` : 'Nao' }}</td>
+            <td class="px-4 py-3">{{ product.trackStock ? t('products.stockYes', { min: Number(product.minStock), unit: product.unit }) : t('common.no') }}</td>
             <td class="px-4 py-3 text-right">
               <button
                 v-if="canManage && product.sellable"
@@ -278,9 +281,9 @@ onMounted(load);
                 type="button"
                 @click="recipeFor = product"
               >
-                Receita
+                {{ t('products.recipe') }}
               </button>
-              <button v-if="canManage" class="text-xs text-indigo-600 hover:underline" type="button" @click="edit(product)">Editar</button>
+              <button v-if="canManage" class="text-xs text-indigo-600 hover:underline" type="button" @click="edit(product)">{{ t('common.edit') }}</button>
             </td>
           </tr>
         </tbody>
