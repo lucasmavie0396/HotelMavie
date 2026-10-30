@@ -13,6 +13,7 @@ const searching = ref(false);
 const panel = ref<'search' | 'link' | null>(null);
 const query = ref(props.product.name);
 const results = ref<ImageSearchResult[] | null>(null);
+const provider = ref<'google' | 'wikimedia'>('wikimedia');
 const link = ref('');
 const choosing = ref('');
 
@@ -42,7 +43,9 @@ async function search() {
   searching.value = true;
   error.value = '';
   try {
-    results.value = (await api.get<ImageSearchResult[]>('/products/image-search', { params: { q: query.value } })).data;
+    const { data } = await api.get<{ provider: 'google' | 'wikimedia'; results: ImageSearchResult[] }>('/products/image-search', { params: { q: query.value } });
+    provider.value = data.provider;
+    results.value = data.results;
   } catch (e) {
     error.value = errorMessage(e);
   } finally {
@@ -57,8 +60,20 @@ function openSearch() {
 
 const choose = (result: ImageSearchResult) => {
   choosing.value = result.url;
-  return run(async () => (await api.post<Product>(`/products/${props.product.id}/image`, { url: result.url })).data);
+  return run(async () => {
+    try {
+      return (await api.post<Product>(`/products/${props.product.id}/image`, { url: result.url })).data;
+    } catch (e) {
+      if (result.thumb === result.url) throw e;
+      return (await api.post<Product>(`/products/${props.product.id}/image`, { url: result.thumb })).data;
+    }
+  });
 };
+
+function openGoogle() {
+  window.open(`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query.value || props.product.name)}`, '_blank', 'noopener');
+  panel.value = 'link';
+}
 
 const fromLink = () => run(async () => (await api.post<Product>(`/products/${props.product.id}/image`, { url: link.value.trim() })).data);
 const remove = () => run(async () => (await api.delete<Product>(`/products/${props.product.id}/image`)).data);
@@ -81,6 +96,7 @@ const remove = () => run(async () => (await api.delete<Product>(`/products/${pro
             <input class="hidden" type="file" accept="image/png,image/jpeg,image/webp" @change="upload" />
           </label>
           <button class="btn px-3 py-1.5 text-xs" type="button" :disabled="busy" @click="openSearch">Procurar na internet</button>
+          <button class="btn-secondary px-3 py-1.5 text-xs" type="button" @click="openGoogle">Abrir no Google Imagens</button>
           <button class="btn-secondary px-3 py-1.5 text-xs" type="button" :disabled="busy" @click="panel = panel === 'link' ? null : 'link'">Colar link</button>
           <button v-if="product.imageFile" class="px-2 text-xs text-rose-600 hover:underline" type="button" :disabled="busy" @click="remove">Remover</button>
         </div>
@@ -89,6 +105,9 @@ const remove = () => run(async () => (await api.delete<Product>(`/products/${pro
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
 
+    <p v-if="panel === 'link'" class="text-xs text-slate-600">
+      No Google Imagens: abra a foto, clique com o botao direito e escolha <strong>Copiar endereco da imagem</strong>; depois cole aqui.
+    </p>
     <form v-if="panel === 'link'" class="flex gap-2" @submit.prevent="fromLink">
       <input v-model="link" class="input" type="url" placeholder="https://.../foto.jpg" required />
       <button class="btn" type="submit" :disabled="busy">{{ busy ? 'A descarregar...' : 'Usar' }}</button>
@@ -110,13 +129,17 @@ const remove = () => run(async () => (await api.delete<Product>(`/products/${pro
           :disabled="busy"
           @click="choose(result)"
         >
-          <img :src="result.url" :alt="result.title" loading="lazy" referrerpolicy="no-referrer" class="h-full w-full object-cover" />
-          <span class="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1.5 py-0.5 text-[10px] text-white">{{ result.license ?? 'Wikimedia' }}</span>
+          <img :src="result.thumb" :alt="result.title" loading="lazy" referrerpolicy="no-referrer" class="h-full w-full object-cover" />
+          <span class="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1.5 py-0.5 text-[10px] text-white">{{ result.license ?? result.author ?? (provider === 'google' ? 'Google' : 'Wikimedia') }}</span>
           <span v-if="choosing === result.url" class="absolute inset-0 flex items-center justify-center bg-white/70 text-xs font-medium text-indigo-700">A guardar...</span>
         </button>
       </div>
-      <p class="text-[11px] text-slate-500">
+      <p v-if="provider === 'google'" class="text-[11px] text-slate-500">
+        Resultados do Google Imagens. Muitas fotos tem direitos de autor: use de preferencia fotos dos fabricantes ou proprias.
+      </p>
+      <p v-else class="text-[11px] text-slate-500">
         Fotos livres do Wikimedia Commons (dominio publico ou Creative Commons). Algumas licencas pedem a atribuicao do autor, que aparece ao passar o rato.
+        Para pesquisar no Google aqui dentro, configure a chave Google no servidor; ou use o botao Abrir no Google Imagens.
       </p>
     </div>
   </div>

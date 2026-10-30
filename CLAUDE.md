@@ -126,7 +126,7 @@ docker compose exec backend npm run db:seed
 | Impressão local | `print-agent/` (Node sem dependências, escuta em 127.0.0.1:9123, imprime ESC/POS RAW no Windows) | Configuração → Impressoras |
 
 - **Sinal:** `Hotel.depositPercent` (60 por defeito; 0 desliga). A reserva online guarda o valor e a referência indicada pelo cliente; ao confirmar (`POST /reservations/:id/deposit/confirm`, qualquer papel) cria um `Payment` normal na conta da estadia, aprova a reserva e envia o comprovativo em PDF. O comprovativo é interno (sem valor fiscal): a fatura sai no check-out com tudo e o sinal já descontado no saldo.
-- **Imagens da internet:** descarregar sempre com `downloadImage` de `uploads/uploads.ts` (só https, resolve o DNS e recusa endereços privados em cada pedido e redirecionamento, máximo 4 MB). Nunca usar `fetch` com URL vindo do utilizador. A pesquisa de fotos de produtos usa o Wikimedia Commons (sem chave).
+- **Imagens da internet:** descarregar sempre com `downloadImage` de `uploads/uploads.ts` (só https, resolve o DNS e recusa endereços privados em cada pedido e redirecionamento, máximo 4 MB). Nunca usar `fetch` com URL vindo do utilizador. A pesquisa de fotos de produtos (`catalog/image-search.ts`) usa o Google Custom Search (imagens) quando há `GOOGLE_SEARCH_API_KEY` e `GOOGLE_SEARCH_CX`, e o Wikimedia Commons quando não há. Nunca fazer scraping do Google.
 - **Imagens:** só PNG/JPG/WEBP (logotipo só PNG/JPG, por causa do pdfkit), verificadas pelos bytes iniciais, até 4 MB, nome aleatório. Nunca aceitar SVG.
 
 ## Testes

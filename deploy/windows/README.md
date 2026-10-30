@@ -85,6 +85,14 @@ Correr o instalador outra vez é seguro: reaproveita o `.env` e a chave AT e nã
 .\servico.ps1 -Acao remover     # tira o arranque automatico (mantem dados)
 ```
 
+**Fotos de produtos pelo Google:** o botão "Procurar na internet" usa o Google Imagens se o `backend\.env` tiver `GOOGLE_SEARCH_API_KEY` e `GOOGLE_SEARCH_CX`. Sem estas chaves usa o Wikimedia Commons. Para as obter:
+
+1. Em https://programmablesearchengine.google.com cria um motor de pesquisa, ativa **Pesquisa de imagens** e **Pesquisar em toda a Web**, e copia o **ID do motor de pesquisa** para `GOOGLE_SEARCH_CX`.
+2. Na Google Cloud Console (https://console.cloud.google.com) ativa a **Custom Search API** e cria uma **chave de API**, de preferência restrita a essa API, para `GOOGLE_SEARCH_API_KEY`.
+3. Faz `reiniciar`.
+
+O Google cobra a partir de um certo número de pesquisas por dia; confirma os limites e preços na página da Custom Search API antes de ativar. Cada pesquisa no sistema faz 2 pedidos ao Google (20 fotos).
+
 **Email (SMTP):** preenche `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` e `MAIL_FROM` no `backend\.env` e faz `reiniciar`. Sem SMTP, os emails ficam só registados.
 
 ## 6. HTTPS com domínio (IIS, opcional)

@@ -272,6 +272,7 @@ export interface Product {
 export interface ImageSearchResult {
   title: string;
   url: string;
+  thumb: string;
   source: string | null;
   license: string | null;
   author: string | null;
