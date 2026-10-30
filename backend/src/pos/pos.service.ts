@@ -25,6 +25,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { AuditService } from '../audit/audit';
 import { JwtPayload } from '../auth/jwt-payload';
 import { FolioService } from '../billing/folio.service';
 import { InvoicesService } from '../billing/invoices.service';
@@ -195,6 +196,7 @@ export class PosService {
     private readonly invoices: InvoicesService,
     private readonly stock: StockService,
     private readonly tickets: TicketPdfService,
+    private readonly audit: AuditService,
   ) {}
 
   findAll(query: OrderQueryDto, user: JwtPayload) {
@@ -293,6 +295,19 @@ export class PosService {
       if (!count) {
         throw new ConflictException('Esta linha nao existe ou ja foi anulada');
       }
+      const item = order.items.find((line) => line.id === itemId);
+      await this.audit.log(
+        {
+          hotelId: order.hotelId,
+          userId: user.sub,
+          action: 'ORDER_ITEM_VOID',
+          entity: 'order',
+          entityId: order.id,
+          summary: `${order.tableLabel ?? `Pedido #${order.id}`}: ${item ? `${item.quantity.toString()} x ${item.description} (${item.total.toFixed(2)})` : `linha ${itemId}`} anulado - ${reason}`,
+          data: { itemId, reason },
+        },
+        tx,
+      );
       return this.recalculate(tx, orderId);
     });
   }
@@ -528,6 +543,18 @@ export class PosService {
       throw new ForbiddenException('So um gestor pode anular pedidos com produtos');
     }
     await this.prisma.order.update({ where: { id: orderId }, data: { status: OrderStatus.CANCELLED, closedAt: new Date() } });
+    const active = order.items.filter((item) => !item.voidedAt);
+    if (active.length) {
+      await this.audit.log({
+        hotelId: order.hotelId,
+        userId: user.sub,
+        action: 'ORDER_CANCEL',
+        entity: 'order',
+        entityId: order.id,
+        summary: `${order.tableLabel ?? `Pedido #${order.id}`} anulado com ${active.length} artigo(s), total ${order.total.toFixed(2)}`,
+        data: { items: active.map((item) => ({ description: item.description, quantity: item.quantity.toString(), total: item.total.toFixed(2) })) },
+      });
+    }
     return this.findOne(orderId, user);
   }
 

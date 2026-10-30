@@ -30,7 +30,7 @@ const links = computed(() =>
     'stock',
     'hr',
     'reports',
-    ...(auth.user?.role !== 'RECEPTION' ? ['purchases', 'settings'] : []),
+    ...(auth.user?.role !== 'RECEPTION' ? ['purchases', 'audit', 'settings'] : []),
     ...(auth.user?.role === 'ADMIN' ? ['users', 'hotels'] : []),
   ].map((name) => ({ to: { name }, name, ...SECTIONS[name] })),
 );
@@ -103,7 +103,7 @@ async function logout() {
         <span v-else class="text-sm font-medium">{{ hotels.selected?.name }}</span>
         <div class="flex items-center gap-3">
           <NotificationsBell v-if="hotels.selectedId" :key="hotels.selectedId" />
-          <span class="text-sm text-slate-600">{{ auth.user?.name }}</span>
+          <RouterLink :to="{ name: 'account' }" class="text-sm text-slate-600 hover:text-indigo-600 hover:underline" title="A minha conta e seguranca">{{ auth.user?.name }}</RouterLink>
           <button class="btn-secondary" type="button" @click="logout">Sair</button>
         </div>
       </header>

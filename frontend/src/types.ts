@@ -404,6 +404,25 @@ export interface OrderItem {
   product: { category: { prepStation: PrepStation } | null };
 }
 
+export interface AuditLog {
+  id: number;
+  action: string;
+  entity: string;
+  entityId: number | null;
+  summary: string;
+  createdAt: string;
+  user: { id: number; name: string } | null;
+}
+
+export interface BackupStatus {
+  enabled: boolean;
+  hour: number | null;
+  keepDays: number;
+  copyDir: string | null;
+  nextRunAt: string | null;
+  lastRun: { at: string; ok: boolean; file?: string; copied?: boolean; error?: string } | null;
+}
+
 export interface KdsCard {
   key: string;
   orderId: number;

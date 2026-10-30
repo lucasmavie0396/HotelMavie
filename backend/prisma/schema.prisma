@@ -65,6 +65,7 @@ model Hotel {
   purchases              Purchase[]
   stockDocuments         StockDocument[]
   stockDocumentSeries    StockDocumentSeries[]
+  auditLogs              AuditLog[]
   employees              Employee[]
   shifts                 Shift[]
   timeEntries            TimeEntry[]
@@ -84,9 +85,15 @@ model User {
   active            Boolean         @default(true)
   hotelId           Int?
   hotel             Hotel?          @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  totpSecret        String?         @db.VarChar(255)
+  totpEnabled       Boolean         @default(false)
+  totpLastStep      Int?
+  totpRecoveryCodes Json?
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   sessions          UserSession[]
+  passwordResets    PasswordReset[]
+  auditLogs         AuditLog[]
   reservations      Reservation[]
   charges           Charge[]
   payments          Payment[]
@@ -106,6 +113,37 @@ model User {
 
   @@index([hotelId])
   @@map("users")
+}
+
+model PasswordReset {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique @db.VarChar(64)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("password_resets")
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  hotelId   Int?
+  hotel     Hotel?   @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  userId    Int?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String   @db.VarChar(60)
+  entity    String   @db.VarChar(40)
+  entityId  Int?
+  summary   String   @db.VarChar(255)
+  data      Json?
+  createdAt DateTime @default(now())
+
+  @@index([hotelId, createdAt])
+  @@index([action])
+  @@map("audit_logs")
 }
 
 model Room {

@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AdminModule } from './admin.module';
+import { AuditModule } from './audit/audit';
 import { AuthModule } from './auth/auth.module';
 import { validateEnv } from './config/env.validation';
 import { DashboardModule } from './dashboard/dashboard.module';
@@ -26,6 +27,7 @@ import { UsersModule } from './users/users.module';
     PrismaModule,
     MailModule,
     UploadsModule,
+    AuditModule,
     AuthModule,
     UsersModule,
     HotelsModule,

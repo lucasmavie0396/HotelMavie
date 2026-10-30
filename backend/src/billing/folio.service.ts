@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ChargeType, InvoiceStatus, InvoiceType, PaymentMethod, Prisma, Reservation, UserRole } from '@prisma/client';
+import { AuditService } from '../audit/audit';
 import { JwtPayload } from '../auth/jwt-payload';
 import { canAccessHotel } from '../common/hotel-scope';
 import { DecimalLike, sumMoney, toMoney } from '../common/money';
@@ -44,6 +45,7 @@ export class FolioService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly paymentTypes: PaymentTypesService,
+    private readonly audit: AuditService,
   ) {}
 
   async getFolio(reservationId: number, user: JwtPayload) {
@@ -173,7 +175,7 @@ export class FolioService {
       }
       cashSessionId = session.id;
     }
-    return tx.payment.create({
+    const payment = await tx.payment.create({
       data: {
         hotelId: input.hotelId,
         reservationId: input.reservationId ?? null,
@@ -187,6 +189,21 @@ export class FolioService {
         createdById: input.createdById,
       },
     });
+    if (amount.isNegative()) {
+      await this.audit.log(
+        {
+          hotelId: input.hotelId,
+          userId: user.sub,
+          action: 'PAYMENT_REFUND',
+          entity: 'payment',
+          entityId: payment.id,
+          summary: `Estorno de ${amount.neg().toFixed(2)}${input.notes ? ` (${input.notes})` : ''}${input.reservationId ? ` na reserva #${input.reservationId}` : ''}`,
+          data: { amount: amount.toFixed(2), reservationId: input.reservationId ?? null, notes: input.notes ?? null },
+        },
+        tx,
+      );
+    }
+    return payment;
   }
 
   async syncAccommodationCharge(tx: Prisma.TransactionClient, reservation: Reservation, createdById?: number) {

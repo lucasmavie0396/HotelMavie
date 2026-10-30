@@ -118,6 +118,18 @@ export function invoiceEmail(hotel: Hotel, invoice: { fullNumber: string; custom
   };
 }
 
+export function passwordResetEmail(name: string, link: string, minutes: number) {
+  const system = { name: 'MAVIE-HGest', address: null, phone: null, email: null } as Hotel;
+  return {
+    subject: 'Repor a password do MAVIE-HGest',
+    html: layout(
+      system,
+      'Pedido para repor a password',
+      `<p>Ola ${escapeHtml(name)},</p><p>Recebemos um pedido para repor a sua password. O link e valido durante ${minutes} minutos e so pode ser usado uma vez:</p><p><a href="${escapeHtml(link)}" style="display:inline-block;background:#4338ca;color:#ffffff;padding:10px 18px;border-radius:6px;text-decoration:none">Repor password</a></p><p style="font-size:12px;color:#64748b">Se nao pediu esta alteracao, ignore este email: a password atual continua valida.</p>`,
+    ),
+  };
+}
+
 export function purchaseOrderEmail(hotel: Hotel, order: { number: string; supplierName: string; total: { toString(): string } }) {
   return {
     subject: `Encomenda ${order.number} - ${hotel.name}`,

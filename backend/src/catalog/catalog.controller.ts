@@ -1,5 +1,6 @@
 import { BadRequestException, Body, Controller, Delete, Get, NotFoundException, Param, ParseIntPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
+import { AuditService } from '../audit/audit';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -19,6 +20,7 @@ export class CatalogController {
     private readonly recipes: RecipesService,
     private readonly uploads: UploadsService,
     private readonly images: ImageSearchService,
+    private readonly audit: AuditService,
   ) {}
 
   @Get('product-categories')
@@ -129,7 +131,20 @@ export class CatalogController {
     if (dto.trackStock === false && (await this.prisma.recipeItem.count({ where: { ingredientId: id } }))) {
       throw new BadRequestException('Este produto e ingrediente de uma receita e tem de controlar stock');
     }
-    return this.prisma.product.update({ where: { id }, data: dto });
+    const updated = await this.prisma.product.update({ where: { id }, data: dto });
+    const changes = (['price', 'cost'] as const).filter((key) => !product[key].equals(updated[key]));
+    if (changes.length) {
+      await this.audit.log({
+        hotelId: product.hotelId,
+        userId: user.sub,
+        action: 'PRODUCT_PRICE',
+        entity: 'product',
+        entityId: id,
+        summary: `${updated.name}: ${changes.map((key) => `${key === 'price' ? 'preco' : 'custo'} ${product[key].toString()} -> ${updated[key].toString()}`).join(', ')}`,
+        data: Object.fromEntries(changes.map((key) => [key, { from: product[key].toString(), to: updated[key].toString() }])),
+      });
+    }
+    return updated;
   }
 
   @Get('products/:id/recipe')

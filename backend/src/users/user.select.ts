@@ -7,5 +7,6 @@ export const publicUserSelect = {
   role: true,
   active: true,
   hotelId: true,
+  totpEnabled: true,
   createdAt: true,
 } satisfies Prisma.UserSelect;

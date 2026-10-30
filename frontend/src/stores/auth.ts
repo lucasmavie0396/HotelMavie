@@ -39,7 +39,14 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function login(email: string, password: string) {
-    const { data } = await api.post<Session>('/auth/login', { email, password });
+    const { data } = await api.post<Session | { twoFactorRequired: true; challenge: string }>('/auth/login', { email, password });
+    if ('twoFactorRequired' in data) return { challenge: data.challenge };
+    setSession(data);
+    return null;
+  }
+
+  async function loginTwoFactor(challenge: string, code: string) {
+    const { data } = await api.post<Session>('/auth/login/2fa', { challenge, code });
     setSession(data);
   }
 
@@ -93,5 +100,5 @@ export const useAuthStore = defineStore('auth', () => {
     setSession(null);
   }
 
-  return { accessToken, user, isAuthenticated, login, refresh, logout };
+  return { accessToken, user, isAuthenticated, login, loginTwoFactor, refresh, logout };
 });

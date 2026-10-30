@@ -3,7 +3,7 @@ import PageHeader from '@/components/PageHeader.vue';
 import { onMounted, reactive, ref } from 'vue';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
-import type { UserRole } from '@/types';
+import type { BackupStatus, UserRole } from '@/types';
 import { formatDateTime } from '@/utils/format';
 
 interface StaffUser {
@@ -13,6 +13,7 @@ interface StaffUser {
   role: UserRole;
   active: boolean;
   hotelId: number | null;
+  totpEnabled: boolean;
   createdAt: string;
 }
 
@@ -27,6 +28,7 @@ const ROLE_LABELS: Record<UserRole, string> = { ADMIN: 'Administrador', MANAGER:
 const hotels = useHotelsStore();
 const users = ref<StaffUser[]>([]);
 const backups = ref<BackupFile[]>([]);
+const backupStatus = ref<BackupStatus | null>(null);
 const error = ref('');
 const notice = ref('');
 const busy = ref(false);
@@ -40,9 +42,10 @@ const form = reactive(emptyForm());
 
 async function load() {
   try {
-    const [u, b] = await Promise.all([api.get<StaffUser[]>('/users'), api.get<BackupFile[]>('/backups')]);
+    const [u, b, s] = await Promise.all([api.get<StaffUser[]>('/users'), api.get<BackupFile[]>('/backups'), api.get<BackupStatus>('/backups/status')]);
     users.value = u.data;
     backups.value = b.data;
+    backupStatus.value = s.data;
   } catch (e) {
     error.value = errorMessage(e);
   }
@@ -92,6 +95,18 @@ const save = () =>
   }, 'Utilizador guardado');
 
 const createBackup = () => run(() => api.post('/backups'), 'Backup criado');
+
+const runScheduled = () =>
+  run(async () => {
+    const { data } = await api.post<BackupStatus['lastRun']>('/backups/run-scheduled');
+    if (data && !data.ok) throw new Error(data.error);
+  }, 'Backup criado, copiado e backups antigos limpos');
+
+const resetTwoFactor = (user: StaffUser) =>
+  run(async () => {
+    if (!window.confirm(`Desativar o 2FA de ${user.name}? A pessoa tera de o voltar a ativar e as sessoes abertas terminam.`)) return;
+    await api.post(`/users/${user.id}/2fa/reset`);
+  }, '2FA desativado');
 
 async function download(name: string) {
   try {
@@ -155,6 +170,7 @@ onMounted(load);
             <th class="px-4 py-3">Papel</th>
             <th class="px-4 py-3">Hotel</th>
             <th class="px-4 py-3">Estado</th>
+            <th class="px-4 py-3">2FA</th>
             <th class="px-4 py-3"></th>
           </tr>
         </thead>
@@ -165,7 +181,13 @@ onMounted(load);
             <td class="px-4 py-3">{{ ROLE_LABELS[user.role] }}</td>
             <td class="px-4 py-3">{{ user.hotelId ? hotels.nameOf(user.hotelId) : 'Todos' }}</td>
             <td class="px-4 py-3">{{ user.active ? 'Ativo' : 'Inativo' }}</td>
-            <td class="px-4 py-3 text-right">
+            <td class="px-4 py-3">
+              <span class="rounded-full px-2 py-0.5 text-xs" :class="user.totpEnabled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'">
+                {{ user.totpEnabled ? 'Ativo' : 'Nao' }}
+              </span>
+            </td>
+            <td class="space-x-3 px-4 py-3 text-right whitespace-nowrap">
+              <button v-if="user.totpEnabled" class="text-xs text-rose-600 hover:underline" type="button" :disabled="busy" @click="resetTwoFactor(user)">Desativar 2FA</button>
               <button class="text-xs text-indigo-600 hover:underline" type="button" @click="edit(user)">Editar</button>
             </td>
           </tr>
@@ -178,9 +200,25 @@ onMounted(load);
         <h2 class="font-semibold">Backups da base de dados</h2>
         <button class="btn" type="button" :disabled="busy" @click="createBackup">Criar backup agora</button>
       </div>
-      <p class="text-xs text-slate-500">
-        Os backups ficam na pasta do servidor (BACKUP_DIR). Guarda uma copia fora do servidor regularmente.
-      </p>
+      <div v-if="backupStatus" class="rounded-xl p-3 text-sm" :class="backupStatus.enabled ? 'bg-emerald-50 text-emerald-900' : 'bg-amber-50 text-amber-900'">
+        <template v-if="backupStatus.enabled">
+          <p>
+            Backup automatico todos os dias as {{ String(backupStatus.hour).padStart(2, '0') }}:00, guardados {{ backupStatus.keepDays }} dias{{
+              backupStatus.copyDir ? `, com copia em ${backupStatus.copyDir}` : ' (sem pasta de copia externa: define BACKUP_COPY_DIR)'
+            }}.
+          </p>
+          <p v-if="backupStatus.nextRunAt" class="text-xs">Proximo: {{ formatDateTime(backupStatus.nextRunAt) }}</p>
+          <p v-if="backupStatus.lastRun" class="text-xs" :class="backupStatus.lastRun.ok ? '' : 'font-semibold text-rose-700'">
+            Ultimo: {{ formatDateTime(backupStatus.lastRun.at) }} · {{ backupStatus.lastRun.ok ? `${backupStatus.lastRun.file}${backupStatus.lastRun.copied ? ' (copiado)' : ''}` : backupStatus.lastRun.error }}
+          </p>
+          <button class="mt-2 text-xs font-medium text-indigo-700 hover:underline" type="button" :disabled="busy" @click="runScheduled">Executar agora com copia e limpeza</button>
+        </template>
+        <p v-else>
+          Backups automaticos desligados. No ficheiro .env do servidor define BACKUP_AUTO_HOUR (hora do dia, 0-23), BACKUP_KEEP_DAYS (dias a guardar, 14 por defeito) e
+          BACKUP_COPY_DIR (pasta fora do servidor, por exemplo uma partilha de rede ou pasta sincronizada com a nuvem) e reinicia a API.
+        </p>
+      </div>
+      <p class="text-xs text-slate-500">Os backups ficam na pasta do servidor (BACKUP_DIR).</p>
       <ul class="divide-y divide-slate-100 text-sm">
         <li v-for="file in backups" :key="file.name" class="flex items-center justify-between py-2">
           <span>{{ file.name }} <span class="text-slate-500">· {{ formatDateTime(file.createdAt) }} · {{ (file.size / 1024).toFixed(0) }} KB</span></span>

@@ -22,6 +22,11 @@ const router = createRouter({
       meta: { guestOnly: true },
     },
     {
+      path: '/repor-password',
+      name: 'reset-password',
+      component: () => import('@/views/ResetPasswordView.vue'),
+    },
+    {
       path: '/h/:slug',
       name: 'public-hotel',
       component: () => import('@/views/PublicHotelView.vue'),
@@ -45,6 +50,13 @@ const router = createRouter({
         { path: 'produtos', name: 'products', component: () => import('@/views/ProductsView.vue') },
         { path: 'stocks', name: 'stock', component: () => import('@/views/StockView.vue') },
         { path: 'rh', name: 'hr', component: () => import('@/views/HrView.vue') },
+        { path: 'conta', name: 'account', component: () => import('@/views/AccountView.vue') },
+        {
+          path: 'auditoria',
+          name: 'audit',
+          component: () => import('@/views/AuditView.vue'),
+          meta: { roles: ['ADMIN', 'MANAGER'] },
+        },
         {
           path: 'compras',
           name: 'purchases',
@@ -115,7 +127,7 @@ router.beforeEach(async (to) => {
 });
 
 router.afterEach((to) => {
-  if (to.name === 'login' || to.name === 'not-found') setPageIdentity('MAVIE-HGest', null);
+  if (to.name === 'login' || to.name === 'reset-password' || to.name === 'not-found') setPageIdentity('MAVIE-HGest', null);
 });
 
 export default router;

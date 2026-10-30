@@ -1,5 +1,7 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+import { JwtPayload } from '../auth/jwt-payload';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -26,7 +28,13 @@ export class UsersController {
   }
 
   @Patch(':id')
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateUserDto) {
-    return this.usersService.update(id, dto);
+  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateUserDto, @CurrentUser() user: JwtPayload) {
+    return this.usersService.update(id, dto, user);
+  }
+
+  @Post(':id/2fa/reset')
+  @HttpCode(HttpStatus.OK)
+  resetTwoFactor(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.usersService.resetTwoFactor(id, user);
   }
 }

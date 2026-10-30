@@ -108,6 +108,18 @@ export const SECTIONS: Record<string, Section> = {
     gradient: 'from-blue-600 via-indigo-600 to-violet-700',
     dot: 'bg-gradient-to-br from-blue-400 to-indigo-500',
   },
+  audit: {
+    label: 'Auditoria',
+    icon: 'M9 12l2 2 4-4M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
+    gradient: 'from-slate-700 via-indigo-700 to-violet-700',
+    dot: 'bg-gradient-to-br from-slate-500 to-indigo-500',
+  },
+  account: {
+    label: 'A minha conta',
+    icon: 'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z',
+    gradient: 'from-indigo-600 via-blue-600 to-cyan-600',
+    dot: 'bg-gradient-to-br from-indigo-400 to-cyan-500',
+  },
   hotels: {
     label: 'Hoteis',
     icon: 'M3 21h18M5 21V7l8-4v18M19 21V11l-6-4M9 9v.01M9 12v.01M9 15v.01M9 18v.01',

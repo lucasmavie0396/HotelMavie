@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { PaperWidth, Prisma, StockDocumentStatus, StockDocumentType, StockMovementType, UserRole } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import { ArrayNotEmpty, IsArray, IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
+import { AuditService } from '../audit/audit';
 import { JwtPayload } from '../auth/jwt-payload';
 import { Ticket } from '../billing/ticket-pdf.service';
 import { HotelQueryDto } from '../common/hotel-query.dto';
@@ -111,6 +112,7 @@ export class StockDocumentsService {
     private readonly prisma: PrismaService,
     private readonly stock: StockService,
     private readonly render: ReportRenderService,
+    private readonly audit: AuditService,
   ) {}
 
   findAll(query: StockDocumentQueryDto, user: JwtPayload) {
@@ -239,6 +241,17 @@ export class StockDocumentsService {
           await this.stock.move(tx, { ...move, warehouseId: document.toWarehouseId!, type: StockMovementType.TRANSFER_IN, quantity: item.quantity, reason, lots: out.lots });
         }
       }
+      await this.audit.log(
+        {
+          hotelId: document.hotelId,
+          userId: user.sub,
+          action: 'STOCK_DOCUMENT',
+          entity: 'stock_document',
+          entityId: id,
+          summary: `${LABELS[document.type]} ${number} lancado em ${document.warehouse.name} (${items.length} linha(s))${document.reason ? `: ${document.reason}` : ''}`,
+        },
+        tx,
+      );
       return tx.stockDocument.findUniqueOrThrow({ where: { id }, include: documentInclude });
     });
   }

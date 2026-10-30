@@ -160,6 +160,13 @@ Regras de negócio a manter: preços são sempre com IVA incluído (base calcula
 - Processamento salarial (recibos de vencimento, TSU, IRS): o módulo de RH guarda fichas, escalas e ponto, mas não processa salários.
 - Deploy no Railway: tudo preparado (Dockerfiles, `railway.toml`, guia no README); falta correr com a conta. Os Dockerfiles e o CI ainda não foram executados porque a máquina de desenvolvimento não tem Docker.
 
+## Segurança e auditoria
+
+- **2FA** (`auth/totp.ts`, sem dependências): TOTP RFC 6238 opcional por utilizador (A minha conta). Segredo cifrado com AES-256-GCM usando `TOTP_ENCRYPTION_KEY` (ou `JWT_SECRET` se não existir: trocar o `JWT_SECRET` obriga a reativar o 2FA). O login devolve `{ twoFactorRequired, challenge }` (JWT de 5 min com segredo próprio, não serve como access token) e o código vai para `POST /auth/login/2fa`. Códigos não se repetem (`totpLastStep`); 8 códigos de recuperação de uso único (guardados em hash). O ADMIN pode desativar o 2FA de outro utilizador.
+- **Recuperar password:** `POST /auth/forgot-password` responde sempre igual; o link (`APP_URL`, ou o primeiro `CORS_ORIGIN`) vale 60 minutos, é de uso único e termina todas as sessões.
+- **Auditoria** (`audit/audit.ts`, global): `AuditService.log(entry, tx?)` dentro da transação quando a operação é financeira. Regista preços/custos, anulações de linhas e pedidos, estornos, notas de crédito, anulação de recibos, documentos de stock, alterações de utilizadores, 2FA, reposição de password e logins falhados. Página Auditoria (gestores; cada gestor só vê o seu hotel).
+- **Backups automáticos** (`backups/backups.service.ts`): `BACKUP_AUTO_HOUR` (0-23) liga o backup diário, `BACKUP_KEEP_DAYS` (14) apaga os antigos, `BACKUP_COPY_DIR` copia cada backup para uma pasta fora do servidor. Desligado em `NODE_ENV=test`.
+
 ## Recursos humanos e produção
 
 - **RH** (`hr/`): fichas de funcionário separadas das contas (IBAN, NISS e salário só para gestores); turnos com deteção de sobreposição incluindo turnos noturnos e o dia seguinte; picagens com lock por funcionário; correções guardam quem e quando; mapa mensal de horas previstas vs trabalhadas.

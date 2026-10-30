@@ -19,7 +19,7 @@ api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const original = error.config as RetriableConfig | undefined;
-    if (error.response?.status !== 401 || !original || original._retry || original.url?.startsWith('/auth/')) {
+    if (error.response?.status !== 401 || !original || original._retry || /^\/auth\/(login|refresh|logout|forgot-password|reset-password)/.test(original.url ?? '')) {
       return Promise.reject(error);
     }
 
@@ -75,6 +75,9 @@ export function errorMessage(error: unknown) {
       return message.join(', ');
     }
     return message ?? 'Erro de comunicacao com o servidor';
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
   }
   return 'Erro inesperado';
 }

@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { Charge, InvoiceStatus, InvoiceType, Prisma, TaxCategory, TaxRate } from '@prisma/client';
 import { DOC_TYPE, localParts, signatureMessage } from '../at/at-format';
 import { AtSigningService } from '../at/at-signing.service';
+import { AuditService } from '../audit/audit';
 import { JwtPayload } from '../auth/jwt-payload';
 import { addDays, parseDate } from '../common/dates';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
@@ -39,6 +40,7 @@ export class InvoicesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly signing: AtSigningService,
+    private readonly audit: AuditService,
   ) {}
 
   async ensureSeries(hotelId: number, ...types: InvoiceType[]) {
@@ -181,6 +183,18 @@ export class InvoicesService {
         createdById: user.sub,
       });
       await tx.charge.updateMany({ where: { invoiceId: original.id }, data: { invoiceId: null } });
+      await this.audit.log(
+        {
+          hotelId: original.hotelId,
+          userId: user.sub,
+          action: 'CREDIT_NOTE',
+          entity: 'invoice',
+          entityId: note.id,
+          summary: `${note.fullNumber} credita ${original.fullNumber} (${original.grossTotal.toFixed(2)}): ${dto.reason}`,
+          data: { originalId: original.id, original: original.fullNumber, total: original.grossTotal.toFixed(2), reason: dto.reason },
+        },
+        tx,
+      );
       return note;
     });
   }

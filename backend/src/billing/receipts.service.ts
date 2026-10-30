@@ -3,6 +3,7 @@ import { InvoiceStatus, InvoiceType, PaymentMethod, Prisma, ReceiptStatus } from
 import { Type } from 'class-transformer';
 import { ArrayNotEmpty, ArrayUnique, IsArray, IsEnum, IsInt, IsNumber, IsOptional, IsString, Length, MaxLength, Min, ValidateNested } from 'class-validator';
 import { DOC_TYPE } from '../at/at-format';
+import { AuditService } from '../audit/audit';
 import { JwtPayload } from '../auth/jwt-payload';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
@@ -83,6 +84,7 @@ export class ReceiptsService {
     private readonly folio: FolioService,
     private readonly invoices: InvoicesService,
     private readonly paymentTypes: PaymentTypesService,
+    private readonly audit: AuditService,
   ) {}
 
   async openInvoices(query: OpenInvoicesQueryDto, user: JwtPayload) {
@@ -248,6 +250,17 @@ export class ReceiptsService {
         user,
       );
       await tx.payment.update({ where: { id: reversal.id }, data: { receiptId: receipt.id } });
+      await this.audit.log(
+        {
+          hotelId: receipt.hotelId,
+          userId: user.sub,
+          action: 'RECEIPT_CANCEL',
+          entity: 'receipt',
+          entityId: receipt.id,
+          summary: `${receipt.fullNumber} anulado (${toMoney(receipt.amount).toFixed(2)}): ${dto.reason}`,
+        },
+        tx,
+      );
       return tx.receipt.findUniqueOrThrow({ where: { id }, include: receiptInclude });
     });
   }
