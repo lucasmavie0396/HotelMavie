@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
+import PayrollPanel from '@/components/PayrollPanel.vue';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
@@ -19,7 +20,7 @@ const WEEKDAYS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'];
 const auth = useAuthStore();
 const hotels = useHotelsStore();
 const isManager = computed(() => auth.user?.role !== 'RECEPTION');
-type Tab = 'clock' | 'schedule' | 'employees' | 'monthly';
+type Tab = 'clock' | 'schedule' | 'employees' | 'monthly' | 'payroll';
 const tab = ref<Tab>('clock');
 const tabs = computed<{ value: Tab; label: string }[]>(() => [
   { value: 'clock', label: 'Ponto' },
@@ -28,6 +29,7 @@ const tabs = computed<{ value: Tab; label: string }[]>(() => [
     ? ([
         { value: 'employees', label: 'Funcionarios' },
         { value: 'monthly', label: 'Mapa mensal' },
+        { value: 'payroll', label: 'Salarios' },
       ] as const)
     : []),
 ]);
@@ -58,7 +60,7 @@ let timer: ReturnType<typeof setInterval> | undefined;
 function emptyEmployee() {
   return {
     fullName: '', jobTitle: '', department: '', email: '', phone: '', taxId: '', socialSecurityNumber: '', iban: '',
-    contractType: 'PERMANENT' as ContractType, startDate: todayIso(), endDate: '', weeklyHours: 40, baseSalary: 0, userId: 0, active: true, notes: '',
+    contractType: 'PERMANENT' as ContractType, startDate: todayIso(), endDate: '', weeklyHours: 40, baseSalary: 0, irsRate: 0, userId: 0, active: true, notes: '',
   };
 }
 const employeeForm = reactive(emptyEmployee());
@@ -177,6 +179,7 @@ function editEmployee(employee: Employee) {
     endDate: employee.endDate?.slice(0, 10) ?? '',
     weeklyHours: Number(employee.weeklyHours ?? 40),
     baseSalary: Number(employee.baseSalary ?? 0),
+    irsRate: Number(employee.irsRate ?? 0),
     userId: employee.userId ?? 0,
   });
 }
@@ -203,6 +206,7 @@ const saveEmployee = () =>
       endDate: employeeForm.endDate || null,
       weeklyHours: employeeForm.weeklyHours,
       baseSalary: employeeForm.baseSalary || null,
+      irsRate: employeeForm.irsRate || 0,
       userId: employeeForm.userId || null,
       active: employeeForm.active,
       notes: optional(employeeForm.notes),
@@ -379,6 +383,10 @@ onBeforeUnmount(() => clearInterval(timer));
         <label class="text-sm">Fim (opcional)<input v-model="employeeForm.endDate" class="input" type="date" /></label>
         <label class="text-sm">Horas semanais<input v-model.number="employeeForm.weeklyHours" class="input" type="number" min="1" max="80" step="0.5" /></label>
         <label class="text-sm">Vencimento base<input v-model.number="employeeForm.baseSalary" class="input" type="number" min="0" step="0.01" /></label>
+        <label class="text-sm" title="Taxa da tabela de retencao na fonte em vigor para a situacao do trabalhador">
+          Retencao IRS (%)
+          <input v-model.number="employeeForm.irsRate" class="input" type="number" min="0" max="60" step="0.01" />
+        </label>
         <label v-if="auth.user?.role === 'ADMIN'" class="text-sm">
           Conta de acesso (para picar o ponto)
           <select v-model.number="employeeForm.userId" class="input">
@@ -453,5 +461,7 @@ onBeforeUnmount(() => clearInterval(timer));
         </table>
       </div>
     </template>
+
+    <PayrollPanel v-if="tab === 'payroll'" />
   </section>
 </template>

@@ -50,6 +50,7 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   CREDIT_NOTE: 'Nota de credito emitida',
   RECEIPT_CANCEL: 'Recibo anulado',
   STOCK_DOCUMENT: 'Documento de stock lancado',
+  PAYROLL_CLOSE: 'Salarios fechados',
   USER_CHANGE: 'Utilizador alterado',
   USER_2FA_RESET: '2FA desativado por um administrador',
   AUTH_2FA_ENABLED: '2FA ativado',

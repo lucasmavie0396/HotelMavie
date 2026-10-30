@@ -41,6 +41,9 @@ await prisma.printer.createMany({
   data: ['RECEIPT', 'KITCHEN', 'BAR'].map((purpose) => ({ hotelId: hotel.id, name: `PDF ${purpose}`, purpose, output: 'PDF', isDefault: true })),
 });
 await prisma.diningTable.createMany({ data: [1, 2, 3].map((number) => ({ hotelId: hotel.id, outlet: 'RESTAURANT', number, seats: 4 })) });
+await prisma.employee.create({
+  data: { hotelId: hotel.id, fullName: 'Rita Costa', jobTitle: 'Rececionista', startDate: new Date('2020-01-01'), baseSalary: 900, irsRate: 5, weeklyHours: 40 },
+});
 await prisma.user.create({
   data: { name: 'Gestor Interface', email: 'gestor-ui@teste.local', role: 'MANAGER', hotelId: hotel.id, passwordHash: await bcrypt.hash('Teste-UI-1234', 4) },
 });

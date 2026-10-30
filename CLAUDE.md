@@ -121,7 +121,7 @@ docker compose exec backend npm run db:seed
 | Utilizadores | `users/` (papéis ADMIN/MANAGER/RECEPTION, sessões por dispositivo em `user_sessions`) | Utilizadores |
 | Backups | `backups/` (mysqldump para `BACKUP_DIR`) | Utilizadores |
 | Contas correntes | `billing/receipts.service.ts` (FT em aberto, recibos RG) | Contas correntes |
-| Recursos humanos | `hr/` (fichas, escalas, ponto, mapa mensal) | Recursos humanos |
+| Recursos humanos | `hr/` (fichas, escalas, ponto, mapa mensal, processamento salarial) | Recursos humanos |
 | Site público e sinal | `uploads/` (imagens em `UPLOAD_DIR`, servidas em `/api/public/files`), `reservations/deposit.service.ts` (sinal, comprovativo A4) | `/h/:slug`, Configuração → Site e reservas, Quartos |
 | Relatórios | `reports/report-builder.service.ts` (12 relatórios num modelo comum: secções com indicadores e tabelas já formatadas), `report-render.service.ts` (A4 com logotipo e paginação; 58/80 mm via `Ticket`) | Relatórios (pré-visualização, A4, 80 mm, PDF, CSV) |
 | Impressão local | `print-agent/` (Node sem dependências, escuta em 127.0.0.1:9123, imprime ESC/POS RAW no Windows) | Configuração → Impressoras |
@@ -157,7 +157,7 @@ Regras de negócio a manter: preços são sempre com IVA incluído (base calcula
 
 - **Certificação AT:** o código está preparado, mas falta o processo legal: passar o SAF-T no validador oficial da AT (verifica também os asserts XSD 1.1 e regras de negócio), pedir a certificação com a chave pública (`GET /api/at/public-key`) e depois definir `AT_CERTIFICATE_NUMBER`. Comunicar as séries no Portal das Finanças antes de as usar. Até lá os PDFs indicam "sem validade fiscal".
 - Comunicação de documentos à AT (webservice ou envio mensal do SAF-T).
-- Processamento salarial (recibos de vencimento, TSU, IRS): o módulo de RH guarda fichas, escalas e ponto, mas não processa salários.
+- Salários: faltam a Declaração Mensal de Remunerações (AT), a declaração à Segurança Social, as tabelas oficiais de retenção de IRS (hoje a taxa é definida à mão por funcionário) e os acertos de fim de contrato.
 - Deploy no Railway: tudo preparado (Dockerfiles, `railway.toml`, guia no README); falta correr com a conta. Os Dockerfiles e o CI ainda não foram executados porque a máquina de desenvolvimento não tem Docker.
 
 ## Segurança e auditoria
@@ -170,5 +170,6 @@ Regras de negócio a manter: preços são sempre com IVA incluído (base calcula
 ## Recursos humanos e produção
 
 - **RH** (`hr/`): fichas de funcionário separadas das contas (IBAN, NISS e salário só para gestores); turnos com deteção de sobreposição incluindo turnos noturnos e o dia seguinte; picagens com lock por funcionário; correções guardam quem e quando; mapa mensal de horas previstas vs trabalhadas.
+- **Salários** (`hr/payroll-calc.ts` puro e testado, `hr/payroll.service.ts`): taxas por hotel (`payroll_settings`: TSU 11% / 23,75%, multiplicador de horas extra, subsídios em duodécimos ou no mês escolhido); taxa de IRS por funcionário. Valor hora = (base × 12) / (52 × horas semanais). Faltas e horas extra vêm da escala vs ponto (sem escala não se calculam). Abonos isentos (ex.: refeição) não entram na base de SS/IRS. Rascunho → editar → fechar (imutável, auditado). Recibo e mapa em PDF.
 - **Chave AT em produção:** obrigatória (`AT_PRIVATE_KEY` em PEM numa linha, ou `AT_PRIVATE_KEY_PATH`); com `NODE_ENV=production` a API recusa arrancar sem ela. Gerar com `backend/scripts/generate-at-key.mjs`.
 - **Ficheiros de texto no Windows:** editar com a ferramenta de edição; o PowerShell 5.1 lê ficheiros UTF-8 sem BOM como ANSI e corrompe os acentos ao regravar.

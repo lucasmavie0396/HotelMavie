@@ -76,6 +76,12 @@ export class EmployeeDto {
   baseSalary?: number | null;
 
   @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(60)
+  irsRate?: number;
+
+  @IsOptional()
   @IsBoolean()
   active?: boolean;
 

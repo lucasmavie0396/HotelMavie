@@ -504,8 +504,65 @@ export interface Employee {
   endDate?: string | null;
   weeklyHours?: string;
   baseSalary?: string | null;
+  irsRate?: string;
   notes?: string | null;
   user?: { id: number; email: string } | null;
+}
+
+export interface PayrollSettings {
+  employeeSsRate: string | number;
+  employerSsRate: string | number;
+  overtimeMultiplier: string | number;
+  subsidiesInTwelfths: boolean;
+  holidayPayMonth: number;
+  christmasPayMonth: number;
+}
+
+export interface PayslipLine {
+  label: string;
+  amount: number;
+  kind: 'EARNING' | 'DEDUCTION';
+  taxable: boolean;
+}
+
+export interface Payslip {
+  id: number;
+  employeeId: number;
+  fullName: string;
+  jobTitle: string;
+  baseSalary: string;
+  hourlyRate: string;
+  scheduledHours: string;
+  workedHours: string;
+  absenceHours: string;
+  absenceDeduction: string;
+  overtimeHours: string;
+  overtimePay: string;
+  holidayPay: string;
+  christmasPay: string;
+  otherEarnings: string;
+  grossPay: string;
+  ssBase: string;
+  employeeSs: string;
+  irsRate: string;
+  irsWithholding: string;
+  otherDeductions: string;
+  netPay: string;
+  employerSs: string;
+  extraLines: PayslipLine[] | null;
+  notes: string | null;
+  manual: boolean;
+}
+
+export interface PayrollRun {
+  id: number;
+  year: number;
+  month: number;
+  status: 'DRAFT' | 'CLOSED';
+  createdAt: string;
+  closedAt: string | null;
+  createdBy: { name: string } | null;
+  payslips: Payslip[];
 }
 
 export interface Shift {
