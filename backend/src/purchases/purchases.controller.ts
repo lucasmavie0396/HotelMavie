@@ -1,10 +1,12 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Query, Res } from '@nestjs/common';
+import { PaperWidth, UserRole } from '@prisma/client';
+import type { Response } from 'express';
+import { StockPdfQueryDto } from '../stock/stock-documents.service';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { HotelQueryDto } from '../common/hotel-query.dto';
-import { PurchaseDto, PurchaseQueryDto, PurchasesService, SupplierDto, UpdateSupplierDto } from './purchases.service';
+import { PurchaseDto, PurchaseQueryDto, PurchasesService, ReceiveDto, SuggestionQueryDto, SupplierDto, UpdateSupplierDto } from './purchases.service';
 
 @Roles(UserRole.ADMIN, UserRole.MANAGER)
 @Controller()
@@ -31,6 +33,31 @@ export class PurchasesController {
     return this.purchases.findAll(query, user);
   }
 
+  @Get('purchases/suggestions')
+  suggestions(@Query() query: SuggestionQueryDto, @CurrentUser() user: JwtPayload) {
+    return this.purchases.suggestions(query, user);
+  }
+
+  @Get('purchases/:id/pdf')
+  async pdf(@Param('id', ParseIntPipe) id: number, @Query() query: StockPdfQueryDto, @CurrentUser() user: JwtPayload, @Res() res: Response) {
+    const { buffer, name } = await this.purchases.pdf(id, query.paper ?? PaperWidth.A4, user);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${name}.pdf"`);
+    res.send(buffer);
+  }
+
+  @Post('purchases/:id/send')
+  @HttpCode(HttpStatus.OK)
+  send(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.purchases.send(id, user);
+  }
+
+  @Post('purchases/:id/close')
+  @HttpCode(HttpStatus.OK)
+  close(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.purchases.close(id, user);
+  }
+
   @Get('purchases/:id')
   findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
     return this.purchases.findOne(id, user);
@@ -48,8 +75,8 @@ export class PurchasesController {
 
   @Post('purchases/:id/receive')
   @HttpCode(HttpStatus.OK)
-  receive(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
-    return this.purchases.receive(id, user);
+  receive(@Param('id', ParseIntPipe) id: number, @Body() dto: ReceiveDto, @CurrentUser() user: JwtPayload) {
+    return this.purchases.receive(id, dto, user);
   }
 
   @Post('purchases/:id/cancel')

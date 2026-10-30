@@ -64,6 +64,7 @@ model Hotel {
   receipts               Receipt[]
   purchases              Purchase[]
   stockDocuments         StockDocument[]
+  stockDocumentSeries    StockDocumentSeries[]
   employees              Employee[]
   shifts                 Shift[]
   timeEntries            TimeEntry[]
@@ -504,10 +505,12 @@ enum StockMovementType {
   TRANSFER_IN
   TRANSFER_OUT
   WASTE
+  RETURN
 }
 
 enum PurchaseStatus {
   DRAFT
+  PARTIAL
   RECEIVED
   CANCELLED
 }
@@ -516,6 +519,7 @@ enum StockDocumentType {
   INVENTORY
   WASTE
   TRANSFER
+  RETURN
 }
 
 enum StockDocumentStatus {
@@ -555,6 +559,7 @@ model Product {
   taxRate        TaxRate?         @relation(fields: [taxRateId], references: [id], onDelete: SetNull)
   sellable       Boolean          @default(true)
   trackStock     Boolean          @default(false)
+  trackExpiry    Boolean          @default(false)
   minStock       Decimal          @default(0) @db.Decimal(12, 3)
   imageFile      String?          @db.VarChar(100)
   active         Boolean          @default(true)
@@ -565,6 +570,7 @@ model Product {
   stockMovements StockMovement[]
   purchaseItems  PurchaseItem[]
   stockDocItems  StockDocumentItem[]
+  stockLots      StockLot[]
   recipeItems    RecipeItem[]     @relation("RecipeDish")
   usedIn         RecipeItem[]     @relation("RecipeIngredient")
 
@@ -660,6 +666,7 @@ model Supplier {
   active    Boolean    @default(true)
   createdAt DateTime   @default(now())
   purchases Purchase[]
+  returns   StockDocument[]
 
   @@index([hotelId])
   @@map("suppliers")
@@ -678,6 +685,7 @@ model Warehouse {
   purchases      Purchase[]
   stockDocuments StockDocument[] @relation("StockDocumentFrom")
   transfersIn    StockDocument[] @relation("StockDocumentTo")
+  stockLots      StockLot[]
 
   @@unique([hotelId, name])
   @@map("warehouses")
@@ -734,6 +742,7 @@ model Purchase {
   total          Decimal         @default(0) @db.Decimal(12, 2)
   notes          String?         @db.Text
   orderedAt      DateTime        @default(now())
+  sentAt         DateTime?
   receivedAt     DateTime?
   createdById    Int?
   createdBy      User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
@@ -750,9 +759,10 @@ model PurchaseItem {
   purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
   productId  Int
   product    Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
-  quantity   Decimal  @db.Decimal(12, 3)
-  unitCost   Decimal  @db.Decimal(12, 4)
-  total      Decimal  @db.Decimal(12, 2)
+  quantity         Decimal  @db.Decimal(12, 3)
+  receivedQuantity Decimal  @default(0) @db.Decimal(12, 3)
+  unitCost         Decimal  @db.Decimal(12, 4)
+  total            Decimal  @db.Decimal(12, 2)
 
   @@index([purchaseId])
   @@map("purchase_items")
@@ -764,10 +774,14 @@ model StockDocument {
   hotel          Hotel               @relation(fields: [hotelId], references: [id], onDelete: Cascade)
   type           StockDocumentType
   status         StockDocumentStatus @default(DRAFT)
+  year           Int?
+  number         Int?
   warehouseId    Int
   warehouse      Warehouse           @relation("StockDocumentFrom", fields: [warehouseId], references: [id], onDelete: Restrict)
   toWarehouseId  Int?
   toWarehouse    Warehouse?          @relation("StockDocumentTo", fields: [toWarehouseId], references: [id], onDelete: Restrict)
+  supplierId     Int?
+  supplier       Supplier?           @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   reason         String?             @db.VarChar(200)
   createdById    Int?
   createdBy      User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
@@ -776,9 +790,38 @@ model StockDocument {
   items          StockDocumentItem[]
   stockMovements StockMovement[]
 
+  @@unique([hotelId, type, year, number])
   @@index([hotelId, type, status])
   @@index([warehouseId])
   @@map("stock_documents")
+}
+
+model StockDocumentSeries {
+  id         Int               @id @default(autoincrement())
+  hotelId    Int
+  hotel      Hotel             @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  type       StockDocumentType
+  year       Int
+  nextNumber Int               @default(1)
+
+  @@unique([hotelId, type, year])
+  @@map("stock_document_series")
+}
+
+model StockLot {
+  id          Int       @id @default(autoincrement())
+  warehouseId Int
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  productId   Int
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  code        String?   @db.VarChar(40)
+  expiryDate  DateTime? @db.Date
+  quantity    Decimal   @db.Decimal(12, 3)
+  createdAt   DateTime  @default(now())
+
+  @@index([warehouseId, productId])
+  @@index([expiryDate])
+  @@map("stock_lots")
 }
 
 model StockDocumentItem {

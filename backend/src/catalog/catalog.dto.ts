@@ -79,6 +79,10 @@ export class CreateProductDto {
   trackStock?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  trackExpiry?: boolean;
+
+  @IsOptional()
   @IsNumber({ maxDecimalPlaces: 3 })
   @Min(0)
   minStock?: number;

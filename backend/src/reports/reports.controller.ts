@@ -68,7 +68,7 @@ export class ReportsController {
     const today = todayUtc();
     const dayAgo = new Date(Date.now() - 24 * 3600 * 1000);
 
-    const [pendingOnline, arrivals, overdue, staleCash, products, drafts] = await Promise.all([
+    const [pendingOnline, arrivals, overdue, staleCash, products, drafts, expiring] = await Promise.all([
       this.prisma.reservation.count({ where: { hotelId, status: ReservationStatus.PENDING, source: 'ONLINE' } }),
       this.prisma.reservation.count({
         where: { hotelId, checkIn: { lte: today }, checkOut: { gt: today }, status: { in: [ReservationStatus.PENDING, ReservationStatus.CONFIRMED] } },
@@ -79,8 +79,15 @@ export class ReportsController {
         where: { hotelId, trackStock: true, active: true },
         select: { id: true, name: true, minStock: true, stockLevels: { select: { quantity: true } } },
       }),
-      user.role === UserRole.RECEPTION ? 0 : this.prisma.purchase.count({ where: { hotelId, status: PurchaseStatus.DRAFT } }),
+      user.role === UserRole.RECEPTION ? 0 : this.prisma.purchase.count({ where: { hotelId, status: { in: [PurchaseStatus.DRAFT, PurchaseStatus.PARTIAL] } } }),
+      this.prisma.stockLot.findMany({
+        where: { warehouse: { hotelId }, quantity: { gt: 0 }, expiryDate: { lt: new Date(today.getTime() + 7 * 24 * 3600 * 1000) } },
+        select: { expiryDate: true, product: { select: { name: true } } },
+        orderBy: { expiryDate: 'asc' },
+      }),
     ]);
+    const expired = expiring.filter((lot) => lot.expiryDate && lot.expiryDate < today);
+    const expiringNames = [...new Set(expiring.map((lot) => lot.product.name))];
     const lowStock = products.filter((product) =>
       product.stockLevels.reduce((sum, level) => sum.add(level.quantity), new Prisma.Decimal(0)).lessThan(product.minStock),
     );
@@ -95,7 +102,12 @@ export class ReportsController {
         text: `Stock abaixo do minimo: ${lowStock.slice(0, 3).map((p) => p.name).join(', ')}${lowStock.length > 3 ? '...' : ''}`,
         link: '/stocks',
       },
-      drafts && { kind: 'info', text: `${drafts} compra(s) em rascunho por receber`, link: '/compras' },
+      expiring.length && {
+        kind: expired.length ? 'danger' : 'warning',
+        text: `${expired.length ? `${expired.length} lote(s) expirado(s)` : 'Validades a expirar em 7 dias'}: ${expiringNames.slice(0, 3).join(', ')}${expiringNames.length > 3 ? '...' : ''}`,
+        link: '/stocks',
+      },
+      drafts && { kind: 'info', text: `${drafts} compra(s) por receber`, link: '/compras' },
     ].filter(Boolean);
     return items;
   }

@@ -1,11 +1,12 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Query, Res } from '@nestjs/common';
+import { PaperWidth, UserRole } from '@prisma/client';
+import type { Response } from 'express';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { HotelQueryDto } from '../common/hotel-query.dto';
-import { StockDocumentDto, StockDocumentQueryDto, StockDocumentsService } from './stock-documents.service';
-import { AdjustStockDto, CreateWarehouseDto, MovementQueryDto, StockService, TransferDto, WasteDto } from './stock.service';
+import { CountSheetQueryDto, StockDocumentDto, StockDocumentQueryDto, StockDocumentsService, StockPdfQueryDto } from './stock-documents.service';
+import { AdjustStockDto, CreateWarehouseDto, LotQueryDto, MovementQueryDto, StockService, TransferDto, WasteDto } from './stock.service';
 
 @Controller()
 export class StockController {
@@ -22,6 +23,27 @@ export class StockController {
   @Get('stock-documents/:id')
   findDocument(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
     return this.documents.findOne(id, user);
+  }
+
+  @Get('stock-documents/:id/pdf')
+  async documentPdf(@Param('id', ParseIntPipe) id: number, @Query() query: StockPdfQueryDto, @CurrentUser() user: JwtPayload, @Res() res: Response) {
+    const { buffer, name } = await this.documents.pdf(id, query.paper ?? PaperWidth.A4, user);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${name}.pdf"`);
+    res.send(buffer);
+  }
+
+  @Get('warehouses/:id/count-sheet')
+  async countSheet(@Param('id', ParseIntPipe) id: number, @Query() query: CountSheetQueryDto, @CurrentUser() user: JwtPayload, @Res() res: Response) {
+    const buffer = await this.documents.countSheet(id, query.withQuantities ?? false, query.paper ?? PaperWidth.A4, user);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="folha-de-contagem.pdf"');
+    res.send(buffer);
+  }
+
+  @Get('warehouses/:id/lots')
+  lots(@Param('id', ParseIntPipe) id: number, @Query() query: LotQueryDto, @CurrentUser() user: JwtPayload) {
+    return this.stock.lots(id, query.productId, user);
   }
 
   @Post('stock-documents')

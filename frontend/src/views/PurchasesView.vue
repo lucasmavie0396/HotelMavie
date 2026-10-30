@@ -3,10 +3,17 @@ import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
-import type { Product, Purchase, Supplier, Warehouse } from '@/types';
+import { previewPdfFrom } from '@/services/print';
+import type { PaperWidth, Product, Purchase, PurchaseSuggestion, Supplier, Warehouse } from '@/types';
 import { formatDateTime, formatMoney } from '@/utils/format';
 
-const STATUS_LABELS: Record<Purchase['status'], string> = { DRAFT: 'Rascunho', RECEIVED: 'Recebida', CANCELLED: 'Cancelada' };
+const STATUS_LABELS: Record<Purchase['status'], string> = { DRAFT: 'Rascunho', PARTIAL: 'Recebida em parte', RECEIVED: 'Recebida', CANCELLED: 'Cancelada' };
+const STATUS_CLASSES: Record<Purchase['status'], string> = {
+  DRAFT: 'bg-amber-100 text-amber-800',
+  PARTIAL: 'bg-sky-100 text-sky-800',
+  RECEIVED: 'bg-emerald-100 text-emerald-800',
+  CANCELLED: 'bg-slate-100 text-slate-500',
+};
 
 const hotels = useHotelsStore();
 const tab = ref<'purchases' | 'suppliers'>('purchases');
@@ -27,7 +34,20 @@ const purchase = reactive({
   items: [] as { productId: number; quantity: number; unitCost: number }[],
 });
 
+const notice = ref('');
+const reception = ref<{
+  purchase: Purchase;
+  lines: { itemId: number; name: string; unit: string; remaining: number; quantity: number; trackExpiry: boolean; lot: string; expiryDate: string }[];
+} | null>(null);
+const suggest = reactive({
+  open: false,
+  warehouseId: 0,
+  rows: [] as (PurchaseSuggestion & { selected: boolean; order: number; supplierId: number; cost: number })[],
+});
+
 const money = (value: string | number) => formatMoney(value, hotels.currency);
+const qty = (value: string | number) => Number(value).toLocaleString('pt-PT', { maximumFractionDigits: 3 });
+const purchaseNumber = (item: Purchase) => `ENC ${new Date(item.orderedAt).getUTCFullYear()}/${item.id}`;
 const draftTotal = computed(() => purchase.items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0));
 
 async function load() {
@@ -52,6 +72,7 @@ async function load() {
 async function run(fn: () => Promise<unknown>) {
   busy.value = true;
   error.value = '';
+  notice.value = '';
   try {
     await fn();
     await load();
@@ -99,11 +120,96 @@ const savePurchase = () =>
     showForm.value = false;
   });
 
-const receive = (item: Purchase) =>
+function startReception(item: Purchase) {
+  showForm.value = false;
+  reception.value = {
+    purchase: item,
+    lines: item.items
+      .map((line) => {
+        const remaining = Number(line.quantity) - Number(line.receivedQuantity);
+        return {
+          itemId: line.id,
+          name: line.product.name,
+          unit: line.product.unit,
+          remaining,
+          quantity: remaining,
+          trackExpiry: line.product.trackExpiry,
+          lot: '',
+          expiryDate: '',
+        };
+      })
+      .filter((line) => line.remaining > 0),
+  };
+}
+
+const confirmReception = () =>
   run(async () => {
-    if (window.confirm(`Dar entrada em stock da compra a ${item.supplier.name}?`)) {
-      await api.post(`/purchases/${item.id}/receive`);
+    if (!reception.value) return;
+    const items = reception.value.lines.map((line) => ({
+      itemId: line.itemId,
+      quantity: line.quantity,
+      lot: line.trackExpiry && line.lot ? line.lot : undefined,
+      expiryDate: line.trackExpiry && line.expiryDate ? line.expiryDate : undefined,
+    }));
+    await api.post(`/purchases/${reception.value.purchase.id}/receive`, { items });
+    reception.value = null;
+  });
+
+const closePurchase = (item: Purchase) =>
+  run(async () => {
+    if (window.confirm('Dar a compra por concluida? O que falta receber deixa de ficar pendente.')) {
+      await api.post(`/purchases/${item.id}/close`);
     }
+  });
+
+const sendPurchase = (item: Purchase) =>
+  run(async () => {
+    if (!window.confirm(`Enviar a encomenda por email para ${item.supplier.email}?`)) return;
+    const { data } = await api.post<{ status: string; to: string; error?: string }>(`/purchases/${item.id}/send`);
+    if (data.status === 'FAILED') throw new Error(`Falha no envio: ${data.error ?? 'erro desconhecido'}`);
+    notice.value = data.status === 'LOGGED' ? `Email registado para ${data.to} (sem SMTP configurado, nao saiu)` : `Encomenda enviada para ${data.to}`;
+  });
+
+async function previewPurchase(item: Purchase, paper: PaperWidth) {
+  try {
+    await previewPdfFrom(`/purchases/${item.id}/pdf`, { paper }, `Nota de encomenda ${purchaseNumber(item)}`, paper);
+  } catch (e) {
+    error.value = errorMessage(e);
+  }
+}
+
+async function loadSuggestions() {
+  error.value = '';
+  try {
+    if (!suggest.warehouseId) suggest.warehouseId = warehouses.value[0]?.id ?? 0;
+    const { data } = await api.get<PurchaseSuggestion[]>('/purchases/suggestions', { params: { hotelId: hotels.selectedId, warehouseId: suggest.warehouseId } });
+    suggest.rows = data.map((row) => ({
+      ...row,
+      selected: Boolean(row.supplier),
+      order: Number(row.suggested),
+      supplierId: row.supplier?.id ?? suppliers.value.find((s) => s.active)?.id ?? 0,
+      cost: Number(row.unitCost),
+    }));
+    suggest.open = true;
+  } catch (e) {
+    error.value = errorMessage(e);
+  }
+}
+
+const createFromSuggestions = () =>
+  run(async () => {
+    const chosen = suggest.rows.filter((row) => row.selected && row.order > 0 && row.supplierId);
+    const bySupplier = new Map<number, typeof chosen>();
+    for (const row of chosen) bySupplier.set(row.supplierId, [...(bySupplier.get(row.supplierId) ?? []), row]);
+    for (const [supplierId, rows] of bySupplier) {
+      await api.post('/purchases', {
+        supplierId,
+        warehouseId: suggest.warehouseId,
+        items: rows.map((row) => ({ productId: row.productId, quantity: row.order, unitCost: row.cost })),
+      });
+    }
+    suggest.open = false;
+    notice.value = `${bySupplier.size} rascunho(s) de compra criados`;
   });
 
 const cancel = (item: Purchase) =>
@@ -144,12 +250,87 @@ onMounted(load);
     </PageHeader>
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
+    <p v-if="notice" class="text-sm text-emerald-700">{{ notice }}</p>
 
     <template v-if="tab === 'purchases'">
       <p v-if="!suppliers.length || !warehouses.length || !products.length" class="text-sm text-slate-500">
         Para registar compras precisas de pelo menos um fornecedor, um armazem e um produto com controlo de stock.
       </p>
-      <button v-else-if="!showForm" class="btn" type="button" @click="newPurchase">Nova compra</button>
+      <div v-else-if="!showForm" class="flex flex-wrap gap-2">
+        <button class="btn" type="button" @click="newPurchase">Nova compra</button>
+        <button class="btn-secondary" type="button" @click="loadSuggestions">Sugestoes de encomenda</button>
+      </div>
+
+      <div v-if="suggest.open" class="card space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h2 class="font-semibold">Sugestoes de encomenda</h2>
+          <div class="flex items-center gap-2">
+            <select v-model.number="suggest.warehouseId" class="input w-auto" @change="loadSuggestions">
+              <option v-for="w in warehouses" :key="w.id" :value="w.id">{{ w.name }}</option>
+            </select>
+            <button class="text-sm text-slate-500 hover:underline" type="button" @click="suggest.open = false">Fechar</button>
+          </div>
+        </div>
+        <p class="text-xs text-slate-500">Produtos abaixo do minimo. A quantidade sugerida repoe o dobro do minimo, descontando o que ja esta encomendado.</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead class="border-b border-slate-200 text-slate-600">
+              <tr>
+                <th class="py-2"></th>
+                <th class="py-2">Produto</th>
+                <th class="py-2 text-right">Stock</th>
+                <th class="py-2 text-right">Minimo</th>
+                <th class="py-2 text-right">Encomendado</th>
+                <th class="py-2">Encomendar</th>
+                <th class="py-2">Custo</th>
+                <th class="py-2">Fornecedor</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in suggest.rows" :key="row.productId" class="border-b border-slate-100">
+                <td class="py-2 pr-2"><input v-model="row.selected" type="checkbox" :aria-label="`Incluir ${row.name}`" /></td>
+                <td class="py-2 font-medium">{{ row.name }}</td>
+                <td class="py-2 text-right text-rose-700">{{ qty(row.quantity) }} {{ row.unit }}</td>
+                <td class="py-2 text-right">{{ qty(row.minStock) }}</td>
+                <td class="py-2 text-right">{{ qty(row.pending) }}</td>
+                <td class="py-2"><input v-model.number="row.order" class="input w-24" type="number" min="0.001" step="0.001" /></td>
+                <td class="py-2"><input v-model.number="row.cost" class="input w-24" type="number" min="0" step="0.0001" /></td>
+                <td class="py-2">
+                  <select v-model.number="row.supplierId" class="input">
+                    <option v-for="s in suppliers.filter((x) => x.active)" :key="s.id" :value="s.id">{{ s.name }}</option>
+                  </select>
+                </td>
+              </tr>
+              <tr v-if="!suggest.rows.length">
+                <td colspan="8" class="py-6 text-center text-slate-500">Nada a encomendar neste armazem</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="flex justify-end">
+          <button class="btn" type="button" :disabled="busy || !suggest.rows.some((r) => r.selected)" @click="createFromSuggestions">Criar rascunhos por fornecedor</button>
+        </div>
+      </div>
+
+      <form v-if="reception" class="card space-y-3" @submit.prevent="confirmReception">
+        <h2 class="font-semibold">Rececao · {{ purchaseNumber(reception.purchase) }} · {{ reception.purchase.supplier.name }}</h2>
+        <p class="text-xs text-slate-500">Indica o que chegou. O que ficar por receber mantem a compra aberta (recebida em parte).</p>
+        <div v-for="line in reception.lines" :key="line.itemId" class="grid items-center gap-2 sm:grid-cols-[1fr_110px_120px_150px]">
+          <span class="text-sm">
+            <span class="font-medium">{{ line.name }}</span>
+            <span class="block text-xs text-slate-500">faltam {{ qty(line.remaining) }} {{ line.unit }}</span>
+          </span>
+          <input v-model.number="line.quantity" class="input" type="number" min="0" :max="line.remaining" step="0.001" aria-label="Quantidade recebida" />
+          <template v-if="line.trackExpiry">
+            <input v-model="line.lot" class="input" placeholder="Lote" maxlength="40" />
+            <input v-model="line.expiryDate" class="input" type="date" aria-label="Validade" />
+          </template>
+        </div>
+        <div class="flex justify-end gap-2">
+          <button class="btn-secondary" type="button" @click="reception = null">Cancelar</button>
+          <button class="btn" type="submit" :disabled="busy">Dar entrada em stock</button>
+        </div>
+      </form>
 
       <form v-if="showForm" class="card space-y-3" @submit.prevent="savePurchase">
         <div class="grid gap-3 sm:grid-cols-3">
@@ -192,6 +373,7 @@ onMounted(load);
           <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
             <tr>
               <th class="px-4 py-3">Data</th>
+              <th class="px-4 py-3">N.o</th>
               <th class="px-4 py-3">Fornecedor</th>
               <th class="px-4 py-3">Ref.</th>
               <th class="px-4 py-3">Armazem</th>
@@ -203,25 +385,47 @@ onMounted(load);
           </thead>
           <tbody>
             <tr v-for="item in purchases" :key="item.id" class="border-b border-slate-100">
-              <td class="px-4 py-3">{{ formatDateTime(item.orderedAt) }}</td>
+              <td class="px-4 py-3 whitespace-nowrap">{{ formatDateTime(item.orderedAt) }}</td>
+              <td class="px-4 py-3 whitespace-nowrap">
+                {{ purchaseNumber(item) }}
+                <span v-if="item.sentAt" class="block text-xs text-slate-500">enviada {{ formatDateTime(item.sentAt) }}</span>
+              </td>
               <td class="px-4 py-3 font-medium">{{ item.supplier.name }}</td>
               <td class="px-4 py-3">{{ item.supplierRef ?? '-' }}</td>
               <td class="px-4 py-3">{{ item.warehouse.name }}</td>
               <td class="px-4 py-3 text-slate-600">
-                {{ item.items.map((line) => `${Number(line.quantity)} ${line.product.name}`).join(', ') }}
+                <span v-for="(line, index) in item.items" :key="line.id">
+                  {{ index ? ', ' : '' }}{{ qty(line.quantity) }} {{ line.product.name }}<template v-if="item.status === 'PARTIAL'"> ({{ qty(line.receivedQuantity) }} recebido)</template>
+                </span>
               </td>
               <td class="px-4 py-3 text-right">{{ money(item.total) }}</td>
-              <td class="px-4 py-3">{{ STATUS_LABELS[item.status] }}</td>
+              <td class="px-4 py-3">
+                <span class="rounded-full px-2 py-0.5 text-xs whitespace-nowrap" :class="STATUS_CLASSES[item.status]">{{ STATUS_LABELS[item.status] }}</span>
+              </td>
               <td class="space-x-3 px-4 py-3 text-right text-xs whitespace-nowrap">
+                <button class="text-slate-600 hover:underline" type="button" @click="previewPurchase(item, 'A4')">PDF</button>
+                <button class="text-slate-600 hover:underline" type="button" @click="previewPurchase(item, 'MM80')">80 mm</button>
+                <button
+                  v-if="(item.status === 'DRAFT' || item.status === 'PARTIAL') && item.supplier.email"
+                  class="text-indigo-600 hover:underline"
+                  type="button"
+                  @click="sendPurchase(item)"
+                >
+                  Enviar
+                </button>
                 <template v-if="item.status === 'DRAFT'">
                   <button class="text-indigo-600 hover:underline" type="button" @click="editPurchase(item)">Editar</button>
-                  <button class="font-semibold text-emerald-700 hover:underline" type="button" @click="receive(item)">Receber</button>
+                  <button class="font-semibold text-emerald-700 hover:underline" type="button" @click="startReception(item)">Receber</button>
                   <button class="text-rose-600 hover:underline" type="button" @click="cancel(item)">Cancelar</button>
+                </template>
+                <template v-if="item.status === 'PARTIAL'">
+                  <button class="font-semibold text-emerald-700 hover:underline" type="button" @click="startReception(item)">Receber resto</button>
+                  <button class="text-slate-600 hover:underline" type="button" @click="closePurchase(item)">Concluir</button>
                 </template>
               </td>
             </tr>
             <tr v-if="!purchases.length">
-              <td colspan="8" class="px-4 py-6 text-center text-slate-500">Sem compras</td>
+              <td colspan="9" class="px-4 py-6 text-center text-slate-500">Sem compras</td>
             </tr>
           </tbody>
         </table>

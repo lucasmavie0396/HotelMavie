@@ -117,3 +117,14 @@ export function invoiceEmail(hotel: Hotel, invoice: { fullNumber: string; custom
     ),
   };
 }
+
+export function purchaseOrderEmail(hotel: Hotel, order: { number: string; supplierName: string; total: { toString(): string } }) {
+  return {
+    subject: `Encomenda ${order.number} - ${hotel.name}`,
+    html: layout(
+      hotel,
+      `Encomenda ${order.number}`,
+      `<p>Ola ${escapeHtml(order.supplierName)},</p><p>Segue em anexo a nossa encomenda <strong>${escapeHtml(order.number)}</strong>, no valor estimado de ${formatMoney(order.total, hotel.currency)}.</p><p>Agradecemos a confirmacao da encomenda e da data de entrega respondendo a este email.</p><p>Com os melhores cumprimentos,<br>${escapeHtml(hotel.name)}</p>`,
+    ),
+  };
+}

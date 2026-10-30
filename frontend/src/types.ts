@@ -279,6 +279,7 @@ export interface Product {
   taxRateId: number | null;
   sellable: boolean;
   trackStock: boolean;
+  trackExpiry: boolean;
   minStock: string;
   active: boolean;
   imageFile: string | null;
@@ -306,7 +307,7 @@ export interface StockLevelRow extends Product {
 
 export interface StockMovement {
   id: number;
-  type: 'PURCHASE' | 'SALE' | 'ADJUSTMENT' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'WASTE';
+  type: 'PURCHASE' | 'SALE' | 'ADJUSTMENT' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'WASTE' | 'RETURN';
   quantity: string;
   balance: string;
   reason: string | null;
@@ -314,21 +315,33 @@ export interface StockMovement {
   product: { name: string; unit: string };
   warehouse: { name: string };
   createdBy: { name: string } | null;
-  document: { id: number; type: StockDocumentType } | null;
+  document: { id: number; type: StockDocumentType; year: number | null; number: number | null } | null;
   purchase: { id: number; supplierRef: string | null } | null;
 }
 
-export type StockDocumentType = 'INVENTORY' | 'WASTE' | 'TRANSFER';
+export type StockDocumentType = 'INVENTORY' | 'WASTE' | 'TRANSFER' | 'RETURN';
+
+export interface StockLot {
+  id: number;
+  productId: number;
+  code: string | null;
+  expiryDate: string | null;
+  quantity: string;
+  product: { id: number; name: string; unit: string };
+}
 
 export interface StockDocument {
   id: number;
   type: StockDocumentType;
   status: 'DRAFT' | 'POSTED' | 'CANCELLED';
+  year: number | null;
+  number: number | null;
   reason: string | null;
   createdAt: string;
   postedAt: string | null;
   warehouse: { id: number; name: string };
   toWarehouse: { id: number; name: string } | null;
+  supplier: { id: number; name: string } | null;
   createdBy: { name: string } | null;
   items: { id: number; productId: number; quantity: string; previousQuantity: string | null; product: { name: string; unit: string } }[];
 }
@@ -344,14 +357,35 @@ export interface Supplier {
 
 export interface Purchase {
   id: number;
-  status: 'DRAFT' | 'RECEIVED' | 'CANCELLED';
+  status: 'DRAFT' | 'PARTIAL' | 'RECEIVED' | 'CANCELLED';
   supplierRef: string | null;
   total: string;
   orderedAt: string;
+  sentAt: string | null;
   receivedAt: string | null;
-  supplier: { id: number; name: string };
+  supplier: { id: number; name: string; email: string | null };
   warehouse: { id: number; name: string };
-  items: { id: number; productId: number; quantity: string; unitCost: string; total: string; product: { name: string; unit: string } }[];
+  items: {
+    id: number;
+    productId: number;
+    quantity: string;
+    receivedQuantity: string;
+    unitCost: string;
+    total: string;
+    product: { name: string; unit: string; trackExpiry: boolean };
+  }[];
+}
+
+export interface PurchaseSuggestion {
+  productId: number;
+  name: string;
+  unit: string;
+  quantity: string;
+  minStock: string;
+  pending: string;
+  suggested: string;
+  unitCost: string;
+  supplier: { id: number; name: string } | null;
 }
 
 export interface OrderItem {

@@ -11,8 +11,11 @@ import {
   ReceiptStatus,
   ReservationSource,
   ReservationStatus,
+  StockDocumentType,
+  StockMovementType,
   UserRole,
 } from '@prisma/client';
+import { stockDocumentNumber } from '../stock/stock-documents.service';
 import { Type } from 'class-transformer';
 import { IsDateString, IsInt, IsOptional, Length } from 'class-validator';
 import { JwtPayload } from '../auth/jwt-payload';
@@ -64,6 +67,9 @@ export const REPORTS: ReportDefinition[] = [
   { key: 'accounts', title: 'Contas correntes', description: 'Divida de clientes por antiguidade (0-30, 31-60, 61-90 e mais de 90 dias).', group: 'Financeiro', params: 'none', roles: MANAGERS },
   { key: 'pos', title: 'Restaurante e bar', description: 'Vendas por produto, categoria e ponto de venda, ticket medio e anulacoes.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
   { key: 'stock', title: 'Existencias', description: 'Quantidades e valor de stock por armazem, com os produtos abaixo do minimo.', group: 'Restauracao e stocks', params: 'stock', roles: MANAGERS },
+  { key: 'inventory', title: 'Diferencas de inventario', description: 'Acertos dos inventarios lancados no periodo, por produto, com o valor das faltas e sobras.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
+  { key: 'waste', title: 'Quebras e devolucoes', description: 'Quebras por motivo e por produto e devolucoes a fornecedores, ao custo medio.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
+  { key: 'expiry', title: 'Validades', description: 'Lotes em stock com a data de validade, assinalando os expirados e os que expiram em 30 dias.', group: 'Restauracao e stocks', params: 'stock', roles: MANAGERS },
 ];
 
 const CHARGE_LABELS: Record<ChargeType, string> = { ACCOMMODATION: 'Alojamento', RESTAURANT: 'Restaurante', BAR: 'Bar', EXTRA: 'Extras' };
@@ -142,8 +148,8 @@ export class ReportBuilderService {
       period = `Dia ${day(date)}`;
       sections = key === 'daily' ? await this.daily(date, context) : await this.guests(date, context);
     } else if (definition.params === 'stock') {
-      const result = await this.stock(params.warehouseId, context);
-      period = `Existencias em ${Ticket.when(new Date())} · ${result.warehouse}`;
+      const result = key === 'expiry' ? await this.expiry(params.warehouseId, context) : await this.stock(params.warehouseId, context);
+      period = `${key === 'expiry' ? 'Lotes' : 'Existencias'} em ${Ticket.when(new Date())} · ${result.warehouse}`;
       sections = result.sections;
     } else {
       period = `Situacao em ${day(todayUtc())}`;
@@ -177,6 +183,10 @@ export class ReportBuilderService {
         return this.payments(range, context);
       case 'cash':
         return this.cash(range, context);
+      case 'inventory':
+        return this.inventory(range, context);
+      case 'waste':
+        return this.waste(range, context);
       default:
         return this.pos(range, context);
     }
@@ -1095,6 +1105,196 @@ export class ReportBuilderService {
           table: { columns, rows: levels.map(row), totals: ['Total', '', '', '', '', '', money(total)], empty: 'Sem artigos com controlo de stock' },
           note: 'Valor calculado ao custo medio de cada artigo.',
         },
+      ] satisfies ReportSection[],
+    };
+  }
+
+  private stockValue(movement: { quantity: Prisma.Decimal; unitCost: Prisma.Decimal | null }) {
+    return toMoney(movement.quantity.mul(movement.unitCost ?? 0));
+  }
+
+  private async inventory(range: { from: Date; to: Date }, { hotel, money }: Context): Promise<ReportSection[]> {
+    const movements = await this.prisma.stockMovement.findMany({
+      where: { type: StockMovementType.ADJUSTMENT, createdAt: { gte: range.from, lt: range.to }, warehouse: { hotelId: hotel.id }, document: { type: StockDocumentType.INVENTORY } },
+      include: { product: { select: { name: true, unit: true } }, warehouse: { select: { name: true } }, document: { select: { id: true, type: true, year: true, number: true } } },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    const values = movements.map((movement) => this.stockValue(movement));
+    const shortage = sumMoney(values.filter((value) => value.isNegative()));
+    const surplus = sumMoney(values.filter((value) => value.greaterThan(0)));
+    const documents = new Set(movements.map((movement) => movement.documentId));
+    const byProduct = new Map<string, { name: string; unit: string; quantity: Prisma.Decimal; value: Prisma.Decimal }>();
+    movements.forEach((movement, index) => {
+      const current = byProduct.get(movement.product.name) ?? { name: movement.product.name, unit: movement.product.unit, quantity: new Prisma.Decimal(0), value: new Prisma.Decimal(0) };
+      byProduct.set(movement.product.name, { ...current, quantity: current.quantity.add(movement.quantity), value: current.value.add(values[index]) });
+    });
+    const products = [...byProduct.values()].sort((a, b) => a.value.comparedTo(b.value));
+    return [
+      {
+        title: 'Resumo',
+        kpis: [
+          { label: 'Inventarios', value: String(documents.size) },
+          { label: 'Faltas', value: money(shortage) },
+          { label: 'Sobras', value: money(surplus) },
+          { label: 'Diferenca liquida', value: money(shortage.add(surplus)) },
+        ],
+      },
+      {
+        title: 'Por produto',
+        table: {
+          columns: [{ label: 'Produto', weight: 2.4 }, { label: 'Diferenca', align: 'right', weight: 1 }, { label: 'Valor', align: 'right', weight: 1 }],
+          rows: products.map((product) => [product.name, `${qty(product.quantity)} ${product.unit}`, money(product.value)]),
+          totals: ['Total', '', money(shortage.add(surplus))],
+          empty: 'Sem diferencas de inventario no periodo',
+        },
+      },
+      {
+        title: 'Detalhe',
+        table: {
+          columns: [
+            { label: 'Data', weight: 1.1 },
+            { label: 'Documento', weight: 1.1 },
+            { label: 'Armazem', weight: 1.1 },
+            { label: 'Produto', weight: 2 },
+            { label: 'Diferenca', align: 'right', weight: 0.9 },
+            { label: 'Valor', align: 'right', weight: 1 },
+          ],
+          rows: movements.map((movement, index) => [
+            Ticket.when(movement.createdAt),
+            movement.document ? stockDocumentNumber(movement.document) : '-',
+            movement.warehouse.name,
+            movement.product.name,
+            qty(movement.quantity),
+            money(values[index]),
+          ]),
+          empty: 'Sem inventarios lancados no periodo',
+        },
+        note: 'Valor ao custo medio do produto no momento do acerto.',
+      },
+    ];
+  }
+
+  private async waste(range: { from: Date; to: Date }, { hotel, money }: Context): Promise<ReportSection[]> {
+    const movements = await this.prisma.stockMovement.findMany({
+      where: { type: { in: [StockMovementType.WASTE, StockMovementType.RETURN] }, createdAt: { gte: range.from, lt: range.to }, warehouse: { hotelId: hotel.id } },
+      include: {
+        product: { select: { name: true, unit: true } },
+        document: { select: { id: true, type: true, year: true, number: true, reason: true, supplier: { select: { name: true } } } },
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    const wastes = movements.filter((movement) => movement.type === StockMovementType.WASTE);
+    const returns = movements.filter((movement) => movement.type === StockMovementType.RETURN);
+    const value = (list: typeof movements) => sumMoney(list.map((movement) => this.stockValue(movement).neg()));
+    const group = (list: typeof movements, keyOf: (movement: (typeof movements)[number]) => string) => {
+      const groups = new Map<string, { count: number; quantity: Prisma.Decimal; value: Prisma.Decimal }>();
+      for (const movement of list) {
+        const key = keyOf(movement);
+        const current = groups.get(key) ?? { count: 0, quantity: new Prisma.Decimal(0), value: new Prisma.Decimal(0) };
+        groups.set(key, { count: current.count + 1, quantity: current.quantity.add(movement.quantity.neg()), value: current.value.add(this.stockValue(movement).neg()) });
+      }
+      return [...groups.entries()].sort((a, b) => b[1].value.comparedTo(a[1].value));
+    };
+    const reasonOf = (movement: (typeof movements)[number]) => movement.document?.reason || movement.reason || 'Sem motivo';
+    return [
+      {
+        title: 'Resumo',
+        kpis: [
+          { label: 'Quebras', value: money(value(wastes)) },
+          { label: 'Linhas de quebra', value: String(wastes.length) },
+          { label: 'Devolucoes', value: money(value(returns)) },
+          { label: 'Linhas devolvidas', value: String(returns.length) },
+        ],
+      },
+      {
+        title: 'Quebras por motivo',
+        table: {
+          columns: [{ label: 'Motivo', weight: 2.6 }, { label: 'Linhas', align: 'right', weight: 0.7 }, { label: 'Valor', align: 'right', weight: 1 }],
+          rows: group(wastes, reasonOf).map(([reason, data]) => [reason, String(data.count), money(data.value)]),
+          totals: ['Total', String(wastes.length), money(value(wastes))],
+          empty: 'Sem quebras no periodo',
+        },
+      },
+      {
+        title: 'Quebras por produto',
+        table: {
+          columns: [{ label: 'Produto', weight: 2.6 }, { label: 'Quantidade', align: 'right', weight: 1 }, { label: 'Valor', align: 'right', weight: 1 }],
+          rows: group(wastes, (movement) => `${movement.product.name} (${movement.product.unit})`).map(([name, data]) => [name, qty(data.quantity), money(data.value)]),
+          empty: 'Sem quebras no periodo',
+        },
+      },
+      {
+        title: 'Devolucoes a fornecedores',
+        table: {
+          columns: [
+            { label: 'Data', weight: 1.1 },
+            { label: 'Documento', weight: 1 },
+            { label: 'Fornecedor', weight: 1.5 },
+            { label: 'Produto', weight: 1.8 },
+            { label: 'Quantidade', align: 'right', weight: 0.9 },
+            { label: 'Valor', align: 'right', weight: 1 },
+          ],
+          rows: returns.map((movement) => [
+            Ticket.when(movement.createdAt),
+            movement.document ? stockDocumentNumber(movement.document) : '-',
+            movement.document?.supplier?.name ?? '-',
+            movement.product.name,
+            qty(movement.quantity.neg()),
+            money(this.stockValue(movement).neg()),
+          ]),
+          totals: ['Total', '', '', '', '', money(value(returns))],
+          empty: 'Sem devolucoes no periodo',
+        },
+        note: 'Valores ao custo medio do produto no momento do movimento.',
+      },
+    ];
+  }
+
+  private async expiry(warehouseId: number | undefined, { hotel }: Context) {
+    const warehouses = await this.prisma.warehouse.findMany({ where: { hotelId: hotel.id, active: true } });
+    const chosen = warehouseId ? warehouses.find((warehouse) => warehouse.id === warehouseId) : null;
+    if (warehouseId && !chosen) {
+      throw new NotFoundException('Armazem nao encontrado');
+    }
+    const lots = await this.prisma.stockLot.findMany({
+      where: { warehouseId: chosen ? chosen.id : { in: warehouses.map((warehouse) => warehouse.id) }, quantity: { gt: 0 } },
+      include: { product: { select: { name: true, unit: true } }, warehouse: { select: { name: true } } },
+      orderBy: [{ expiryDate: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+    });
+    const today = todayUtc();
+    const soon = addDays(today, 30);
+    const state = (date: Date | null) => (!date ? 'Sem validade' : date < today ? 'EXPIRADO' : date < soon ? `Expira em ${nightsBetween(today, date)} dia(s)` : 'Ok');
+    const expired = lots.filter((lot) => lot.expiryDate && lot.expiryDate < today);
+    const expiring = lots.filter((lot) => lot.expiryDate && lot.expiryDate >= today && lot.expiryDate < soon);
+    const columns = [
+      { label: 'Produto', weight: 2.1 },
+      { label: 'Armazem', weight: 1.2 },
+      { label: 'Lote', weight: 1 },
+      { label: 'Validade', weight: 0.9 },
+      { label: 'Quantidade', align: 'right' as const, weight: 0.9 },
+      { label: 'Estado', weight: 1.2 },
+    ];
+    const row = (lot: (typeof lots)[number]) => [
+      lot.product.name,
+      lot.warehouse.name,
+      lot.code ?? '-',
+      lot.expiryDate ? day(lot.expiryDate) : '-',
+      `${qty(lot.quantity)} ${lot.product.unit}`,
+      state(lot.expiryDate),
+    ];
+    return {
+      warehouse: chosen ? chosen.name : 'todos os armazens',
+      sections: [
+        {
+          title: 'Resumo',
+          kpis: [
+            { label: 'Lotes em stock', value: String(lots.length) },
+            { label: 'Expirados', value: String(expired.length) },
+            { label: 'Expiram em 30 dias', value: String(expiring.length) },
+          ],
+        },
+        { title: 'Expirados e a expirar', table: { columns, rows: [...expired, ...expiring].map(row), empty: 'Nenhum lote expirado ou a expirar' } },
+        { title: 'Todos os lotes', table: { columns, rows: lots.map(row), empty: 'Sem lotes registados (ativa "Lotes e validades" no produto)' } },
       ] satisfies ReportSection[],
     };
   }

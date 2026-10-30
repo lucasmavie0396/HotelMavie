@@ -4,8 +4,9 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
-import type { StockDocument, StockDocumentType, StockLevelRow, StockMovement, Warehouse } from '@/types';
-import { formatDateTime, formatMoney } from '@/utils/format';
+import { previewPdfFrom } from '@/services/print';
+import type { PaperWidth, StockDocument, StockDocumentType, StockLevelRow, StockLot, StockMovement, Supplier, Warehouse } from '@/types';
+import { formatDate, formatDateTime, formatMoney } from '@/utils/format';
 
 const MOVEMENT_LABELS: Record<StockMovement['type'], string> = {
   PURCHASE: 'Compra',
@@ -14,9 +15,10 @@ const MOVEMENT_LABELS: Record<StockMovement['type'], string> = {
   TRANSFER_IN: 'Transf. entrada',
   TRANSFER_OUT: 'Transf. saida',
   WASTE: 'Quebra',
+  RETURN: 'Devolucao',
 };
-const TYPE_LABELS: Record<StockDocumentType, string> = { INVENTORY: 'Inventario', WASTE: 'Quebras', TRANSFER: 'Transferencia' };
-const TYPE_PREFIX: Record<StockDocumentType, string> = { INVENTORY: 'INV', WASTE: 'QB', TRANSFER: 'TR' };
+const TYPE_LABELS: Record<StockDocumentType, string> = { INVENTORY: 'Inventario', WASTE: 'Quebras', TRANSFER: 'Transferencia', RETURN: 'Devolucao a fornecedor' };
+const TYPE_PREFIX: Record<StockDocumentType, string> = { INVENTORY: 'INV', WASTE: 'QB', TRANSFER: 'TR', RETURN: 'DV' };
 const STATUS_LABELS: Record<StockDocument['status'], string> = { DRAFT: 'Rascunho', POSTED: 'Lancado', CANCELLED: 'Cancelado' };
 const STATUS_CLASSES: Record<StockDocument['status'], string> = {
   DRAFT: 'bg-amber-100 text-amber-800',
@@ -37,13 +39,15 @@ const onlyLow = ref(false);
 const newWarehouse = ref('');
 const typeFilter = ref<'' | StockDocumentType>('');
 const expandedId = ref<number | null>(null);
-const history = ref<{ product: StockLevelRow; movements: StockMovement[] } | null>(null);
+const history = ref<{ product: StockLevelRow; movements: StockMovement[]; lots: StockLot[] } | null>(null);
+const suppliers = ref<Supplier[]>([]);
 
 const form = reactive({
   open: false,
   editingId: null as number | null,
   type: 'WASTE' as StockDocumentType,
   toWarehouseId: 0,
+  supplierId: 0,
   reason: '',
   items: [] as { productId: number; quantity: number }[],
 });
@@ -55,7 +59,9 @@ const filteredDocuments = computed(() => documents.value.filter((d) => !typeFilt
 const drafts = computed(() => documents.value.filter((d) => d.status === 'DRAFT').length);
 const otherWarehouses = computed(() => warehouses.value.filter((w) => w.id !== warehouseId.value));
 const levelOf = (productId: number) => levels.value.find((l) => l.id === productId);
-const docNumber = (d: StockDocument) => `${TYPE_PREFIX[d.type]} #${d.id}`;
+const docNumber = (d: { id: number; type: StockDocumentType; year: number | null; number: number | null }) =>
+  d.number ? `${TYPE_PREFIX[d.type]} ${d.year}/${d.number}` : `${TYPE_PREFIX[d.type]} #${d.id}`;
+const editingDocument = computed(() => documents.value.find((d) => d.id === form.editingId));
 const qty = (value: string | number | null) => (value === null ? '-' : Number(value).toLocaleString('pt-PT', { maximumFractionDigits: 3 }));
 
 function summary(d: StockDocument) {
@@ -64,7 +70,7 @@ function summary(d: StockDocument) {
 }
 
 function movementSource(m: StockMovement) {
-  if (m.document) return `${TYPE_PREFIX[m.document.type]} #${m.document.id}`;
+  if (m.document) return docNumber(m.document);
   if (m.purchase) return m.purchase.supplierRef ? `Compra ${m.purchase.supplierRef}` : `Compra #${m.purchase.id}`;
   return m.reason ?? '';
 }
@@ -87,6 +93,9 @@ async function load() {
     ]);
     levels.value = l.data;
     documents.value = d.data;
+    if (isManager.value && !suppliers.value.length) {
+      suppliers.value = (await api.get<Supplier[]>('/suppliers', { params: { hotelId: hotels.selectedId } })).data.filter((s) => s.active);
+    }
   } catch (e) {
     error.value = errorMessage(e);
   }
@@ -119,6 +128,7 @@ function newDocument(type: StockDocumentType) {
     editingId: null,
     type,
     toWarehouseId: otherWarehouses.value[0]?.id ?? 0,
+    supplierId: suppliers.value[0]?.id ?? 0,
     reason: '',
     items:
       type === 'INVENTORY'
@@ -136,6 +146,7 @@ function editDocument(d: StockDocument) {
     editingId: d.id,
     type: d.type,
     toWarehouseId: d.toWarehouse?.id ?? 0,
+    supplierId: d.supplier?.id ?? 0,
     reason: d.reason ?? '',
     items: d.items.map((i) => ({ productId: i.productId, quantity: Number(i.quantity) })),
   });
@@ -153,6 +164,7 @@ const saveDocument = (post: boolean) =>
       type: form.type,
       warehouseId: warehouseId.value,
       toWarehouseId: form.type === 'TRANSFER' ? form.toWarehouseId : undefined,
+      supplierId: form.type === 'RETURN' ? form.supplierId : undefined,
       reason: form.reason || undefined,
       items: form.items,
     };
@@ -180,13 +192,36 @@ const cancelDocument = (d: StockDocument) =>
 
 async function openHistory(product: StockLevelRow) {
   try {
-    const { data } = await api.get<StockMovement[]>('/stock-movements', {
-      params: { hotelId: hotels.selectedId, warehouseId: warehouseId.value, productId: product.id },
-    });
-    history.value = { product, movements: data };
+    const [movements, lots] = await Promise.all([
+      api.get<StockMovement[]>('/stock-movements', { params: { hotelId: hotels.selectedId, warehouseId: warehouseId.value, productId: product.id } }),
+      product.trackExpiry ? api.get<StockLot[]>(`/warehouses/${warehouseId.value}/lots`, { params: { productId: product.id } }) : Promise.resolve({ data: [] }),
+    ]);
+    history.value = { product, movements: movements.data, lots: lots.data };
   } catch (e) {
     error.value = errorMessage(e);
   }
+}
+
+async function previewDocument(d: StockDocument, paper: PaperWidth) {
+  try {
+    await previewPdfFrom(`/stock-documents/${d.id}/pdf`, { paper }, `${TYPE_LABELS[d.type]} ${docNumber(d)}`, paper);
+  } catch (e) {
+    error.value = errorMessage(e);
+  }
+}
+
+async function previewCountSheet(withQuantities: boolean) {
+  try {
+    await previewPdfFrom(`/warehouses/${warehouseId.value}/count-sheet`, { withQuantities, paper: 'A4' }, 'Folha de contagem', 'A4');
+  } catch (e) {
+    error.value = errorMessage(e);
+  }
+}
+
+function expiryClass(lot: StockLot) {
+  if (!lot.expiryDate) return 'text-slate-400';
+  const days = (new Date(lot.expiryDate).getTime() - Date.now()) / 86_400_000;
+  return days < 0 ? 'font-semibold text-rose-700' : days < 30 ? 'text-amber-700' : '';
 }
 
 const createWarehouse = () =>
@@ -228,6 +263,7 @@ onMounted(load);
           <button v-if="isManager" class="btn-secondary" type="button" @click="newDocument('INVENTORY')">Novo inventario</button>
           <button class="btn-secondary" type="button" @click="newDocument('WASTE')">Nova quebra</button>
           <button v-if="isManager && otherWarehouses.length" class="btn-secondary" type="button" @click="newDocument('TRANSFER')">Nova transferencia</button>
+          <button v-if="isManager && suppliers.length" class="btn-secondary" type="button" @click="newDocument('RETURN')">Nova devolucao</button>
         </div>
       </div>
 
@@ -235,12 +271,23 @@ onMounted(load);
         <div class="flex flex-wrap items-center gap-4 text-sm">
           <label class="flex items-center gap-2"><input v-model="onlyLow" type="checkbox" />So abaixo do minimo</label>
           <span class="text-slate-600">Valor em stock (custo medio): <strong>{{ formatMoney(stockValue, hotels.currency) }}</strong></span>
+          <span class="ml-auto flex gap-3 text-xs">
+            <button class="text-indigo-600 hover:underline" type="button" @click="previewCountSheet(false)">Folha de contagem</button>
+            <button v-if="isManager" class="text-indigo-600 hover:underline" type="button" @click="previewCountSheet(true)">Folha com quantidades</button>
+          </span>
         </div>
 
         <div v-if="history" class="card overflow-x-auto p-0">
           <div class="flex items-center justify-between px-4 pt-4">
             <h2 class="font-semibold">Historico · {{ history.product.name }}</h2>
             <button class="text-sm text-slate-500 hover:underline" type="button" @click="history = null">Fechar</button>
+          </div>
+          <div v-if="history.product.trackExpiry" class="flex flex-wrap gap-2 px-4 pt-3 text-xs">
+            <span class="text-slate-500">Lotes:</span>
+            <span v-for="lot in history.lots" :key="lot.id" class="rounded-full bg-slate-100 px-2 py-0.5" :class="expiryClass(lot)">
+              {{ lot.code ?? 'sem lote' }} · {{ lot.expiryDate ? formatDate(lot.expiryDate) : 'sem validade' }} · {{ qty(lot.quantity) }} {{ history.product.unit }}
+            </span>
+            <span v-if="!history.lots.length" class="text-slate-400">sem lotes em stock</span>
           </div>
           <table class="w-full text-left text-sm">
             <thead class="border-b border-slate-200 text-slate-600">
@@ -301,19 +348,22 @@ onMounted(load);
       <template v-else>
         <form v-if="form.open" class="card space-y-3" @submit.prevent="saveDocument(false)">
           <h2 class="font-semibold">
-            {{ form.editingId ? `Editar ${TYPE_PREFIX[form.type]} #${form.editingId}` : `Novo documento de ${TYPE_LABELS[form.type].toLowerCase()}` }}
+            {{ editingDocument ? `Editar ${docNumber(editingDocument)}` : `Novo documento de ${TYPE_LABELS[form.type].toLowerCase()}` }}
             <span class="font-normal text-slate-500">· {{ warehouses.find((w) => w.id === warehouseId)?.name }}</span>
           </h2>
           <div class="grid gap-3 sm:grid-cols-3">
             <select v-if="form.type === 'TRANSFER'" v-model.number="form.toWarehouseId" class="input" required>
               <option v-for="w in otherWarehouses" :key="w.id" :value="w.id">Para {{ w.name }}</option>
             </select>
+            <select v-if="form.type === 'RETURN'" v-model.number="form.supplierId" class="input" required>
+              <option v-for="s in suppliers" :key="s.id" :value="s.id">Devolver a {{ s.name }}</option>
+            </select>
             <input
               v-model="form.reason"
               class="input"
-              :class="form.type === 'TRANSFER' ? 'sm:col-span-2' : 'sm:col-span-3'"
-              :placeholder="form.type === 'WASTE' ? 'Motivo da quebra' : 'Observacao (opcional)'"
-              :required="form.type === 'WASTE'"
+              :class="form.type === 'TRANSFER' || form.type === 'RETURN' ? 'sm:col-span-2' : 'sm:col-span-3'"
+              :placeholder="form.type === 'WASTE' ? 'Motivo da quebra' : form.type === 'RETURN' ? 'Motivo da devolucao' : 'Observacao (opcional)'"
+              :required="form.type === 'WASTE' || form.type === 'RETURN'"
               maxlength="200"
             />
           </div>
@@ -382,13 +432,18 @@ onMounted(load);
                     <span class="font-medium">{{ docNumber(d) }}</span>
                     <span class="block text-xs text-slate-500">{{ TYPE_LABELS[d.type] }}</span>
                   </td>
-                  <td class="px-4 py-3">{{ d.warehouse.name }}<template v-if="d.toWarehouse"> &rarr; {{ d.toWarehouse.name }}</template></td>
+                  <td class="px-4 py-3">
+                    {{ d.warehouse.name }}<template v-if="d.toWarehouse"> &rarr; {{ d.toWarehouse.name }}</template>
+                    <span v-if="d.supplier" class="block text-xs text-slate-500">&rarr; {{ d.supplier.name }}</span>
+                  </td>
                   <td class="px-4 py-3 text-slate-600">{{ summary(d) }}</td>
                   <td class="px-4 py-3 text-slate-500">{{ d.reason ?? '-' }}</td>
                   <td class="px-4 py-3">
                     <span class="rounded-full px-2 py-0.5 text-xs" :class="STATUS_CLASSES[d.status]">{{ STATUS_LABELS[d.status] }}</span>
                   </td>
                   <td class="space-x-3 px-4 py-3 text-right text-xs whitespace-nowrap" @click.stop>
+                    <button class="text-slate-600 hover:underline" type="button" @click="previewDocument(d, 'A4')">PDF</button>
+                    <button class="text-slate-600 hover:underline" type="button" @click="previewDocument(d, 'MM80')">80 mm</button>
                     <template v-if="d.status === 'DRAFT' && (isManager || d.type === 'WASTE')">
                       <button class="text-indigo-600 hover:underline" type="button" @click="editDocument(d)">Editar</button>
                       <button class="font-semibold text-emerald-700 hover:underline" type="button" @click="postDocument(d)">Lancar</button>

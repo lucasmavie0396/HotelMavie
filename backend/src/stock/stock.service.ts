@@ -76,6 +76,13 @@ export class MovementQueryDto extends HotelQueryDto {
   type?: StockMovementType;
 }
 
+export class LotQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  productId?: number;
+}
+
 export interface MoveInput {
   warehouseId: number;
   productId: number;
@@ -87,6 +94,14 @@ export interface MoveInput {
   purchaseId?: number;
   documentId?: number;
   createdById?: number;
+  lot?: { code?: string | null; expiryDate?: Date | null };
+  lots?: LotPart[];
+}
+
+export interface LotPart {
+  code: string | null;
+  expiryDate: Date | null;
+  quantity: Prisma.Decimal;
 }
 
 @Injectable()
@@ -140,7 +155,7 @@ export class StockService {
         product: { select: { name: true, unit: true } },
         warehouse: { select: { name: true } },
         createdBy: { select: { name: true } },
-        document: { select: { id: true, type: true } },
+        document: { select: { id: true, type: true, year: true, number: true } },
         purchase: { select: { id: true, supplierRef: true } },
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -229,7 +244,13 @@ export class StockService {
       update: { quantity: { increment: quantity } },
       create: { warehouseId: input.warehouseId, productId: input.productId, quantity },
     });
-    return tx.stockMovement.create({
+    let lots: LotPart[] = [];
+    if (product.trackExpiry && quantity.greaterThan(0)) {
+      await this.addLots(tx, input.warehouseId, input.productId, quantity, input.lots ?? [{ code: input.lot?.code ?? null, expiryDate: input.lot?.expiryDate ?? null, quantity }]);
+    } else if (product.trackExpiry && quantity.isNegative()) {
+      lots = await this.consumeLots(tx, input.warehouseId, input.productId, quantity.neg());
+    }
+    const movement = await tx.stockMovement.create({
       data: {
         warehouseId: input.warehouseId,
         productId: input.productId,
@@ -244,6 +265,49 @@ export class StockService {
         createdById: input.createdById,
       },
     });
+    return Object.assign(movement, { lots });
+  }
+
+  lots(warehouseId: number, productId: number | undefined, user: JwtPayload) {
+    return this.findWarehouse(warehouseId, user).then(() =>
+      this.prisma.stockLot.findMany({
+        where: { warehouseId, productId, quantity: { gt: 0 } },
+        include: { product: { select: { id: true, name: true, unit: true } } },
+        orderBy: [{ expiryDate: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+      }),
+    );
+  }
+
+  private async addLots(tx: Prisma.TransactionClient, warehouseId: number, productId: number, total: Prisma.Decimal, parts: LotPart[]) {
+    const covered = parts.reduce((sum, part) => sum.add(part.quantity), new Prisma.Decimal(0));
+    const all = covered.lessThan(total) ? [...parts, { code: null, expiryDate: null, quantity: total.sub(covered) }] : parts;
+    for (const part of all) {
+      if (!part.quantity.greaterThan(0)) continue;
+      const code = part.code?.trim() || null;
+      const same = await tx.stockLot.findFirst({ where: { warehouseId, productId, code, expiryDate: part.expiryDate } });
+      if (same) {
+        await tx.stockLot.update({ where: { id: same.id }, data: { quantity: { increment: part.quantity } } });
+      } else {
+        await tx.stockLot.create({ data: { warehouseId, productId, code, expiryDate: part.expiryDate, quantity: part.quantity } });
+      }
+    }
+  }
+
+  private async consumeLots(tx: Prisma.TransactionClient, warehouseId: number, productId: number, quantity: Prisma.Decimal) {
+    const lots = await tx.$queryRaw<{ id: number; code: string | null; expiryDate: Date | null; quantity: Prisma.Decimal }[]>`
+      SELECT id, code, expiryDate, quantity FROM stock_lots
+      WHERE warehouseId = ${warehouseId} AND productId = ${productId} AND quantity > 0
+      ORDER BY expiryDate IS NULL, expiryDate, id FOR UPDATE`;
+    const used: LotPart[] = [];
+    let missing = quantity;
+    for (const lot of lots) {
+      if (!missing.greaterThan(0)) break;
+      const take = Prisma.Decimal.min(new Prisma.Decimal(lot.quantity), missing);
+      await tx.stockLot.update({ where: { id: lot.id }, data: { quantity: { decrement: take } } });
+      used.push({ code: lot.code, expiryDate: lot.expiryDate, quantity: take });
+      missing = missing.sub(take);
+    }
+    return used;
   }
 
   async defaultWarehouse(tx: Prisma.TransactionClient, hotelId: number) {
@@ -259,7 +323,7 @@ export class StockService {
     return level?.quantity ?? new Prisma.Decimal(0);
   }
 
-  private async findWarehouse(id: number, user: JwtPayload) {
+  async findWarehouse(id: number, user: JwtPayload) {
     const warehouse = await this.prisma.warehouse.findUnique({ where: { id } });
     if (!warehouse || !canAccessHotel(user, warehouse.hotelId)) {
       throw new NotFoundException('Armazem nao encontrado');
