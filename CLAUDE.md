@@ -122,6 +122,7 @@ docker compose exec backend npm run db:seed
 | Contas correntes | `billing/receipts.service.ts` (FT em aberto, recibos RG) | Contas correntes |
 | Recursos humanos | `hr/` (fichas, escalas, ponto, mapa mensal) | Recursos humanos |
 | Site público e sinal | `uploads/` (imagens em `UPLOAD_DIR`, servidas em `/api/public/files`), `reservations/deposit.service.ts` (sinal, comprovativo A4) | `/h/:slug`, Configuração → Site e reservas, Quartos |
+| Relatórios | `reports/report-builder.service.ts` (12 relatórios num modelo comum: secções com indicadores e tabelas já formatadas), `report-render.service.ts` (A4 com logotipo e paginação; 58/80 mm via `Ticket`) | Relatórios (pré-visualização, A4, 80 mm, PDF, CSV) |
 | Impressão local | `print-agent/` (Node sem dependências, escuta em 127.0.0.1:9123, imprime ESC/POS RAW no Windows) | Configuração → Impressoras |
 
 - **Sinal:** `Hotel.depositPercent` (60 por defeito; 0 desliga). A reserva online guarda o valor e a referência indicada pelo cliente; ao confirmar (`POST /reservations/:id/deposit/confirm`, qualquer papel) cria um `Payment` normal na conta da estadia, aprova a reserva e envia o comprovativo em PDF. O comprovativo é interno (sem valor fiscal): a fatura sai no check-out com tudo e o sinal já descontado no saldo.

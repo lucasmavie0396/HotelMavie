@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import NotificationsBell from '@/components/NotificationsBell.vue';
@@ -25,7 +25,8 @@ const links = computed(() =>
     'products',
     'stock',
     'hr',
-    ...(auth.user?.role !== 'RECEPTION' ? ['purchases', 'reports', 'settings'] : []),
+    'reports',
+    ...(auth.user?.role !== 'RECEPTION' ? ['purchases', 'settings'] : []),
     ...(auth.user?.role === 'ADMIN' ? ['users', 'hotels'] : []),
   ].map((name) => ({ to: { name }, name, ...SECTIONS[name] })),
 );

@@ -53,7 +53,6 @@ const router = createRouter({
           path: 'relatorios',
           name: 'reports',
           component: () => import('@/views/ReportsView.vue'),
-          meta: { roles: ['ADMIN', 'MANAGER'] },
         },
         {
           path: 'funcionarios',

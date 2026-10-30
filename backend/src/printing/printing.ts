@@ -30,8 +30,10 @@ import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { PosService } from '../pos/pos.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ReportBuilderService } from '../reports/report-builder.service';
+import { ReportRenderService } from '../reports/report-render.service';
 
-export const DOCUMENTS = ['ORDER', 'VOID', 'PREBILL', 'STATEMENT', 'INVOICE', 'RECEIPT', 'PAYMENT', 'TEST'] as const;
+export const DOCUMENTS = ['ORDER', 'VOID', 'PREBILL', 'STATEMENT', 'INVOICE', 'RECEIPT', 'PAYMENT', 'TEST', 'REPORT'] as const;
 export type PrintDocument = (typeof DOCUMENTS)[number];
 
 const STATION_PURPOSE: Record<PrepStation, PrinterPurpose> = {
@@ -116,6 +118,12 @@ export class PrintDto {
   @IsOptional() @IsEnum(PrepStation) station?: PrepStation;
   @IsOptional() @IsISO8601() sentAt?: string;
   @IsOptional() @IsEnum(PaperWidth) paper?: PaperWidth;
+  @IsOptional() @IsString() @MaxLength(30) report?: string;
+  @IsOptional() @Type(() => Number) @IsInt() hotelId?: number;
+  @IsOptional() @IsISO8601() from?: string;
+  @IsOptional() @IsISO8601() to?: string;
+  @IsOptional() @IsISO8601() date?: string;
+  @IsOptional() @Type(() => Number) @IsInt() warehouseId?: number;
 }
 
 interface Built {
@@ -149,6 +157,8 @@ export class PrintService {
     private readonly documents: DocumentsService,
     private readonly pos: PosService,
     private readonly tickets: TicketPdfService,
+    private readonly reports: ReportBuilderService,
+    private readonly reportRender: ReportRenderService,
   ) {}
 
   async build(dto: PrintDto, user: JwtPayload): Promise<Built> {
@@ -175,6 +185,10 @@ export class PrintService {
         return { ...(await this.documents.receipt(need(dto.receiptId, 'receiptId'), user)), purpose: PrinterPurpose.RECEIPT, name: `recibo-${dto.receiptId}` };
       case 'PAYMENT':
         return { ...(await this.documents.payment(need(dto.paymentId, 'paymentId'), user)), purpose: PrinterPurpose.RECEIPT, name: `pagamento-${dto.paymentId}` };
+      case 'REPORT': {
+        const report = await this.buildReport(dto, user);
+        return { ticket: await this.reportRender.ticket(report), hotelId: report.hotel.id, purpose: PrinterPurpose.RECEIPT, name: `relatorio-${report.key}` };
+      }
       case 'TEST': {
         const printer = await this.findPrinter(need(dto.printerId, 'printerId'), user);
         const hotel = await this.prisma.hotel.findUniqueOrThrow({ where: { id: printer.hotelId } });
@@ -234,7 +248,16 @@ export class PrintService {
     };
   }
 
+  buildReport(dto: PrintDto, user: JwtPayload) {
+    if (!dto.report) throw new BadRequestException('Falta report');
+    return this.reports.build(dto.report, { hotelId: dto.hotelId, from: dto.from, to: dto.to, date: dto.date, warehouseId: dto.warehouseId }, user);
+  }
+
   async pdf(dto: PrintDto, user: JwtPayload) {
+    if (dto.document === 'REPORT' && dto.paper === PaperWidth.A4) {
+      const report = await this.buildReport(dto, user);
+      return { buffer: await this.reportRender.pdf(report, PaperWidth.A4), name: `relatorio-${report.key}` };
+    }
     const built = await this.build(dto, user);
     const printer = dto.paper ? null : await this.choosePrinter(built.hotelId, built.purpose, built.printerId ?? dto.printerId);
     return { buffer: await this.tickets.render(built.ticket, dto.paper ?? printer?.paperWidth ?? PaperWidth.MM80), name: built.name };

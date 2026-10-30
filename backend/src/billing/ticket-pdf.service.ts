@@ -16,7 +16,8 @@ type Row =
   | { kind: 'cols'; left: string; right: string; size?: number; bold?: boolean }
   | { kind: 'rule' }
   | { kind: 'space'; height?: number }
-  | { kind: 'qr'; data: string; size: number };
+  | { kind: 'qr'; data: string; size: number }
+  | { kind: 'image'; data: Buffer; width: number };
 
 export interface TicketLine {
   quantity: { toString(): string };
@@ -58,6 +59,11 @@ export class Ticket {
 
   qr(data: string, size = 110) {
     this.rows.push({ kind: 'qr', data, size });
+    return this;
+  }
+
+  image(data: Buffer, width = 90) {
+    this.rows.push({ kind: 'image', data, width });
     return this;
   }
 
@@ -207,6 +213,8 @@ export class TicketPdfService {
         case 'space':
           push(0x0a);
           break;
+        case 'image':
+          break;
         case 'qr': {
           const data = Buffer.from(row.data, 'utf8');
           const length = data.length + 3;
@@ -234,6 +242,10 @@ export class TicketPdfService {
         return row.height ?? 6;
       case 'qr':
         return row.size + 2;
+      case 'image': {
+        const image = (doc as unknown as { openImage(data: Buffer): { width: number; height: number } }).openImage(row.data);
+        return Math.round((Math.min(row.width, inner) * image.height) / image.width) + 6;
+      }
       case 'text':
         doc.font(row.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize((row.size ?? 9) * scale);
         return doc.heightOfString(row.text, { width: inner }) + 2;
@@ -251,6 +263,11 @@ export class TicketPdfService {
       case 'qr':
         if (image) doc.image(image, margin + (inner - row.size) / 2, y, { width: row.size });
         break;
+      case 'image': {
+        const width = Math.min(row.width, inner);
+        doc.image(row.data, margin + (inner - width) / 2, y, { width });
+        break;
+      }
       case 'text':
         doc.font(row.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize((row.size ?? 9) * scale);
         doc.text(row.text, margin, y, { width: inner, align: row.align ?? 'left' });

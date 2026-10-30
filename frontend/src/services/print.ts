@@ -1,7 +1,7 @@
 import { api } from '@/services/api';
 import type { PaperWidth } from '@/types';
 
-export type PrintDocument = 'ORDER' | 'VOID' | 'PREBILL' | 'STATEMENT' | 'INVOICE' | 'RECEIPT' | 'PAYMENT' | 'TEST';
+export type PrintDocument = 'ORDER' | 'VOID' | 'PREBILL' | 'STATEMENT' | 'INVOICE' | 'RECEIPT' | 'PAYMENT' | 'TEST' | 'REPORT';
 
 export interface PrintRequest {
   document: PrintDocument;
@@ -14,6 +14,12 @@ export interface PrintRequest {
   printerId?: number | null;
   station?: 'KITCHEN' | 'BAR' | 'NONE';
   sentAt?: string;
+  report?: string;
+  hotelId?: number | null;
+  from?: string;
+  to?: string;
+  date?: string;
+  warehouseId?: number;
 }
 
 type PrintResult =
@@ -90,6 +96,11 @@ function printPdf(blob: Blob) {
     };
     document.body.appendChild(frame);
   });
+}
+
+export async function printPdfFrom(path: string, params: Record<string, unknown>) {
+  const { data } = await api.get<Blob>(path, { params, responseType: 'blob' });
+  await printPdf(data);
 }
 
 export async function printDocument(request: PrintRequest) {

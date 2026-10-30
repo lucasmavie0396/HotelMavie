@@ -426,6 +426,29 @@ export interface MonthlyRow {
 
 export type PrinterPurpose = 'RECEIPT' | 'KITCHEN' | 'BAR' | 'OTHER';
 export type PaperWidth = 'MM58' | 'MM80' | 'A4';
+
+export interface ReportDefinition {
+  key: string;
+  title: string;
+  description: string;
+  group: string;
+  params: 'period' | 'date' | 'stock' | 'none';
+}
+
+export interface ReportDocument {
+  key: string;
+  title: string;
+  period: string;
+  generatedAt: string;
+  generatedBy: string;
+  hotel: Hotel;
+  sections: {
+    title: string;
+    kpis?: { label: string; value: string }[];
+    table?: { columns: { label: string; align?: 'left' | 'right' | 'center'; weight?: number }[]; rows: string[][]; totals?: string[]; empty?: string };
+    note?: string;
+  }[];
+}
 export type PrinterConnection = 'BROWSER' | 'NETWORK' | 'LOCAL';
 
 export interface Printer {
