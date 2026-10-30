@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
 import ReportPreview from '@/components/ReportPreview.vue';
 import { api, errorMessage, openPdf } from '@/services/api';
@@ -16,7 +17,12 @@ const GROUP_STYLES: Record<string, { color: string; icon: string }> = {
   'Restauracao e stocks': { color: 'from-amber-500 to-orange-600', icon: 'M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z' },
 };
 
+const { t, te } = useI18n();
 const route = useRoute();
+const titleOf = (item: ReportDefinition) => (te(`reports.catalog.${item.key}.title`) ? t(`reports.catalog.${item.key}.title`) : item.title);
+const descriptionOf = (item: ReportDefinition) => (te(`reports.catalog.${item.key}.description`) ? t(`reports.catalog.${item.key}.description`) : item.description);
+const GROUP_KEYS: Record<string, string> = { Operacao: 'operations', Gestao: 'management', Financeiro: 'finance', 'Restauracao e stocks': 'foodStock' };
+const groupOf = (group: string) => (GROUP_KEYS[group] ? t(`reports.groups.${GROUP_KEYS[group]}`) : group);
 const hotels = useHotelsStore();
 const catalog = ref<ReportDefinition[]>([]);
 const warehouses = ref<Warehouse[]>([]);
@@ -73,7 +79,7 @@ const openA4 = () => run(() => openPdf(`/reports/view/${selectedKey.value}/pdf`,
 const printA4 = () => run(() => printPdfFrom(`/reports/view/${selectedKey.value}/pdf`, { ...query(), paper: 'A4' }));
 const preview80 = () =>
   run(() =>
-    previewPdfFrom('/print/pdf', { document: 'REPORT', report: selectedKey.value, ...query(), paper: 'MM80' }, `${selected.value?.title ?? 'Relatorio'} · 80 mm`, 'MM80'),
+    previewPdfFrom('/print/pdf', { document: 'REPORT', report: selectedKey.value, ...query(), paper: 'MM80' }, `${selected.value ? titleOf(selected.value) : t('print.documents.REPORT')} · 80 mm`, 'MM80'),
   );
 const print80 = () =>
   run(async () => {
@@ -130,7 +136,7 @@ onMounted(() =>
 
 <template>
   <section class="space-y-6">
-    <PageHeader section="reports" subtitle="Escolhe o relatorio, ve no ecra e imprime em A4 ou em talao de 80 mm" />
+    <PageHeader section="reports" :subtitle="t('reports.subtitle')" />
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
     <p v-if="notice" class="text-sm text-emerald-700">{{ notice }}</p>
@@ -144,7 +150,7 @@ onMounted(() =>
                 <path :d="GROUP_STYLES[group]?.icon ?? GROUP_STYLES.Gestao.icon" />
               </svg>
             </span>
-            {{ group }}
+            {{ groupOf(group) }}
           </p>
           <button
             v-for="item in items"
@@ -154,8 +160,8 @@ onMounted(() =>
             :class="selectedKey === item.key ? 'border-indigo-300 bg-indigo-50 shadow-sm ring-2 ring-indigo-500/30' : 'border-slate-100 bg-white hover:border-indigo-200 hover:bg-indigo-50/50'"
             @click="choose(item.key)"
           >
-            <span class="block text-sm font-semibold text-slate-900">{{ item.title }}</span>
-            <span class="block text-xs text-slate-500">{{ item.description }}</span>
+            <span class="block text-sm font-semibold text-slate-900">{{ titleOf(item) }}</span>
+            <span class="block text-xs text-slate-500">{{ descriptionOf(item) }}</span>
           </button>
         </div>
       </aside>
@@ -163,15 +169,15 @@ onMounted(() =>
       <div v-if="selected" class="min-w-0 space-y-4">
         <form class="card flex flex-wrap items-end gap-3" @submit.prevent="view">
           <template v-if="selected.params === 'period'">
-            <label class="text-sm">De<input v-model="params.from" class="input mt-1 w-auto" type="date" required /></label>
-            <label class="text-sm">Ate<input v-model="params.to" class="input mt-1 w-auto" type="date" :min="params.from" required /></label>
+            <label class="text-sm">{{ t('common.from') }}<input v-model="params.from" class="input mt-1 w-auto" type="date" required /></label>
+            <label class="text-sm">{{ t('common.to') }}<input v-model="params.to" class="input mt-1 w-auto" type="date" :min="params.from" required /></label>
             <div class="flex flex-wrap gap-1 pb-0.5">
               <button
                 v-for="preset in [
-                  { label: 'Hoje', from: todayIso(), to: todayIso() },
-                  { label: '7 dias', from: addDays(todayIso(), -6), to: todayIso() },
-                  { label: 'Este mes', from: `${todayIso().slice(0, 8)}01`, to: todayIso() },
-                  { label: '30 dias', from: addDays(todayIso(), -29), to: todayIso() },
+                  { label: t('calendar.today'), from: todayIso(), to: todayIso() },
+                  { label: t('calendar.days', { n: 7 }), from: addDays(todayIso(), -6), to: todayIso() },
+                  { label: t('reports.thisMonth'), from: `${todayIso().slice(0, 8)}01`, to: todayIso() },
+                  { label: t('calendar.days', { n: 30 }), from: addDays(todayIso(), -29), to: todayIso() },
                 ]"
                 :key="preset.label"
                 type="button"
@@ -182,19 +188,19 @@ onMounted(() =>
               </button>
             </div>
           </template>
-          <label v-else-if="selected.params === 'date'" class="text-sm">Dia<input v-model="params.date" class="input mt-1 w-auto" type="date" required /></label>
+          <label v-else-if="selected.params === 'date'" class="text-sm">{{ t('reports.day') }}<input v-model="params.date" class="input mt-1 w-auto" type="date" required /></label>
           <label v-else-if="selected.params === 'stock'" class="text-sm">
-            Armazem
+            {{ t('stock.warehouse') }}
             <select v-model.number="params.warehouseId" class="input mt-1 w-auto">
-              <option :value="0">Todos os armazens</option>
+              <option :value="0">{{ t('reports.allWarehouses') }}</option>
               <option v-for="warehouse in warehouses" :key="warehouse.id" :value="warehouse.id">{{ warehouse.name }}</option>
             </select>
           </label>
-          <p v-else class="text-sm text-slate-500">Situacao a data de hoje.</p>
-          <button class="btn" type="submit" :disabled="busy">{{ busy ? 'A gerar...' : 'Ver relatorio' }}</button>
+          <p v-else class="text-sm text-slate-500">{{ t('reports.today') }}</p>
+          <button class="btn" type="submit" :disabled="busy">{{ busy ? t('reports.generating') : t('dashboard.seeReport') }}</button>
           <div class="ml-auto flex flex-wrap gap-2">
-            <button class="btn-secondary" type="button" :disabled="busy" @click="printA4">Imprimir A4</button>
-            <button class="btn-secondary" type="button" :disabled="busy" @click="print80">Imprimir 80 mm</button>
+            <button class="btn-secondary" type="button" :disabled="busy" @click="printA4">{{ t('reports.printA4') }}</button>
+            <button class="btn-secondary" type="button" :disabled="busy" @click="print80">{{ t('reports.print80') }}</button>
             <button class="btn-secondary" type="button" :disabled="busy" @click="openA4">PDF A4</button>
             <button class="btn-secondary" type="button" :disabled="busy" @click="preview80">PDF 80 mm</button>
             <button class="btn-secondary" type="button" :disabled="!report" @click="exportCsv">CSV</button>
@@ -202,7 +208,7 @@ onMounted(() =>
         </form>
 
         <ReportPreview v-if="report" :report="report" />
-        <p v-else-if="busy" class="py-10 text-center text-sm text-slate-500">A gerar o relatorio...</p>
+        <p v-else-if="busy" class="py-10 text-center text-sm text-slate-500">{{ t('reports.generatingLong') }}</p>
       </div>
     </div>
   </section>

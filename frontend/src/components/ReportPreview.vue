@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { fileUrl } from '@/services/files';
 import type { ReportDocument } from '@/types';
 
+const { t } = useI18n();
 const props = defineProps<{ report: ReportDocument }>();
 const hotel = computed(() => props.report.hotel);
 const place = computed(() => [hotel.value.address, [hotel.value.postalCode, hotel.value.city].filter(Boolean).join(' ')].filter(Boolean).join(', '));
@@ -16,7 +18,7 @@ const place = computed(() => [hotel.value.address, [hotel.value.postalCode, hote
         <div class="text-xs leading-relaxed text-slate-600">
           <p class="text-base font-bold text-slate-900">{{ hotel.name }}</p>
           <p v-if="hotel.legalName && hotel.legalName !== hotel.name">{{ hotel.legalName }}</p>
-          <p v-if="hotel.taxId">NIF: {{ hotel.taxId }}</p>
+          <p v-if="hotel.taxId">{{ t('purchases.taxId') }}: {{ hotel.taxId }}</p>
           <p v-if="place">{{ place }}</p>
           <p>{{ [hotel.phone, hotel.email].filter(Boolean).join(' · ') }}</p>
         </div>
@@ -24,7 +26,7 @@ const place = computed(() => [hotel.value.address, [hotel.value.postalCode, hote
       <div class="text-right">
         <h2 class="text-xl font-bold tracking-tight text-indigo-700 uppercase">{{ report.title }}</h2>
         <p class="text-sm text-slate-800">{{ report.period }}</p>
-        <p class="text-xs text-slate-500">Emitido em {{ report.generatedAt }} por {{ report.generatedBy }}</p>
+        <p class="text-xs text-slate-500">{{ t('reports.issuedBy', { date: report.generatedAt, name: report.generatedBy }) }}</p>
       </div>
     </header>
 
@@ -37,7 +39,7 @@ const place = computed(() => [hotel.value.address, [hotel.value.postalCode, hote
         </div>
       </div>
       <template v-if="section.table">
-        <p v-if="!section.table.rows.length" class="text-sm text-slate-500 italic">{{ section.table.empty ?? 'Sem dados' }}</p>
+        <p v-if="!section.table.rows.length" class="text-sm text-slate-500 italic">{{ section.table.empty ?? t('reports.noData') }}</p>
         <div v-else class="overflow-x-auto rounded-lg ring-1 ring-slate-200">
           <table class="w-full text-left text-xs">
             <thead class="bg-indigo-700 text-white">

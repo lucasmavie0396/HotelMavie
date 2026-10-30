@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
 import { api, errorMessage, openInvoicePdf } from '@/services/api';
 import { printDocument } from '@/services/print';
@@ -10,6 +11,7 @@ import { useHotelsStore } from '@/stores/hotels';
 import type { CashRegister, CustomerAccount, OpenInvoice, ReceiptDoc } from '@/types';
 import { formatDate, formatDateTime, formatMoney, PAYMENT_METHOD_LABELS } from '@/utils/format';
 
+const { t } = useI18n();
 const auth = useAuthStore();
 const hotels = useHotelsStore();
 const accounts = ref<CustomerAccount[]>([]);
@@ -90,7 +92,7 @@ async function issue() {
 }
 
 async function cancel(receipt: ReceiptDoc) {
-  const reason = window.prompt(`Motivo da anulacao de ${receipt.fullNumber}:`);
+  const reason = window.prompt(t('accounts.cancelPrompt', { number: receipt.fullNumber }));
   if (!reason) return;
   try {
     await api.post(`/receipts/${receipt.id}/cancel`, {
@@ -116,12 +118,12 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <PageHeader section="accounts" subtitle="Faturas a pagar e recibos">
-      <p class="rounded-xl bg-white/15 px-4 py-2 text-sm backdrop-blur">Total em divida <strong class="block text-xl">{{ money(totalOpen) }}</strong></p>
+    <PageHeader section="accounts" :subtitle="t('accounts.subtitle')">
+      <p class="rounded-xl bg-white/15 px-4 py-2 text-sm backdrop-blur">{{ t('accounts.totalOpen') }} <strong class="block text-xl">{{ money(totalOpen) }}</strong></p>
     </PageHeader>
 
     <p class="text-sm text-slate-600">
-      As faturas "a pagar" (FT) ficam aqui ate serem liquidadas com recibo. As faturas-recibo (FR) ja estao pagas.
+      {{ t('accounts.hint') }}
     </p>
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
 
@@ -129,11 +131,11 @@ onMounted(load);
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
           <tr>
-            <th class="px-4 py-3">Cliente</th>
-            <th class="px-4 py-3">NIF</th>
-            <th class="px-4 py-3 text-right">Faturas</th>
-            <th class="px-4 py-3">Mais antiga</th>
-            <th class="px-4 py-3 text-right">Em divida</th>
+            <th class="px-4 py-3">{{ t('invoices.customer') }}</th>
+            <th class="px-4 py-3">{{ t('purchases.taxId') }}</th>
+            <th class="px-4 py-3 text-right">{{ t('accounts.invoices') }}</th>
+            <th class="px-4 py-3">{{ t('accounts.oldest') }}</th>
+            <th class="px-4 py-3 text-right">{{ t('accounts.open') }}</th>
             <th class="px-4 py-3"></th>
           </tr>
         </thead>
@@ -143,15 +145,15 @@ onMounted(load);
             <td class="px-4 py-3">{{ account.customerTaxId ?? '-' }}</td>
             <td class="px-4 py-3 text-right">{{ account.invoices }}</td>
             <td class="px-4 py-3" :class="daysSince(account.oldest) > 30 ? 'text-rose-700' : ''">
-              {{ formatDate(account.oldest) }} ({{ daysSince(account.oldest) }} dias)
+              {{ formatDate(account.oldest) }} ({{ t('calendar.days', { n: daysSince(account.oldest) }) }})
             </td>
             <td class="px-4 py-3 text-right font-semibold">{{ money(account.open) }}</td>
             <td class="px-4 py-3 text-right">
-              <button class="btn px-3 py-1 text-xs" type="button" @click="select(account)">Receber</button>
+              <button class="btn px-3 py-1 text-xs" type="button" @click="select(account)">{{ t('roomAccount.receive') }}</button>
             </td>
           </tr>
           <tr v-if="!accounts.length">
-            <td colspan="6" class="px-4 py-6 text-center text-slate-500">Nao ha faturas por receber</td>
+            <td colspan="6" class="px-4 py-6 text-center text-slate-500">{{ t('accounts.none') }}</td>
           </tr>
         </tbody>
       </table>
@@ -159,12 +161,12 @@ onMounted(load);
 
     <form v-if="selected" class="card space-y-4" @submit.prevent="issue">
       <div class="flex items-center justify-between">
-        <h2 class="font-semibold">Recibo para {{ selected.customerName }}</h2>
-        <button class="text-sm text-slate-500 hover:underline" type="button" @click="selected = null">Fechar</button>
+        <h2 class="font-semibold">{{ t('accounts.receiptFor', { name: selected.customerName }) }}</h2>
+        <button class="text-sm text-slate-500 hover:underline" type="button" @click="selected = null">{{ t('common.close') }}</button>
       </div>
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 text-slate-600">
-          <tr><th class="py-2">Fatura</th><th class="py-2">Data</th><th class="py-2 text-right">Total</th><th class="py-2 text-right">Em divida</th><th class="py-2 text-right">A receber</th></tr>
+          <tr><th class="py-2">{{ t('folio.invoiceColumn') }}</th><th class="py-2">{{ t('common.date') }}</th><th class="py-2 text-right">{{ t('common.total') }}</th><th class="py-2 text-right">{{ t('accounts.open') }}</th><th class="py-2 text-right">{{ t('accounts.toReceive') }}</th></tr>
         </thead>
         <tbody>
           <tr v-for="invoice in openInvoices" :key="invoice.id" class="border-b border-slate-100">
@@ -187,21 +189,21 @@ onMounted(load);
           v-model:reference="payment.reference"
           :registers="registers"
         />
-        <button class="btn" type="submit" :disabled="busy || total <= 0 || !payment.paymentTypeId">Emitir recibo de {{ money(total) }}</button>
+        <button class="btn" type="submit" :disabled="busy || total <= 0 || !payment.paymentTypeId">{{ t('accounts.issue', { amount: money(total) }) }}</button>
       </div>
     </form>
 
     <div class="card overflow-x-auto p-0">
-      <h2 class="px-4 pt-4 font-semibold">Recibos emitidos</h2>
+      <h2 class="px-4 pt-4 font-semibold">{{ t('accounts.receipts') }}</h2>
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 text-slate-600">
           <tr>
-            <th class="px-4 py-2">Numero</th>
-            <th class="px-4 py-2">Data</th>
-            <th class="px-4 py-2">Cliente</th>
-            <th class="px-4 py-2">Faturas</th>
-            <th class="px-4 py-2">Meio</th>
-            <th class="px-4 py-2 text-right">Valor</th>
+            <th class="px-4 py-2">{{ t('rooms.number') }}</th>
+            <th class="px-4 py-2">{{ t('common.date') }}</th>
+            <th class="px-4 py-2">{{ t('invoices.customer') }}</th>
+            <th class="px-4 py-2">{{ t('accounts.invoices') }}</th>
+            <th class="px-4 py-2">{{ t('accounts.method') }}</th>
+            <th class="px-4 py-2 text-right">{{ t('common.value') }}</th>
             <th class="px-4 py-2"></th>
           </tr>
         </thead>
@@ -222,11 +224,11 @@ onMounted(load);
                 type="button"
                 @click="cancel(item)"
               >
-                Anular
+                {{ t('pos.void') }}
               </button>
             </td>
           </tr>
-          <tr v-if="!receipts.length"><td colspan="7" class="px-4 py-4 text-center text-slate-500">Sem recibos</td></tr>
+          <tr v-if="!receipts.length"><td colspan="7" class="px-4 py-4 text-center text-slate-500">{{ t('accounts.noReceipts') }}</td></tr>
         </tbody>
       </table>
     </div>

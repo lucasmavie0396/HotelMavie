@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
 import type { CashRegister, CashSession, CashSessionDetail } from '@/types';
 import { formatDateTime, formatMoney, PAYMENT_METHOD_LABELS } from '@/utils/format';
 
+const { t } = useI18n();
 const auth = useAuthStore();
 const hotels = useHotelsStore();
 const registers = ref<CashRegister[]>([]);
@@ -78,7 +80,7 @@ const addMovement = () =>
 
 const closeSession = () =>
   run(async () => {
-    if (!window.confirm('Fechar a caixa? Depois de fechada nao aceita mais movimentos.')) {
+    if (!window.confirm(t('cash.confirmClose'))) {
       return;
     }
     await api.post(`/cash-sessions/${detail.value!.id}/close`, closing);
@@ -90,7 +92,7 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <PageHeader section="cash" subtitle="Abertura, movimentos e fecho de caixa" />
+    <PageHeader section="cash" :subtitle="t('cash.subtitle')" />
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
 
@@ -102,46 +104,46 @@ onMounted(load);
             class="rounded-full px-2 py-0.5 text-xs font-medium"
             :class="register.sessions.length ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'"
           >
-            {{ register.sessions.length ? 'Aberta' : 'Fechada' }}
+            {{ register.sessions.length ? t('cash.open') : t('cash.closed') }}
           </span>
         </div>
         <template v-if="register.sessions[0]">
           <p class="text-sm text-slate-600">
-            Aberta por {{ register.sessions[0].openedBy?.name }} em {{ formatDateTime(register.sessions[0].openedAt) }}
+            {{ t('cash.openedBy', { name: register.sessions[0].openedBy?.name ?? '-', date: formatDateTime(register.sessions[0].openedAt) }) }}
           </p>
-          <button class="btn w-full" type="button" @click="showSession(register.sessions[0].id)">Ver / fechar caixa</button>
+          <button class="btn w-full" type="button" @click="showSession(register.sessions[0].id)">{{ t('cash.view') }}</button>
         </template>
         <form v-else class="flex gap-2" @submit.prevent="openRegister(register.id)">
-          <input v-model.number="opening[register.id]" class="input" type="number" min="0" step="0.01" placeholder="Fundo de caixa" />
-          <button class="btn whitespace-nowrap" type="submit" :disabled="busy">Abrir</button>
+          <input v-model.number="opening[register.id]" class="input" type="number" min="0" step="0.01" :placeholder="t('cash.float')" />
+          <button class="btn whitespace-nowrap" type="submit" :disabled="busy">{{ t('cash.openAction') }}</button>
         </form>
-        <button class="text-xs text-indigo-600 hover:underline" type="button" @click="showHistory(register.id)">Historico</button>
+        <button class="text-xs text-indigo-600 hover:underline" type="button" @click="showHistory(register.id)">{{ t('stock.history') }}</button>
       </div>
 
       <form v-if="isManager" class="card flex items-end gap-2" @submit.prevent="createRegister">
         <label class="flex-1 text-sm">
-          Nova caixa
-          <input v-model="newRegister" class="input" placeholder="Ex.: Rececao, Bar" required />
+          {{ t('cash.new') }}
+          <input v-model="newRegister" class="input" :placeholder="t('cash.newExample')" required />
         </label>
-        <button class="btn" type="submit" :disabled="busy">Criar</button>
+        <button class="btn" type="submit" :disabled="busy">{{ t('common.create') }}</button>
       </form>
     </div>
 
     <div v-if="detail" class="card space-y-4">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h2 class="font-semibold">
-          {{ detail.register.name }} · sessao de {{ formatDateTime(detail.openedAt) }}
-          <span v-if="detail.closedAt" class="text-sm font-normal text-slate-500">(fechada {{ formatDateTime(detail.closedAt) }})</span>
+          {{ detail.register.name }} · {{ t('cash.session', { date: formatDateTime(detail.openedAt) }) }}
+          <span v-if="detail.closedAt" class="text-sm font-normal text-slate-500">({{ t('cash.closedAt', { date: formatDateTime(detail.closedAt) }) }})</span>
         </h2>
-        <button class="text-sm text-slate-500 hover:underline" type="button" @click="detail = null">Fechar painel</button>
+        <button class="text-sm text-slate-500 hover:underline" type="button" @click="detail = null">{{ t('cash.closePanel') }}</button>
       </div>
 
       <div class="grid gap-4 sm:grid-cols-4">
-        <div><p class="text-xs text-slate-500">Fundo inicial</p><p class="font-semibold">{{ money(detail.openingAmount) }}</p></div>
-        <div><p class="text-xs text-slate-500">Recebido em numerario</p><p class="font-semibold">{{ money(detail.payments.reduce((s, p) => s + Number(p.amount), 0)) }}</p></div>
-        <div><p class="text-xs text-slate-500">Esperado em caixa</p><p class="text-lg font-semibold">{{ money(detail.expected) }}</p></div>
+        <div><p class="text-xs text-slate-500">{{ t('cash.openingAmount') }}</p><p class="font-semibold">{{ money(detail.openingAmount) }}</p></div>
+        <div><p class="text-xs text-slate-500">{{ t('cash.cashReceived') }}</p><p class="font-semibold">{{ money(detail.payments.reduce((s, p) => s + Number(p.amount), 0)) }}</p></div>
+        <div><p class="text-xs text-slate-500">{{ t('cash.expected') }}</p><p class="text-lg font-semibold">{{ money(detail.expected) }}</p></div>
         <div v-if="detail.closedAt">
-          <p class="text-xs text-slate-500">Contado · diferenca</p>
+          <p class="text-xs text-slate-500">{{ t('cash.countedDifference') }}</p>
           <p class="font-semibold" :class="Number(detail.difference) === 0 ? 'text-emerald-700' : 'text-rose-600'">
             {{ money(detail.countedAmount ?? 0) }} · {{ money(detail.difference ?? 0) }}
           </p>
@@ -150,7 +152,7 @@ onMounted(load);
 
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 text-slate-600">
-          <tr><th class="py-2">Hora</th><th class="py-2">Movimento</th><th class="py-2 text-right">Valor</th></tr>
+          <tr><th class="py-2">{{ t('cash.time') }}</th><th class="py-2">{{ t('cash.movement') }}</th><th class="py-2 text-right">{{ t('common.value') }}</th></tr>
         </thead>
         <tbody>
           <tr v-for="payment in detail.payments" :key="`p${payment.id}`" class="border-b border-slate-100">
@@ -169,7 +171,7 @@ onMounted(load);
           </tr>
           <tr v-for="item in detail.movements" :key="`m${item.id}`" class="border-b border-slate-100">
             <td class="py-2">{{ formatDateTime(item.createdAt) }}</td>
-            <td class="py-2">{{ item.type === 'IN' ? 'Entrada' : 'Saida' }} · {{ item.description }}</td>
+            <td class="py-2">{{ item.type === 'IN' ? t('cash.in') : t('cash.out') }} · {{ item.description }}</td>
             <td class="py-2 text-right" :class="item.type === 'OUT' ? 'text-rose-600' : ''">
               {{ item.type === 'OUT' ? '-' : '' }}{{ money(item.amount) }}
             </td>
@@ -180,20 +182,20 @@ onMounted(load);
       <template v-if="!detail.closedAt">
         <form class="grid gap-3 sm:grid-cols-4" @submit.prevent="addMovement">
           <select v-model="movement.type" class="input">
-            <option value="OUT">Saida de caixa</option>
-            <option value="IN">Entrada de caixa</option>
+            <option value="OUT">{{ t('cash.outOption') }}</option>
+            <option value="IN">{{ t('cash.inOption') }}</option>
           </select>
-          <input v-model.number="movement.amount" class="input" type="number" min="0.01" step="0.01" placeholder="Valor" required />
-          <input v-model="movement.description" class="input" placeholder="Descricao" required />
-          <button class="btn-secondary" type="submit" :disabled="busy">Registar movimento</button>
+          <input v-model.number="movement.amount" class="input" type="number" min="0.01" step="0.01" :placeholder="t('common.value')" required />
+          <input v-model="movement.description" class="input" :placeholder="t('common.description')" required />
+          <button class="btn-secondary" type="submit" :disabled="busy">{{ t('cash.addMovement') }}</button>
         </form>
         <form class="grid gap-3 border-t border-slate-200 pt-4 sm:grid-cols-4" @submit.prevent="closeSession">
           <label class="text-sm">
-            Valor contado
+            {{ t('cash.counted') }}
             <input v-model.number="closing.countedAmount" class="input" type="number" min="0" step="0.01" required />
           </label>
-          <input v-model="closing.notes" class="input self-end sm:col-span-2" placeholder="Notas do fecho" />
-          <button class="btn self-end" type="submit" :disabled="busy">Fechar caixa</button>
+          <input v-model="closing.notes" class="input self-end sm:col-span-2" :placeholder="t('cash.closeNotes')" />
+          <button class="btn self-end" type="submit" :disabled="busy">{{ t('cash.close') }}</button>
         </form>
       </template>
     </div>
@@ -202,11 +204,11 @@ onMounted(load);
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
           <tr>
-            <th class="px-4 py-3">Abertura</th>
-            <th class="px-4 py-3">Fecho</th>
-            <th class="px-4 py-3 text-right">Esperado</th>
-            <th class="px-4 py-3 text-right">Contado</th>
-            <th class="px-4 py-3 text-right">Diferenca</th>
+            <th class="px-4 py-3">{{ t('cash.opening') }}</th>
+            <th class="px-4 py-3">{{ t('cash.closing') }}</th>
+            <th class="px-4 py-3 text-right">{{ t('cash.expectedShort') }}</th>
+            <th class="px-4 py-3 text-right">{{ t('stock.counted') }}</th>
+            <th class="px-4 py-3 text-right">{{ t('stock.difference') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -217,7 +219,7 @@ onMounted(load);
             @click="showSession(session.id)"
           >
             <td class="px-4 py-3">{{ formatDateTime(session.openedAt) }} · {{ session.openedBy?.name }}</td>
-            <td class="px-4 py-3">{{ session.closedAt ? `${formatDateTime(session.closedAt)} · ${session.closedBy?.name}` : 'Aberta' }}</td>
+            <td class="px-4 py-3">{{ session.closedAt ? `${formatDateTime(session.closedAt)} · ${session.closedBy?.name}` : t('cash.open') }}</td>
             <td class="px-4 py-3 text-right">{{ session.expectedAmount ? money(session.expectedAmount) : '-' }}</td>
             <td class="px-4 py-3 text-right">{{ session.countedAmount ? money(session.countedAmount) : '-' }}</td>
             <td class="px-4 py-3 text-right">{{ session.difference ? money(session.difference) : '-' }}</td>

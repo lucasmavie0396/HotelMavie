@@ -1,12 +1,13 @@
 import { app } from './app';
 import { common } from './common';
+import { financeViews } from './finance';
 import { front } from './front';
 import { posViews } from './pos';
 import { publicSite } from './public';
 import { roomsViews } from './rooms';
 import { stockViews } from './stock';
 
-const modules = [common, app, publicSite, front, roomsViews, posViews, stockViews];
+const modules = [common, app, publicSite, front, roomsViews, posViews, stockViews, financeViews];
 
 type Tree = Record<string, string>;
 
