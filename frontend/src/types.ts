@@ -229,6 +229,18 @@ export interface CashSessionDetail extends CashSession {
 }
 
 export type Outlet = 'RESTAURANT' | 'BAR';
+
+export interface DiningTable {
+  id: number;
+  hotelId: number;
+  outlet: Outlet;
+  number: number;
+  name: string | null;
+  seats: number;
+  active: boolean;
+  label: string;
+  openOrder: { id: number; total: string; openedAt: string; items: number; pending: number } | null;
+}
 export type PrepStation = 'KITCHEN' | 'BAR' | 'NONE';
 
 export interface ProductCategory {
@@ -319,6 +331,7 @@ export interface Order {
   id: number;
   outlet: Outlet;
   tableLabel: string | null;
+  tableId: number | null;
   status: 'OPEN' | 'CLOSED' | 'CANCELLED';
   total: string;
   openedAt: string;

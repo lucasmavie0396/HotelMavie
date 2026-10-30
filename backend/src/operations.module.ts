@@ -4,6 +4,7 @@ import { CatalogController } from './catalog/catalog.controller';
 import { RecipesService } from './catalog/recipes.service';
 import { PosController } from './pos/pos.controller';
 import { PosService } from './pos/pos.service';
+import { TablesController } from './pos/tables';
 import { PrintingController, PrintService } from './printing/printing';
 import { ReportsModule } from './reports/reports.module';
 import { PurchasesController } from './purchases/purchases.controller';
@@ -13,7 +14,7 @@ import { StockService } from './stock/stock.service';
 
 @Module({
   imports: [BillingModule, ReportsModule],
-  controllers: [CatalogController, StockController, PurchasesController, PosController, PrintingController],
+  controllers: [CatalogController, StockController, PurchasesController, PosController, TablesController, PrintingController],
   providers: [StockService, PurchasesService, PosService, RecipesService, PrintService],
 })
 export class OperationsModule {}

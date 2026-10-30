@@ -7,7 +7,7 @@ import { api, errorMessage } from '@/services/api';
 import { printDocument } from '@/services/print';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
-import type { CashRegister, Order, OrderItem, Outlet, Product, Reservation } from '@/types';
+import type { CashRegister, DiningTable, Order, OrderItem, Outlet, Product, Reservation } from '@/types';
 import { formatMoney } from '@/utils/format';
 
 type Mode = Outlet | 'ROOMS';
@@ -30,6 +30,9 @@ const error = ref('');
 const notice = ref('');
 const busy = ref(false);
 const newTable = ref('');
+const tables = ref<DiningTable[]>([]);
+const activeTables = computed(() => tables.value.filter((table) => table.active || table.openOrder));
+const looseOrders = computed(() => orders.value.filter((order) => !order.tableId));
 const categoryFilter = ref<number | 0>(0);
 const closing = ref(false);
 
@@ -69,13 +72,15 @@ async function load() {
   error.value = '';
   try {
     const params = { hotelId: hotels.selectedId };
-    const [o, p, r, c] = await Promise.all([
+    const [o, p, r, c, t] = await Promise.all([
       api.get<Order[]>('/orders', { params: { ...params, status: 'OPEN', outlet: outlet.value } }),
       api.get<Product[]>('/products', { params: { ...params, outlet: outlet.value, sellable: true } }),
       api.get<Reservation[]>('/reservations', { params: { ...params, status: 'CHECKED_IN' } }),
       api.get<CashRegister[]>('/cash-registers', { params }),
+      api.get<DiningTable[]>('/dining-tables', { params: { ...params, outlet: outlet.value } }),
     ]);
     orders.value = o.data;
+    tables.value = t.data;
     products.value = p.data;
     inHouse.value = r.data;
     registers.value = c.data;
@@ -119,6 +124,16 @@ const openOrder = () =>
     newTable.value = '';
     return data;
   });
+
+function openTable(table: DiningTable) {
+  closing.value = false;
+  const existing = table.openOrder && orders.value.find((order) => order.id === table.openOrder!.id);
+  if (existing) {
+    current.value = existing;
+    return;
+  }
+  return run(async () => (await api.post<Order>('/orders', { hotelId: hotels.selectedId, outlet: outlet.value, tableId: table.id })).data);
+}
 
 const addItem = (product: Product) =>
   run(async () => (await api.post<Order>(`/orders/${current.value!.id}/items`, { productId: product.id, quantity: 1 })).data);
@@ -231,27 +246,63 @@ onMounted(load);
       <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
       <p v-if="notice" class="text-sm text-emerald-700">{{ notice }}</p>
 
-      <div class="grid gap-4 lg:grid-cols-[220px_1fr_360px]">
+      <div class="grid gap-4 lg:grid-cols-[260px_1fr_360px]">
         <div class="card space-y-3 p-3 lg:max-h-[calc(100dvh-14rem)] lg:overflow-y-auto">
-          <form class="flex gap-2" @submit.prevent="openOrder">
-            <input v-model="newTable" class="input" placeholder="Mesa / nome" />
-            <button class="btn px-3" type="submit" :disabled="busy">+</button>
-          </form>
-          <button
-            v-for="order in orders"
-            :key="order.id"
-            type="button"
-            class="flex w-full justify-between rounded-md border px-3 py-2 text-left text-sm"
-            :class="current?.id === order.id ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'"
-            @click="current = order; closing = false"
-          >
-            <span class="font-medium">
-              {{ order.tableLabel ?? `#${order.id}` }}
-              <span v-if="order.items.some((i) => !i.sentAt && !i.voidedAt)" class="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800">por enviar</span>
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-slate-700">Mesas</h2>
+            <span class="flex gap-2 text-[10px] text-slate-500">
+              <span class="flex items-center gap-1"><span class="size-2 rounded-full bg-emerald-400" />livre</span>
+              <span class="flex items-center gap-1"><span class="size-2 rounded-full bg-rose-500" />ocupada</span>
             </span>
-            <span>{{ money(order.total) }}</span>
-          </button>
-          <p v-if="!orders.length" class="text-sm text-slate-500">Sem pedidos abertos</p>
+          </div>
+          <div v-if="activeTables.length" class="grid grid-cols-3 gap-2">
+            <button
+              v-for="table in activeTables"
+              :key="table.id"
+              type="button"
+              class="relative flex aspect-square flex-col items-center justify-center rounded-xl border-2 p-1 text-center transition disabled:opacity-60"
+              :class="[
+                current?.tableId === table.id ? 'ring-2 ring-indigo-500 ring-offset-1' : '',
+                table.openOrder ? 'border-rose-200 bg-gradient-to-br from-rose-500 to-pink-500 text-white shadow-md' : 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100',
+              ]"
+              :title="table.label"
+              :disabled="busy"
+              @click="openTable(table)"
+            >
+              <span class="text-lg leading-none font-bold">{{ table.number }}</span>
+              <span class="w-full truncate text-[10px] leading-tight">{{ table.openOrder ? money(table.openOrder.total) : `${table.seats} lug.` }}</span>
+              <span v-if="table.openOrder?.pending" class="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-amber-400 text-[10px] font-bold text-amber-950 shadow" title="Artigos por enviar">
+                {{ table.openOrder.pending }}
+              </span>
+            </button>
+          </div>
+          <p v-else class="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
+            Ainda nao ha mesas.
+            <RouterLink v-if="isManager" :to="{ name: 'settings', query: { tab: 'tables' } }" class="text-indigo-600 hover:underline">Criar mesas na Configuracao</RouterLink>
+            <template v-else>Peca ao gestor para as criar na Configuracao.</template>
+          </p>
+
+          <div class="space-y-2 border-t border-slate-100 pt-3">
+            <h2 class="text-sm font-semibold text-slate-700">Sem mesa / balcao</h2>
+            <form class="flex gap-2" @submit.prevent="openOrder">
+              <input v-model="newTable" class="input" placeholder="Nome (opcional)" />
+              <button class="btn px-3" type="submit" :disabled="busy" title="Abrir conta sem mesa">+</button>
+            </form>
+            <button
+              v-for="order in looseOrders"
+              :key="order.id"
+              type="button"
+              class="flex w-full justify-between rounded-lg border px-3 py-2 text-left text-sm"
+              :class="current?.id === order.id ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'"
+              @click="current = order; closing = false"
+            >
+              <span class="font-medium">
+                {{ order.tableLabel ?? `#${order.id}` }}
+                <span v-if="order.items.some((i) => !i.sentAt && !i.voidedAt)" class="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800">por enviar</span>
+              </span>
+              <span>{{ money(order.total) }}</span>
+            </button>
+          </div>
         </div>
 
         <div class="card space-y-3 p-3 lg:max-h-[calc(100dvh-14rem)] lg:overflow-y-auto">

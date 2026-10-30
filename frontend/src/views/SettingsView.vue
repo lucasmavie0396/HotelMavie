@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router';
 import PaymentTypesTab from '@/components/settings/PaymentTypesTab.vue';
 import PrintersTab from '@/components/settings/PrintersTab.vue';
 import PublicSiteTab from '@/components/settings/PublicSiteTab.vue';
+import TablesTab from '@/components/settings/TablesTab.vue';
 import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
@@ -18,13 +19,14 @@ const error = ref('');
 const saved = ref('');
 const busy = ref(false);
 
-type Tab = 'fiscal' | 'site' | 'taxes' | 'payments' | 'printers' | 'at' | 'emails';
+type Tab = 'fiscal' | 'site' | 'taxes' | 'payments' | 'printers' | 'tables' | 'at' | 'emails';
 const TABS: { value: Tab; label: string }[] = [
   { value: 'fiscal', label: 'Dados do hotel' },
   { value: 'site', label: 'Site e reservas' },
   { value: 'taxes', label: 'IVA' },
   { value: 'payments', label: 'Pagamentos' },
   { value: 'printers', label: 'Impressoras' },
+  { value: 'tables', label: 'Mesas' },
   { value: 'at', label: 'Autoridade Tributaria' },
   { value: 'emails', label: 'Emails' },
 ];
@@ -190,6 +192,7 @@ onMounted(load);
     <PublicSiteTab v-if="tab === 'site'" />
     <PaymentTypesTab v-if="tab === 'payments'" />
     <PrintersTab v-if="tab === 'printers'" />
+    <TablesTab v-if="tab === 'tables'" />
 
     <form v-if="tab === 'fiscal'" class="card grid gap-3 sm:grid-cols-2" @submit.prevent="saveFiscal">
       <h2 class="font-semibold sm:col-span-2">Dados fiscais</h2>

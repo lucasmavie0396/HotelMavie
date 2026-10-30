@@ -67,6 +67,7 @@ model Hotel {
   timeEntries            TimeEntry[]
   printers               Printer[]
   paymentTypes           PaymentType[]
+  diningTables           DiningTable[]
 
   @@map("hotels")
 }
@@ -543,6 +544,8 @@ model Order {
   hotel          Hotel           @relation(fields: [hotelId], references: [id], onDelete: Cascade)
   outlet         Outlet
   tableLabel     String?         @db.VarChar(30)
+  tableId        Int?
+  table          DiningTable?    @relation(fields: [tableId], references: [id], onDelete: SetNull)
   status         OrderStatus     @default(OPEN)
   reservationId  Int?
   reservation    Reservation?    @relation(fields: [reservationId], references: [id], onDelete: SetNull)
@@ -559,7 +562,24 @@ model Order {
 
   @@index([hotelId, status])
   @@index([hotelId, openedAt])
+  @@index([tableId, status])
   @@map("orders")
+}
+
+model DiningTable {
+  id        Int      @id @default(autoincrement())
+  hotelId   Int
+  hotel     Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  outlet    Outlet
+  number    Int
+  name      String?  @db.VarChar(40)
+  seats     Int      @default(4)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  orders    Order[]
+
+  @@unique([hotelId, outlet, number])
+  @@map("dining_tables")
 }
 
 model OrderItem {

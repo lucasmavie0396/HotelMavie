@@ -34,6 +34,7 @@ import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { sumMoney, toMoney } from '../common/money';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
+import { tableLabel } from './tables';
 
 export class OpenOrderDto {
   @IsOptional()
@@ -47,6 +48,10 @@ export class OpenOrderDto {
   @IsString()
   @MaxLength(30)
   tableLabel?: string;
+
+  @IsOptional()
+  @IsInt()
+  tableId?: number;
 
   @IsOptional()
   @IsString()
@@ -168,12 +173,32 @@ export class PosService {
     return order;
   }
 
-  open({ hotelId, ...data }: OpenOrderDto, user: JwtPayload) {
+  async open({ hotelId, tableId, ...data }: OpenOrderDto, user: JwtPayload) {
     const scoped = resolveHotelScope(user, hotelId);
     if (!scoped) {
       throw new BadRequestException('hotelId e obrigatorio');
     }
-    return this.prisma.order.create({ data: { ...data, hotelId: scoped, openedById: user.sub }, include: orderInclude });
+    if (!tableId) {
+      return this.prisma.order.create({ data: { ...data, hotelId: scoped, openedById: user.sub }, include: orderInclude });
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const [table] = await tx.$queryRaw<{ id: number; hotelId: number; outlet: Outlet; number: number; name: string | null; active: number | boolean }[]>`
+        SELECT id, hotelId, outlet, number, name, active FROM dining_tables WHERE id = ${tableId} FOR UPDATE`;
+      if (!table || table.hotelId !== scoped || !table.active) {
+        throw new BadRequestException('Mesa invalida ou inativa');
+      }
+      if (table.outlet !== data.outlet) {
+        throw new BadRequestException('Esta mesa pertence a outro ponto de venda');
+      }
+      const existing = await tx.order.findFirst({ where: { tableId, status: OrderStatus.OPEN }, include: orderInclude });
+      if (existing) {
+        return existing;
+      }
+      return tx.order.create({
+        data: { ...data, tableId, tableLabel: tableLabel(table), hotelId: scoped, openedById: user.sub },
+        include: orderInclude,
+      });
+    });
   }
 
   async addItem(orderId: number, dto: OrderItemDto, user: JwtPayload) {
