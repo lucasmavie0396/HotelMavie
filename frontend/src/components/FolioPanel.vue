@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
 import { api, emailInvoice, errorMessage, openInvoicePdf } from '@/services/api';
 import { printDocument, type PrintRequest } from '@/services/print';
@@ -18,6 +19,7 @@ import {
 const props = defineProps<{ reservation: Reservation }>();
 const emit = defineEmits<{ changed: [] }>();
 
+const { t } = useI18n();
 const auth = useAuthStore();
 const hotels = useHotelsStore();
 const folio = ref<Folio | null>(null);
@@ -119,7 +121,7 @@ const issueInvoice = () =>
   });
 
 function removeCharge(id: number) {
-  if (window.confirm('Apagar este lancamento?')) {
+  if (window.confirm(t('folio.confirmDelete'))) {
     run(() => api.delete(`/charges/${id}`));
   }
 }
@@ -135,42 +137,42 @@ defineExpose({ load });
 <template>
   <div v-if="folio" class="card space-y-5">
     <div class="flex flex-wrap items-center justify-between gap-3">
-      <h2 class="font-semibold">Conta do hospede</h2>
+      <h2 class="font-semibold">{{ t('folio.title') }}</h2>
       <div class="flex flex-wrap gap-2">
         <button class="btn-secondary px-3 py-1 text-xs" type="button" @click="panel = panel === 'charge' ? null : 'charge'">
-          Lancar extra
+          {{ t('folio.addCharge') }}
         </button>
         <button class="btn-secondary px-3 py-1 text-xs" type="button" @click="print({ document: 'STATEMENT', reservationId: reservation.id })">
-          Imprimir conta
+          {{ t('folio.print') }}
         </button>
-        <button class="btn-secondary px-3 py-1 text-xs" type="button" @click="openPayment">Registar pagamento</button>
+        <button class="btn-secondary px-3 py-1 text-xs" type="button" @click="openPayment">{{ t('folio.addPayment') }}</button>
         <button class="btn px-3 py-1 text-xs" type="button" :disabled="!uninvoiced.length" @click="openInvoice">
-          Faturar ({{ uninvoiced.length }})
+          {{ t('folio.invoice', { n: uninvoiced.length }) }}
         </button>
       </div>
     </div>
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
     <p v-if="Number(folio.pendingAccommodation) > 0" class="text-xs text-slate-500">
-      O alojamento ({{ money(folio.pendingAccommodation) }}) e lancado na conta no check-in.
+      {{ t('folio.pendingAccommodation', { amount: money(folio.pendingAccommodation) }) }}
     </p>
 
     <form v-if="panel === 'charge'" class="grid gap-3 rounded-md bg-slate-50 p-3 sm:grid-cols-6" @submit.prevent="addCharge">
-      <input v-model="charge.description" class="input sm:col-span-2" placeholder="Descricao" required />
+      <input v-model="charge.description" class="input sm:col-span-2" :placeholder="t('common.description')" required />
       <select v-model="charge.type" class="input">
         <option v-for="(label, type) in CHARGE_TYPE_LABELS" :key="type" :value="type">{{ label }}</option>
       </select>
-      <input v-model.number="charge.quantity" class="input" type="number" min="0.001" step="0.001" placeholder="Qtd" required />
-      <input v-model.number="charge.unitPrice" class="input" type="number" step="0.01" placeholder="Preco c/ IVA" required />
+      <input v-model.number="charge.quantity" class="input" type="number" min="0.001" step="0.001" :placeholder="t('folio.qty')" required />
+      <input v-model.number="charge.unitPrice" class="input" type="number" step="0.01" :placeholder="t('folio.priceVat')" required />
       <select v-model.number="charge.taxRateId" class="input">
-        <option :value="0">Sem IVA</option>
+        <option :value="0">{{ t('folio.noVat') }}</option>
         <option v-for="rate in taxRates" :key="rate.id" :value="rate.id">{{ rate.name }} ({{ Number(rate.rate) }}%)</option>
       </select>
-      <button class="btn sm:col-span-6 sm:justify-self-end" type="submit" :disabled="busy">Lancar</button>
+      <button class="btn sm:col-span-6 sm:justify-self-end" type="submit" :disabled="busy">{{ t('folio.post') }}</button>
     </form>
 
     <form v-if="panel === 'payment'" class="grid gap-3 rounded-md bg-slate-50 p-3 sm:grid-cols-5" @submit.prevent="addPayment">
-      <input v-model.number="payment.amount" class="input" type="number" step="0.01" placeholder="Valor" required />
+      <input v-model.number="payment.amount" class="input" type="number" step="0.01" :placeholder="t('common.value')" required />
       <PaymentTypeSelect
         v-model:type-id="payment.paymentTypeId"
         v-model:cash-session-id="payment.cashSessionId"
@@ -178,38 +180,36 @@ defineExpose({ load });
         :registers="registers"
       />
       <button class="btn" type="submit" :disabled="busy || !payment.paymentTypeId">
-        Registar
+        {{ t('folio.register') }}
       </button>
-      <p v-if="payment.amount < 0" class="text-xs text-slate-500 sm:col-span-5">Valor negativo = devolucao (so gestores).</p>
+      <p v-if="payment.amount < 0" class="text-xs text-slate-500 sm:col-span-5">{{ t('folio.negative') }}</p>
     </form>
 
     <form v-if="panel === 'invoice'" class="grid gap-3 rounded-md bg-slate-50 p-3 sm:grid-cols-4" @submit.prevent="issueInvoice">
       <select v-model="invoice.type" class="input">
-        <option value="INVOICE_RECEIPT">Fatura-recibo (pago)</option>
-        <option value="INVOICE">Fatura (a pagar)</option>
+        <option value="INVOICE_RECEIPT">{{ t('folio.invoiceReceipt') }}</option>
+        <option value="INVOICE">{{ t('folio.invoiceDue') }}</option>
       </select>
-      <input v-model="invoice.customerName" class="input" placeholder="Nome do cliente" />
-      <input v-model="invoice.customerTaxId" class="input" placeholder="NIF (vazio = da ficha)" />
-      <input v-model="invoice.customerAddress" class="input" placeholder="Morada (vazio = da ficha)" />
+      <input v-model="invoice.customerName" class="input" :placeholder="t('folio.customerName')" />
+      <input v-model="invoice.customerTaxId" class="input" :placeholder="t('folio.customerTaxId')" />
+      <input v-model="invoice.customerAddress" class="input" :placeholder="t('folio.customerAddress')" />
       <p class="text-xs text-slate-500 sm:col-span-3">
-        Fatura {{ uninvoiced.length }} lancamentos por faturar. Depois de emitida, so pode ser corrigida com nota de credito.
-        <template v-if="invoice.type === 'INVOICE'">
-          A fatura a pagar sai do saldo da estadia e passa para a conta corrente do cliente; recebe-se depois com recibo.
-        </template>
+        {{ t('folio.invoiceHint', { n: uninvoiced.length }) }}
+        <template v-if="invoice.type === 'INVOICE'">{{ t('folio.invoiceDueHint') }}</template>
       </p>
-      <button class="btn" type="submit" :disabled="busy">Emitir</button>
+      <button class="btn" type="submit" :disabled="busy">{{ t('folio.issue') }}</button>
     </form>
 
     <div class="overflow-x-auto">
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 text-slate-600">
           <tr>
-            <th class="py-2">Lancamento</th>
-            <th class="py-2 text-right">Qtd</th>
-            <th class="py-2 text-right">Preco</th>
-            <th class="py-2 text-right">IVA</th>
-            <th class="py-2 text-right">Total</th>
-            <th class="py-2">Fatura</th>
+            <th class="py-2">{{ t('folio.charge') }}</th>
+            <th class="py-2 text-right">{{ t('folio.qty') }}</th>
+            <th class="py-2 text-right">{{ t('common.price') }}</th>
+            <th class="py-2 text-right">{{ t('folio.vat') }}</th>
+            <th class="py-2 text-right">{{ t('common.total') }}</th>
+            <th class="py-2">{{ t('folio.invoiceColumn') }}</th>
             <th class="py-2"></th>
           </tr>
         </thead>
@@ -227,7 +227,7 @@ defineExpose({ load });
               <button v-if="item.invoice" class="text-indigo-600 hover:underline" type="button" @click="pdf(item.invoice.id)">
                 {{ item.invoice.fullNumber }}
               </button>
-              <span v-if="item.onCustomerAccount" class="ml-1 rounded bg-sky-100 px-1 text-xs text-sky-800">conta corrente</span>
+              <span v-if="item.onCustomerAccount" class="ml-1 rounded bg-sky-100 px-1 text-xs text-sky-800">{{ t('folio.customerAccount') }}</span>
               <span v-else class="text-slate-400">-</span>
             </td>
             <td class="py-2 text-right">
@@ -237,33 +237,33 @@ defineExpose({ load });
                 type="button"
                 @click="removeCharge(item.id)"
               >
-                Apagar
+                {{ t('common.delete') }}
               </button>
             </td>
           </tr>
           <tr v-for="item in folio.payments" :key="`p${item.id}`" class="border-b border-slate-100 text-emerald-700">
             <td class="py-2" colspan="4">
-              {{ item.id === reservation.depositPaymentId ? 'Sinal' : 'Pagamento' }} · {{ paymentTypes.byId(item.paymentTypeId)?.name ?? PAYMENT_METHOD_LABELS[item.method] }}
+              {{ item.id === reservation.depositPaymentId ? t('folio.deposit') : t('folio.payment') }} · {{ paymentTypes.byId(item.paymentTypeId)?.name ?? PAYMENT_METHOD_LABELS[item.method] }}
               <span class="text-xs text-slate-500">{{ item.reference ?? '' }} {{ formatDateTime(item.createdAt) }}</span>
               <button class="ml-2 text-xs text-indigo-600 hover:underline" type="button" @click="print({ document: 'PAYMENT', paymentId: item.id })">
-                comprovativo
+                {{ t('folio.proof') }}
               </button>
             </td>
             <td class="py-2 text-right">-{{ money(item.amount) }}</td>
             <td colspan="2"></td>
           </tr>
           <tr v-if="!folio.charges.length && !folio.payments.length">
-            <td colspan="7" class="py-4 text-center text-slate-500">Conta sem movimentos</td>
+            <td colspan="7" class="py-4 text-center text-slate-500">{{ t('folio.empty') }}</td>
           </tr>
         </tbody>
         <tfoot class="font-semibold">
           <tr v-if="Number(folio.customerAccountTotal) > 0" class="text-sky-800">
-            <td colspan="4" class="pt-3 text-right font-normal">Faturado a pagar (conta corrente do cliente)</td>
+            <td colspan="4" class="pt-3 text-right font-normal">{{ t('folio.invoicedDue') }}</td>
             <td class="pt-3 text-right font-normal">{{ money(folio.customerAccountTotal) }}</td>
             <td colspan="2"></td>
           </tr>
           <tr>
-            <td colspan="4" class="pt-3 text-right">Saldo</td>
+            <td colspan="4" class="pt-3 text-right">{{ t('folio.balance') }}</td>
             <td class="pt-3 text-right" :class="Number(folio.balance) > 0 ? 'text-rose-600' : 'text-emerald-700'">
               {{ money(folio.balance) }}
             </td>
@@ -274,21 +274,21 @@ defineExpose({ load });
     </div>
 
     <div v-if="folio.invoices.length" class="space-y-1 text-sm">
-      <h3 class="font-semibold text-slate-600">Documentos</h3>
+      <h3 class="font-semibold text-slate-600">{{ t('folio.documents') }}</h3>
       <div v-for="doc in folio.invoices" :key="doc.id" class="flex items-center gap-3">
         <button class="text-indigo-600 hover:underline" type="button" @click="pdf(doc.id)">{{ doc.fullNumber }}</button>
         <span>{{ INVOICE_TYPE_LABELS[doc.type] }}</span>
         <span>{{ money(doc.grossTotal) }}</span>
-        <span v-if="doc.status === 'CREDITED'" class="text-xs text-rose-600">creditada</span>
+        <span v-if="doc.status === 'CREDITED'" class="text-xs text-rose-600">{{ t('folio.credited') }}</span>
         <button
           class="text-xs text-indigo-600 hover:underline"
           type="button"
           @click="emailInvoice(doc.id, doc.fullNumber).catch((e) => (error = errorMessage(e)))"
         >
-          Enviar por email
+          {{ t('folio.sendEmail') }}
         </button>
         <button class="text-xs text-indigo-600 hover:underline" type="button" @click="print({ document: 'INVOICE', invoiceId: doc.id })">
-          Imprimir talao
+          {{ t('folio.printTicket') }}
         </button>
       </div>
     </div>

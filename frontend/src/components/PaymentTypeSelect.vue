@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { usePaymentTypesStore } from '@/stores/paymentTypes';
 import type { CashRegister } from '@/types';
 
@@ -8,6 +9,7 @@ const typeId = defineModel<number>('typeId', { required: true });
 const cashSessionId = defineModel<number>('cashSessionId', { default: 0 });
 const reference = defineModel<string>('reference', { default: '' });
 
+const { t } = useI18n();
 const types = usePaymentTypesStore();
 const selected = computed(() => types.byId(typeId.value));
 const sessions = computed(() =>
@@ -32,17 +34,17 @@ defineExpose({ needsSession: () => selected.value?.kind === 'CASH' && !cashSessi
 </script>
 
 <template>
-  <select v-model.number="typeId" class="input" aria-label="Tipo de pagamento">
+  <select v-model.number="typeId" class="input" :aria-label="t('payment.type')">
     <option v-for="type in types.active" :key="type.id" :value="type.id">{{ type.name }}</option>
   </select>
-  <select v-if="selected?.kind === 'CASH'" v-model.number="cashSessionId" class="input" aria-label="Caixa" required>
-    <option v-if="!sessions.length" :value="0" disabled>Nenhuma caixa aberta</option>
-    <option v-for="session in sessions" :key="session.id" :value="session.id">Caixa {{ session.label }}</option>
+  <select v-if="selected?.kind === 'CASH'" v-model.number="cashSessionId" class="input" :aria-label="t('payment.register')" required>
+    <option v-if="!sessions.length" :value="0" disabled>{{ t('payment.noRegister') }}</option>
+    <option v-for="session in sessions" :key="session.id" :value="session.id">{{ t('payment.registerName', { name: session.label }) }}</option>
   </select>
   <input
     v-model="reference"
     class="input"
-    :placeholder="selected?.requiresReference ? `Referencia ${selected.name} (obrigatoria)` : 'Referencia (opcional)'"
+    :placeholder="selected?.requiresReference ? t('payment.referenceRequired', { name: selected.name }) : t('payment.referenceOptional')"
     :required="selected?.requiresReference"
   />
 </template>

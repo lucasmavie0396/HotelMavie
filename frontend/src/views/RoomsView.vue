@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { api, errorMessage } from '@/services/api';
 import { fileUrl, readImage } from '@/services/files';
@@ -9,6 +10,7 @@ import { useHotelsStore } from '@/stores/hotels';
 import type { Room, RoomStatus } from '@/types';
 import { formatMoney, ROOM_STATUS_CLASSES, ROOM_STATUS_LABELS, ROOM_STATUSES } from '@/utils/format';
 
+const { t } = useI18n();
 const auth = useAuthStore();
 const hotels = useHotelsStore();
 const rooms = ref<Room[]>([]);
@@ -62,10 +64,12 @@ async function createRoom() {
 
 const openId = ref<number | null>(null);
 const description = ref('');
+const descriptionEn = ref('');
 
 function toggle(room: Room) {
   openId.value = openId.value === room.id ? null : room.id;
   description.value = room.description ?? '';
+  descriptionEn.value = room.descriptionEn ?? '';
 }
 
 async function roomAction(room: Room, action: () => Promise<{ data: Room }>) {
@@ -80,7 +84,7 @@ async function roomAction(room: Room, action: () => Promise<{ data: Room }>) {
   }
 }
 
-const saveDescription = (room: Room) => roomAction(room, () => api.patch<Room>(`/rooms/${room.id}`, { description: description.value || null }));
+const saveDescription = (room: Room) => roomAction(room, () => api.patch<Room>(`/rooms/${room.id}`, { description: description.value || null, descriptionEn: descriptionEn.value || null }));
 
 async function addImages(room: Room, event: Event) {
   const input = event.target as HTMLInputElement;
@@ -99,7 +103,7 @@ async function addImages(room: Room, event: Event) {
 const removeImage = (room: Room, imageId: number) => roomAction(room, () => api.delete<Room>(`/rooms/${room.id}/images/${imageId}`));
 
 async function removeRoom(room: Room) {
-  if (!window.confirm(`Apagar o quarto ${room.number}?`)) {
+  if (!window.confirm(t('rooms.confirmDelete', { number: room.number }))) {
     return;
   }
   try {
@@ -115,27 +119,27 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <PageHeader section="rooms" subtitle="Estado, precos, fotografias e descricao no site" />
+    <PageHeader section="rooms" :subtitle="t('rooms.subtitle')" />
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
 
     <form v-if="canManage" class="card grid gap-3 sm:grid-cols-6" @submit.prevent="createRoom">
-      <input v-model="form.number" class="input" placeholder="Numero" required />
-      <input v-model="form.type" class="input sm:col-span-2" placeholder="Tipo (ex.: Standard)" required />
-      <input v-model.number="form.capacity" class="input" type="number" min="1" placeholder="Capacidade" required />
-      <input v-model.number="form.pricePerNight" class="input" type="number" min="0" step="0.01" placeholder="Preco/noite" required />
-      <input v-model.number="form.floor" class="input" type="number" placeholder="Piso" />
-      <button class="btn sm:col-span-6 sm:justify-self-end" type="submit" :disabled="saving">Adicionar quarto</button>
+      <input v-model="form.number" class="input" :placeholder="t('rooms.number')" required />
+      <input v-model="form.type" class="input sm:col-span-2" :placeholder="t('rooms.typeExample')" required />
+      <input v-model.number="form.capacity" class="input" type="number" min="1" :placeholder="t('rooms.capacity')" required />
+      <input v-model.number="form.pricePerNight" class="input" type="number" min="0" step="0.01" :placeholder="t('reservationDetail.pricePerNight')" required />
+      <input v-model.number="form.floor" class="input" type="number" :placeholder="t('rooms.floor')" />
+      <button class="btn sm:col-span-6 sm:justify-self-end" type="submit" :disabled="saving">{{ t('rooms.add') }}</button>
     </form>
 
-    <div class="flex flex-wrap gap-2" role="group" aria-label="Filtrar por estado">
+    <div class="flex flex-wrap gap-2" role="group" :aria-label="t('rooms.filter')">
       <button
         type="button"
         class="rounded-full border px-3 py-1 text-xs font-medium"
         :class="statusFilter === '' ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"
         @click="filterStatus('')"
       >
-        Todos ({{ rooms.length }})
+        {{ t('common.all') }} ({{ rooms.length }})
       </button>
       <button
         v-for="status in ROOM_STATUSES"
@@ -153,12 +157,12 @@ onMounted(load);
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
           <tr>
-            <th class="px-4 py-3">Numero</th>
-            <th class="px-4 py-3">Tipo</th>
-            <th class="px-4 py-3">Piso</th>
-            <th class="px-4 py-3">Capacidade</th>
-            <th class="px-4 py-3">Preco/noite</th>
-            <th class="px-4 py-3">Estado</th>
+            <th class="px-4 py-3">{{ t('rooms.number') }}</th>
+            <th class="px-4 py-3">{{ t('rooms.type') }}</th>
+            <th class="px-4 py-3">{{ t('rooms.floor') }}</th>
+            <th class="px-4 py-3">{{ t('rooms.capacity') }}</th>
+            <th class="px-4 py-3">{{ t('reservationDetail.pricePerNight') }}</th>
+            <th class="px-4 py-3">{{ t('common.status') }}</th>
             <th v-if="canManage" class="px-4 py-3"></th>
           </tr>
         </thead>
@@ -182,30 +186,34 @@ onMounted(load);
             </td>
             <td v-if="canManage" class="space-x-3 px-4 py-3 text-right whitespace-nowrap">
               <button class="text-xs text-indigo-600 hover:underline" type="button" @click="toggle(room)">
-                Fotos e descricao ({{ room.images.length }})
+                {{ t('rooms.photos', { n: room.images.length }) }}
               </button>
-              <button class="text-xs text-rose-600 hover:underline" type="button" @click="removeRoom(room)">Apagar</button>
+              <button class="text-xs text-rose-600 hover:underline" type="button" @click="removeRoom(room)">{{ t('common.delete') }}</button>
             </td>
           </tr>
           <tr v-if="canManage && openId === room.id" class="border-b border-slate-100 bg-slate-50">
             <td colspan="7" class="space-y-3 px-4 py-4">
               <form class="flex flex-wrap items-end gap-2" @submit.prevent="saveDescription(room)">
                 <label class="min-w-72 flex-1 text-sm">
-                  Descricao no site publico
-                  <textarea v-model="description" class="input" rows="2" placeholder="Cama de casal, varanda com vista mar, ar condicionado, Wi-Fi..." />
+                  {{ t('rooms.description') }}
+                  <textarea v-model="description" class="input" rows="2" :placeholder="t('rooms.descriptionExample')" />
                 </label>
-                <button class="btn-secondary" type="submit" :disabled="saving">Guardar descricao</button>
+                <label class="min-w-72 flex-1 text-sm">
+                  {{ t('rooms.descriptionEn') }}
+                  <textarea v-model="descriptionEn" class="input" rows="2" placeholder="Double bed, sea-view balcony, air conditioning, Wi-Fi..." />
+                </label>
+                <button class="btn-secondary" type="submit" :disabled="saving">{{ t('rooms.saveDescription') }}</button>
               </form>
               <div class="flex flex-wrap gap-3">
                 <figure v-for="image in room.images" :key="image.id" class="relative h-24 w-36 overflow-hidden rounded-md border border-slate-200 bg-white">
-                  <img :src="fileUrl(image.file)" :alt="`Quarto ${room.number}`" class="h-full w-full object-cover" />
+                  <img :src="fileUrl(image.file)" :alt="t('dashboard.room', { number: room.number })" class="h-full w-full object-cover" />
                   <button
                     class="absolute top-1 right-1 rounded bg-white/90 px-1.5 text-xs text-rose-600 shadow hover:bg-white"
                     type="button"
                     :disabled="saving"
                     @click="removeImage(room, image.id)"
                   >
-                    Remover
+                    {{ t('common.remove') }}
                   </button>
                 </figure>
                 <label
@@ -213,16 +221,16 @@ onMounted(load);
                   class="flex h-24 w-36 cursor-pointer items-center justify-center rounded-md border border-dashed border-slate-300 bg-white text-center text-xs text-slate-500 hover:border-indigo-400"
                   :class="saving ? 'pointer-events-none opacity-60' : ''"
                 >
-                  + Adicionar fotos<br />(JPG, PNG, WEBP ate 4 MB)
+                  {{ t('rooms.addPhotos') }}<br />{{ t('rooms.photoFormats') }}
                   <input class="hidden" type="file" accept="image/png,image/jpeg,image/webp" multiple @change="addImages(room, $event)" />
                 </label>
               </div>
-              <p class="text-xs text-slate-500">Ate 8 fotos por quarto. No site, os quartos do mesmo tipo partilham as fotografias.</p>
+              <p class="text-xs text-slate-500">{{ t('rooms.photoHint') }}</p>
             </td>
           </tr>
           </template>
           <tr v-if="!visibleRooms.length">
-            <td colspan="7" class="px-4 py-6 text-center text-slate-500">{{ statusFilter ? 'Nenhum quarto neste estado' : 'Sem quartos registados' }}</td>
+            <td colspan="7" class="px-4 py-6 text-center text-slate-500">{{ statusFilter ? t('rooms.noneInStatus') : t('rooms.empty') }}</td>
           </tr>
         </tbody>
       </table>

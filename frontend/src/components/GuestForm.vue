@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
 import type { Guest } from '@/types';
@@ -7,6 +8,7 @@ import type { Guest } from '@/types';
 const props = defineProps<{ guest?: Guest | null }>();
 const emit = defineEmits<{ saved: [guest: Guest]; cancel: [] }>();
 
+const { t } = useI18n();
 const hotels = useHotelsStore();
 const error = ref('');
 const saving = ref(false);
@@ -70,24 +72,24 @@ async function submit() {
 
 <template>
   <form class="grid gap-3 sm:grid-cols-2" @submit.prevent="submit">
-    <input v-model="form.firstName" class="input" placeholder="Nome" required />
-    <input v-model="form.lastName" class="input" placeholder="Apelido" required />
-    <input v-model="form.email" class="input" type="email" placeholder="Email" />
-    <input v-model="form.phone" class="input" placeholder="Telefone" />
-    <input v-model="form.documentType" class="input" placeholder="Tipo de documento" />
-    <input v-model="form.documentNumber" class="input" placeholder="Numero do documento" />
-    <input v-model="form.nationality" class="input" placeholder="Nacionalidade" />
+    <input v-model="form.firstName" class="input" :placeholder="t('guest.firstName')" required />
+    <input v-model="form.lastName" class="input" :placeholder="t('guest.lastName')" required />
+    <input v-model="form.email" class="input" type="email" :placeholder="t('common.email')" />
+    <input v-model="form.phone" class="input" :placeholder="t('common.phone')" />
+    <input v-model="form.documentType" class="input" :placeholder="t('guest.documentType')" />
+    <input v-model="form.documentNumber" class="input" :placeholder="t('guest.documentNumber')" />
+    <input v-model="form.nationality" class="input" :placeholder="t('guest.nationality')" />
     <label class="flex items-center gap-2 text-sm text-slate-600">
-      Nascimento
+      {{ t('guest.birthDate') }}
       <input v-model="form.birthDate" class="input" type="date" />
     </label>
-    <input v-model="form.taxId" class="input" placeholder="NIF / contribuinte" />
-    <input v-model="form.address" class="input" placeholder="Morada" />
-    <textarea v-model="form.notes" class="input sm:col-span-2" rows="2" placeholder="Notas" />
+    <input v-model="form.taxId" class="input" :placeholder="t('guest.taxId')" />
+    <input v-model="form.address" class="input" :placeholder="t('guest.address')" />
+    <textarea v-model="form.notes" class="input sm:col-span-2" rows="2" :placeholder="t('common.notes')" />
     <p v-if="error" class="text-sm text-rose-600 sm:col-span-2">{{ error }}</p>
     <div class="flex justify-end gap-2 sm:col-span-2">
-      <button class="btn-secondary" type="button" @click="emit('cancel')">Fechar</button>
-      <button class="btn" type="submit" :disabled="saving">{{ guest ? 'Guardar' : 'Criar hospede' }}</button>
+      <button class="btn-secondary" type="button" @click="emit('cancel')">{{ t('common.close') }}</button>
+      <button class="btn" type="submit" :disabled="saving">{{ guest ? t('common.save') : t('guest.create') }}</button>
     </div>
   </form>
 </template>

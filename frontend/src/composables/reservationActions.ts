@@ -1,21 +1,16 @@
+import { t, translated } from '@/i18n';
 import { api } from '@/services/api';
 import type { Reservation } from '@/types';
 import { todayIso } from '@/utils/format';
 
 export type ReservationAction = 'confirm' | 'check-in' | 'check-out' | 'cancel' | 'no-show';
 
-export const ACTION_LABELS: Record<ReservationAction, string> = {
-  confirm: 'Confirmar',
-  'check-in': 'Check-in',
-  'check-out': 'Check-out',
-  cancel: 'Cancelar',
-  'no-show': 'No-show',
-};
+export const ACTION_LABELS = translated<ReservationAction>('reservation.actions', ['confirm', 'check-in', 'check-out', 'cancel', 'no-show']);
 
 const CONFIRM_MESSAGES: Partial<Record<ReservationAction, string>> = {
-  cancel: 'Cancelar esta reserva?',
-  'no-show': 'Marcar esta reserva como no-show?',
-  'check-out': 'Fazer check-out deste hospede?',
+  cancel: 'reservation.confirmCancel',
+  'no-show': 'reservation.confirmNoShow',
+  'check-out': 'reservation.confirmCheckOut',
 };
 
 export function availableActions(reservation: Pick<Reservation, 'status' | 'checkIn' | 'checkOut'>) {
@@ -42,7 +37,7 @@ export function availableActions(reservation: Pick<Reservation, 'status' | 'chec
 
 export async function runReservationAction(id: number, action: ReservationAction) {
   const message = CONFIRM_MESSAGES[action];
-  if (message && !window.confirm(message)) {
+  if (message && !window.confirm(t(message))) {
     return null;
   }
   const { data } = await api.post<Reservation>(`/reservations/${id}/${action}`);

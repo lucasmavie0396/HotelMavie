@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import GuestForm from '@/components/GuestForm.vue';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
@@ -9,6 +10,7 @@ import { addDays, formatMoney, RESERVATION_SOURCE_LABELS, todayIso } from '@/uti
 const props = defineProps<{ initialCheckIn?: string; initialRoomId?: number }>();
 const emit = defineEmits<{ created: [reservation: Reservation]; cancel: [] }>();
 
+const { t } = useI18n();
 const hotels = useHotelsStore();
 const error = ref('');
 const saving = ref(false);
@@ -90,7 +92,7 @@ async function findRooms() {
 
 async function submit() {
   if (!guest.value) {
-    error.value = 'Escolhe ou cria o hospede';
+    error.value = t('newReservation.pickGuest');
     return;
   }
   saving.value = true;
@@ -118,19 +120,19 @@ async function submit() {
 <template>
   <div class="space-y-5">
     <div class="space-y-2">
-      <h3 class="text-sm font-semibold text-slate-600">1. Hospede</h3>
+      <h3 class="text-sm font-semibold text-slate-600">{{ t('newReservation.step1') }}</h3>
       <div v-if="guest" class="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 text-sm">
         <span>
           <span class="font-medium">{{ guest.firstName }} {{ guest.lastName }}</span>
-          <span class="text-slate-500"> · {{ guest.email ?? guest.phone ?? 'sem contacto' }}</span>
+          <span class="text-slate-500"> · {{ guest.email ?? guest.phone ?? t('newReservation.noContact') }}</span>
         </span>
-        <button class="text-indigo-600 hover:underline" type="button" @click="guest = null">Trocar</button>
+        <button class="text-indigo-600 hover:underline" type="button" @click="guest = null">{{ t('newReservation.change') }}</button>
       </div>
       <template v-else>
         <div class="relative flex gap-2">
-          <input v-model="guestQuery" class="input" placeholder="Procurar hospede existente" @input="searchGuests" />
+          <input v-model="guestQuery" class="input" :placeholder="t('newReservation.searchGuest')" @input="searchGuests" />
           <button class="btn-secondary whitespace-nowrap" type="button" @click="creatingGuest = !creatingGuest">
-            Novo hospede
+            {{ t('newReservation.newGuest') }}
           </button>
           <ul
             v-if="guestResults.length"
@@ -151,39 +153,39 @@ async function submit() {
     </div>
 
     <div class="space-y-2">
-      <h3 class="text-sm font-semibold text-slate-600">2. Estadia</h3>
+      <h3 class="text-sm font-semibold text-slate-600">{{ t('newReservation.step2') }}</h3>
       <div class="grid gap-3 sm:grid-cols-5">
         <label class="text-sm">
-          Entrada
+          {{ t('newReservation.checkIn') }}
           <input v-model="form.checkIn" class="input" type="date" :min="todayIso()" required @change="onCheckInChange" />
         </label>
         <label class="text-sm">
-          Saida
+          {{ t('newReservation.checkOut') }}
           <input v-model="form.checkOut" class="input" type="date" :min="addDays(form.checkIn, 1)" required @change="rooms = null" />
         </label>
         <label class="text-sm">
-          Adultos
+          {{ t('newReservation.adults') }}
           <input v-model.number="form.adults" class="input" type="number" min="1" max="20" @change="rooms = null" />
         </label>
         <label class="text-sm">
-          Criancas
+          {{ t('newReservation.children') }}
           <input v-model.number="form.children" class="input" type="number" min="0" max="20" @change="rooms = null" />
         </label>
         <label class="text-sm">
-          Origem
+          {{ t('newReservation.source') }}
           <select v-model="form.source" class="input">
             <option v-for="(label, source) in RESERVATION_SOURCE_LABELS" :key="source" :value="source">{{ label }}</option>
           </select>
         </label>
       </div>
       <button class="btn-secondary" type="button" :disabled="searching || nights < 1" @click="findRooms">
-        Ver quartos disponiveis ({{ nights }} {{ nights === 1 ? 'noite' : 'noites' }})
+        {{ t('newReservation.findRooms', { nights: t('newReservation.nights', nights) }) }}
       </button>
     </div>
 
     <div v-if="rooms" class="space-y-2">
-      <h3 class="text-sm font-semibold text-slate-600">3. Quarto</h3>
-      <p v-if="!rooms.length" class="text-sm text-slate-500">Nao ha quartos livres para estas datas e ocupantes.</p>
+      <h3 class="text-sm font-semibold text-slate-600">{{ t('newReservation.step3') }}</h3>
+      <p v-if="!rooms.length" class="text-sm text-slate-500">{{ t('newReservation.noRooms') }}</p>
       <div class="grid gap-2 sm:grid-cols-3">
         <label
           v-for="room in rooms"
@@ -195,21 +197,20 @@ async function submit() {
           <span>
             <span class="font-medium">{{ room.number }}</span> · {{ room.type }} · {{ room.capacity }}p
             <span class="block text-slate-500">
-              {{ formatMoney(room.pricePerNight, hotels.currency) }}/noite ·
-              {{ formatMoney(Number(room.pricePerNight) * nights, hotels.currency) }} total
+              {{ t('newReservation.roomPrice', { night: formatMoney(room.pricePerNight, hotels.currency), total: formatMoney(Number(room.pricePerNight) * nights, hotels.currency) }) }}
             </span>
           </span>
         </label>
       </div>
-      <textarea v-model="form.notes" class="input" rows="2" placeholder="Notas da reserva" />
+      <textarea v-model="form.notes" class="input" rows="2" :placeholder="t('newReservation.notes')" />
     </div>
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
 
     <div class="flex justify-end gap-2">
-      <button class="btn-secondary" type="button" @click="emit('cancel')">Fechar</button>
+      <button class="btn-secondary" type="button" @click="emit('cancel')">{{ t('common.close') }}</button>
       <button class="btn" type="button" :disabled="saving || !rooms?.length || !form.roomId || !guest" @click="submit">
-        Criar reserva
+        {{ t('newReservation.create') }}
       </button>
     </div>
   </div>

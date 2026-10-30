@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import NewReservationForm from '@/components/NewReservationForm.vue';
 import ReservationActions from '@/components/ReservationActions.vue';
@@ -10,6 +11,7 @@ import { useHotelsStore } from '@/stores/hotels';
 import type { Reservation, ReservationSource, ReservationStatus } from '@/types';
 import { formatDate, formatMoney, RESERVATION_SOURCE_LABELS, RESERVATION_STATUS_LABELS, RESERVATION_STATUSES, todayIso } from '@/utils/format';
 
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const hotels = useHotelsStore();
@@ -18,11 +20,7 @@ const error = ref('');
 const creating = ref(route.query.nova === '1');
 
 const queryText = (key: string) => (typeof route.query[key] === 'string' ? (route.query[key] as string) : '');
-const VIEWS: Record<string, string> = {
-  chegadas: 'Chegadas por fazer ate hoje',
-  saidas: 'Saidas por fazer ate hoje',
-  pendente: 'Sinais por confirmar',
-};
+const VIEWS: Record<string, string> = { chegadas: 'reservations.views.arrivals', saidas: 'reservations.views.departures', pendente: 'reservations.views.deposits' };
 
 const filters = reactive({
   status: (RESERVATION_STATUSES.includes(queryText('estado') as ReservationStatus) ? queryText('estado') : '') as ReservationStatus | '',
@@ -102,8 +100,8 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <PageHeader section="reservations" subtitle="Pedidos, confirmacoes, check-in e check-out">
-      <button class="btn" type="button" @click="creating = !creating">+ Nova reserva</button>
+    <PageHeader section="reservations" :subtitle="t('reservations.subtitle')">
+      <button class="btn" type="button" @click="creating = !creating">{{ t('dashboard.newReservation') }}</button>
     </PageHeader>
 
     <div v-if="creating" class="card">
@@ -116,43 +114,43 @@ onMounted(load);
     </div>
 
     <form class="card grid gap-3 sm:grid-cols-5" @submit.prevent="load">
-      <input v-model="filters.q" class="input sm:col-span-2" placeholder="Codigo ou nome do hospede" />
+      <input v-model="filters.q" class="input sm:col-span-2" :placeholder="t('reservations.search')" />
       <select v-model="filters.status" class="input">
-        <option value="">Todos os estados</option>
+        <option value="">{{ t('reservations.allStatuses') }}</option>
         <option v-for="status in RESERVATION_STATUSES" :key="status" :value="status">
           {{ RESERVATION_STATUS_LABELS[status] }}
         </option>
       </select>
-      <input v-model="filters.from" class="input" type="date" aria-label="De" />
-      <input v-model="filters.to" class="input" type="date" aria-label="Ate" />
+      <input v-model="filters.from" class="input" type="date" :aria-label="t('common.from')" />
+      <input v-model="filters.to" class="input" type="date" :aria-label="t('common.to')" />
       <div class="flex justify-end gap-2 sm:col-span-5">
-        <button class="btn-secondary" type="button" @click="clearFilters">Limpar</button>
-        <button class="btn" type="submit">Filtrar</button>
+        <button class="btn-secondary" type="button" @click="clearFilters">{{ t('reservations.clear') }}</button>
+        <button class="btn" type="submit">{{ t('common.filter') }}</button>
       </div>
     </form>
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
 
     <div v-if="view || source" class="flex flex-wrap items-center gap-2 text-sm">
-      <span class="text-slate-500">A mostrar:</span>
-      <span v-if="view" class="rounded-full bg-indigo-100 px-3 py-1 font-medium text-indigo-800">{{ VIEWS[view] }}</span>
-      <span v-if="source" class="rounded-full bg-indigo-100 px-3 py-1 font-medium text-indigo-800">Origem: {{ RESERVATION_SOURCE_LABELS[source] }}</span>
+      <span class="text-slate-500">{{ t('reservations.showing') }}</span>
+      <span v-if="view" class="rounded-full bg-indigo-100 px-3 py-1 font-medium text-indigo-800">{{ t(VIEWS[view]) }}</span>
+      <span v-if="source" class="rounded-full bg-indigo-100 px-3 py-1 font-medium text-indigo-800">{{ t('reservations.sourceFilter', { source: RESERVATION_SOURCE_LABELS[source] }) }}</span>
       <span class="text-slate-500">({{ visible.length }})</span>
-      <button class="text-indigo-600 hover:underline" type="button" @click="clearView">Ver todas</button>
+      <button class="text-indigo-600 hover:underline" type="button" @click="clearView">{{ t('dashboard.seeAll') }}</button>
     </div>
 
     <div class="card overflow-x-auto p-0">
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
           <tr>
-            <th class="px-4 py-3">Codigo</th>
-            <th class="px-4 py-3">Hospede</th>
-            <th class="px-4 py-3">Quarto</th>
-            <th class="px-4 py-3">Entrada</th>
-            <th class="px-4 py-3">Saida</th>
-            <th class="px-4 py-3">Total</th>
-            <th class="px-4 py-3">Origem</th>
-            <th class="px-4 py-3">Estado</th>
+            <th class="px-4 py-3">{{ t('reservations.code') }}</th>
+            <th class="px-4 py-3">{{ t('reservations.guest') }}</th>
+            <th class="px-4 py-3">{{ t('calendar.room') }}</th>
+            <th class="px-4 py-3">{{ t('newReservation.checkIn') }}</th>
+            <th class="px-4 py-3">{{ t('newReservation.checkOut') }}</th>
+            <th class="px-4 py-3">{{ t('common.total') }}</th>
+            <th class="px-4 py-3">{{ t('newReservation.source') }}</th>
+            <th class="px-4 py-3">{{ t('common.status') }}</th>
             <th class="px-4 py-3"></th>
           </tr>
         </thead>
@@ -171,13 +169,13 @@ onMounted(load);
             <td class="px-4 py-3">{{ RESERVATION_SOURCE_LABELS[reservation.source] }}</td>
             <td class="px-4 py-3">
               <StatusBadge :status="reservation.status" />
-              <span v-if="reservation.depositPaymentId" class="mt-1 block text-xs text-emerald-700">sinal recebido</span>
+              <span v-if="reservation.depositPaymentId" class="mt-1 block text-xs text-emerald-700">{{ t('reservations.depositReceived') }}</span>
               <RouterLink
                 v-else-if="reservation.depositAmount !== null && reservation.status === 'PENDING'"
                 :to="{ name: 'reservation', params: { id: reservation.id } }"
                 class="mt-1 block text-xs font-medium text-amber-700 hover:underline"
               >
-                sinal por confirmar
+                {{ t('reservations.depositPending') }}
               </RouterLink>
             </td>
             <td class="px-4 py-3">
@@ -185,7 +183,7 @@ onMounted(load);
             </td>
           </tr>
           <tr v-if="!visible.length">
-            <td colspan="9" class="px-4 py-6 text-center text-slate-500">Sem reservas</td>
+            <td colspan="9" class="px-4 py-6 text-center text-slate-500">{{ t('reservations.empty') }}</td>
           </tr>
         </tbody>
       </table>
