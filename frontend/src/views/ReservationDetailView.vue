@@ -2,6 +2,7 @@
 import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute } from 'vue-router';
+import CompanionsPanel from '@/components/CompanionsPanel.vue';
 import DepositPanel from '@/components/DepositPanel.vue';
 import FolioPanel from '@/components/FolioPanel.vue';
 import ReservationActions from '@/components/ReservationActions.vue';
@@ -91,6 +92,12 @@ onMounted(load);
         <p class="font-medium">{{ reservation.guest.firstName }} {{ reservation.guest.lastName }}</p>
         <p v-if="reservation.guest.email">{{ reservation.guest.email }}</p>
         <p v-if="reservation.guest.phone">{{ reservation.guest.phone }}</p>
+        <p v-if="reservation.guest.documentNumber">{{ reservation.guest.documentType }} {{ reservation.guest.documentNumber }}</p>
+        <p v-else class="text-amber-700">Sem documento de identificacao</p>
+        <p v-if="reservation.guest.nationality || reservation.guest.birthDate" class="text-slate-500">
+          {{ [reservation.guest.nationality, reservation.guest.birthDate ? `nasc. ${formatDate(reservation.guest.birthDate)}` : ''].filter(Boolean).join(' · ') }}
+        </p>
+        <RouterLink :to="{ name: 'guests', query: { id: reservation.guest.id } }" class="text-xs text-indigo-600 hover:underline">Ver e editar ficha completa</RouterLink>
       </div>
       <div class="card space-y-1 text-sm">
         <h2 class="mb-2 font-semibold">Estadia</h2>
@@ -109,6 +116,8 @@ onMounted(load);
         </p>
       </div>
     </div>
+
+    <CompanionsPanel :reservation="reservation" @updated="fill" />
 
     <DepositPanel :reservation="reservation" @updated="fill" />
 

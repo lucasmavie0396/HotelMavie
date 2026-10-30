@@ -1,8 +1,9 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ConfirmDepositDto, DepositService } from './deposit.service';
+import { CompanionDto } from './dto/companion.dto';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { AvailabilityQueryDto, ReservationQueryDto } from './dto/reservation-query.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
@@ -44,6 +45,26 @@ export class ReservationsController {
   @HttpCode(HttpStatus.OK)
   confirm(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
     return this.reservationsService.confirm(id, user);
+  }
+
+  @Post(':id/companions')
+  addCompanion(@Param('id', ParseIntPipe) id: number, @Body() dto: CompanionDto, @CurrentUser() user: JwtPayload) {
+    return this.reservationsService.addCompanion(id, dto, user);
+  }
+
+  @Patch(':id/companions/:companionId')
+  updateCompanion(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('companionId', ParseIntPipe) companionId: number,
+    @Body() dto: CompanionDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.reservationsService.updateCompanion(id, companionId, dto, user);
+  }
+
+  @Delete(':id/companions/:companionId')
+  removeCompanion(@Param('id', ParseIntPipe) id: number, @Param('companionId', ParseIntPipe) companionId: number, @CurrentUser() user: JwtPayload) {
+    return this.reservationsService.removeCompanion(id, companionId, user);
   }
 
   @Post(':id/deposit/confirm')

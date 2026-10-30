@@ -300,10 +300,33 @@ export class ReportBuilderService {
         checkIn: { lte: date },
         checkOut: { gt: date },
       },
-      include: { guest: true, room: true },
+      include: { guest: true, room: true, companions: { orderBy: { id: 'asc' } } },
       orderBy: { room: { number: 'asc' } },
     });
     const people = reservations.reduce((sum, reservation) => sum + reservation.adults + reservation.children, 0);
+    const documentOf = (person: { documentType: string | null; documentNumber: string | null }) =>
+      [person.documentType, person.documentNumber].filter(Boolean).join(' ') || '-';
+    const rows = reservations.flatMap((reservation) => [
+      [
+        reservation.room.number,
+        `${reservation.guest.firstName} ${reservation.guest.lastName}`,
+        reservation.guest.nationality ?? '-',
+        documentOf(reservation.guest),
+        day(reservation.checkIn),
+        day(reservation.checkOut),
+        String(reservation.adults + reservation.children),
+      ],
+      ...reservation.companions.map((companion) => [
+        '',
+        `  + ${companion.firstName} ${companion.lastName}${companion.isChild ? ' (crianca)' : ''}`,
+        companion.nationality ?? '-',
+        documentOf(companion),
+        companion.birthDate ? `Nasc. ${day(companion.birthDate)}` : '',
+        '',
+        '',
+      ]),
+    ]);
+    const missing = people - reservations.reduce((sum, reservation) => sum + 1 + reservation.companions.length, 0);
     return [
       {
         title: 'Resumo',
@@ -326,18 +349,11 @@ export class ReportBuilderService {
             { label: 'Saida', weight: 1 },
             { label: 'Pessoas', align: 'right', weight: 0.7 },
           ],
-          rows: reservations.map((reservation) => [
-            reservation.room.number,
-            `${reservation.guest.firstName} ${reservation.guest.lastName}`,
-            reservation.guest.nationality ?? '-',
-            [reservation.guest.documentType, reservation.guest.documentNumber].filter(Boolean).join(' ') || '-',
-            day(reservation.checkIn),
-            day(reservation.checkOut),
-            String(reservation.adults + reservation.children),
-          ]),
+          rows,
           totals: ['Total', `${reservations.length} quartos`, '', '', '', '', String(people)],
           empty: 'Nenhum hospede alojado neste dia',
         },
+        note: missing > 0 ? `Faltam os dados de ${missing} acompanhante(s): registe-os na reserva.` : undefined,
       },
     ];
   }

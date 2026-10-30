@@ -99,7 +99,7 @@ describe('Reservas', () => {
     expect(availability.body).toHaveLength(1);
     expect(availability.body[0]).toMatchObject({ type: 'Suite', available: 1, total: '300.00' });
 
-    const payload = { checkIn: day(40), checkOut: day(42), roomType: 'Suite', adults: 3, firstName: 'Rita', lastName: 'Online', email: 'rita@teste.local' };
+    const payload = { checkIn: day(40), checkOut: day(42), roomType: 'Suite', adults: 3, firstName: 'Rita', lastName: 'Online', email: 'rita@teste.local', documentType: 'BI', documentNumber: '110100000001A' };
     const first = await ctx.http().post(`/api/public/hotels/${slug}/reservations`).send(payload).expect(201);
     expect(first.body).toMatchObject({ status: 'PENDING', totalAmount: '300' });
     await ctx.http().post(`/api/public/hotels/${slug}/reservations`).send(payload).expect(409);

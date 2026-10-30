@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
 import { onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import GuestForm from '@/components/GuestForm.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { api, errorMessage } from '@/services/api';
@@ -11,6 +12,7 @@ import { formatDate } from '@/utils/format';
 type GuestDetail = Guest & { reservations: (Omit<Reservation, 'guest'>)[] };
 
 const hotels = useHotelsStore();
+const route = useRoute();
 const guests = ref<Guest[]>([]);
 const q = ref('');
 const error = ref('');
@@ -56,7 +58,11 @@ async function saved() {
   await load();
 }
 
-onMounted(load);
+onMounted(async () => {
+  await load();
+  const id = Number(route.query.id);
+  if (Number.isInteger(id) && id > 0) await open({ id } as Guest);
+});
 </script>
 
 <template>

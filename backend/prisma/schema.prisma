@@ -178,49 +178,67 @@ model Guest {
 }
 
 model Reservation {
-  id                   Int               @id @default(autoincrement())
-  code                 String            @unique @db.VarChar(20)
+  id                   Int                    @id @default(autoincrement())
+  code                 String                 @unique @db.VarChar(20)
   hotelId              Int
-  hotel                Hotel             @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  hotel                Hotel                  @relation(fields: [hotelId], references: [id], onDelete: Cascade)
   guestId              Int
-  guest                Guest             @relation(fields: [guestId], references: [id], onDelete: Restrict)
+  guest                Guest                  @relation(fields: [guestId], references: [id], onDelete: Restrict)
   roomId               Int
-  room                 Room              @relation(fields: [roomId], references: [id], onDelete: Restrict)
-  checkIn              DateTime          @db.Date
-  checkOut             DateTime          @db.Date
-  adults               Int               @default(1)
-  children             Int               @default(0)
-  status               ReservationStatus @default(PENDING)
-  source               ReservationSource @default(DESK)
-  pricePerNight        Decimal           @db.Decimal(10, 2)
-  totalAmount          Decimal           @db.Decimal(12, 2)
-  notes                String?           @db.Text
+  room                 Room                   @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  checkIn              DateTime               @db.Date
+  checkOut             DateTime               @db.Date
+  adults               Int                    @default(1)
+  children             Int                    @default(0)
+  status               ReservationStatus      @default(PENDING)
+  source               ReservationSource      @default(DESK)
+  pricePerNight        Decimal                @db.Decimal(10, 2)
+  totalAmount          Decimal                @db.Decimal(12, 2)
+  notes                String?                @db.Text
   checkedInAt          DateTime?
   checkedOutAt         DateTime?
   cancelledAt          DateTime?
-  depositAmount        Decimal?          @db.Decimal(12, 2)
-  depositReference     String?           @db.VarChar(100)
+  depositAmount        Decimal?               @db.Decimal(12, 2)
+  depositReference     String?                @db.VarChar(100)
   depositPaymentTypeId Int?
-  depositPaymentType   PaymentType?      @relation(fields: [depositPaymentTypeId], references: [id], onDelete: SetNull)
-  depositPaymentId     Int?              @unique
-  depositPayment       Payment?          @relation("DepositPayment", fields: [depositPaymentId], references: [id], onDelete: SetNull)
+  depositPaymentType   PaymentType?           @relation(fields: [depositPaymentTypeId], references: [id], onDelete: SetNull)
+  depositPaymentId     Int?                   @unique
+  depositPayment       Payment?               @relation("DepositPayment", fields: [depositPaymentId], references: [id], onDelete: SetNull)
   depositConfirmedAt   DateTime?
   depositConfirmedById Int?
-  depositConfirmedBy   User?             @relation("DepositConfirmedBy", fields: [depositConfirmedById], references: [id], onDelete: SetNull)
+  depositConfirmedBy   User?                  @relation("DepositConfirmedBy", fields: [depositConfirmedById], references: [id], onDelete: SetNull)
   createdById          Int?
-  createdBy            User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
+  createdBy            User?                  @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
   charges              Charge[]
   payments             Payment[]
   orders               Order[]
   invoices             Invoice[]
+  companions           ReservationCompanion[]
 
   @@index([hotelId, checkIn])
   @@index([hotelId, checkOut])
   @@index([roomId, checkIn, checkOut])
   @@index([guestId])
   @@map("reservations")
+}
+
+model ReservationCompanion {
+  id             Int         @id @default(autoincrement())
+  reservationId  Int
+  reservation    Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  firstName      String      @db.VarChar(100)
+  lastName       String      @db.VarChar(100)
+  isChild        Boolean     @default(false)
+  birthDate      DateTime?   @db.Date
+  nationality    String?     @db.VarChar(60)
+  documentType   String?     @db.VarChar(30)
+  documentNumber String?     @db.VarChar(50)
+  createdAt      DateTime    @default(now())
+
+  @@index([reservationId])
+  @@map("reservation_companions")
 }
 
 enum ChargeType {

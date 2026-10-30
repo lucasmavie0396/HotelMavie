@@ -86,7 +86,7 @@ describe('Site publico e sinal', () => {
     const availability = await ctx.http().get(`/api/public/hotels/${slug}/availability?checkIn=${day(20)}&checkOut=${day(23)}&guests=3`).expect(200);
     expect(availability.body[0]).toMatchObject({ type: 'Suite', total: '450.00', deposit: '270.00' });
 
-    const payload = { checkIn: day(20), checkOut: day(23), roomType: 'Suite', adults: 3, firstName: 'Ana', lastName: 'Sinal', email: 'ana.sinal@teste.local' };
+    const payload = { checkIn: day(20), checkOut: day(23), roomType: 'Suite', adults: 3, firstName: 'Ana', lastName: 'Sinal', email: 'ana.sinal@teste.local', documentType: 'BI', documentNumber: '110100000002A' };
     await ctx.http().post(`/api/public/hotels/${slug}/reservations`).send(payload).expect(400);
     const cash = await ctx.prisma.paymentType.findFirstOrThrow({ where: { hotelId: hotel.id, kind: 'CASH' } });
     await ctx.http().post(`/api/public/hotels/${slug}/reservations`).send({ ...payload, depositReference: 'X1', depositPaymentTypeId: cash.id }).expect(400);

@@ -27,7 +27,7 @@ describe('Emails', () => {
     await ctx.prisma.hotel.update({ where: { id: hotel.id }, data: { email: 'rececao@hotel.local' } });
     const booking = await ctx.http()
       .post(`/api/public/hotels/${hotel.publicSlug}/reservations`)
-      .send({ checkIn: day(15), checkOut: day(17), roomType: 'Standard', adults: 2, firstName: 'Ines', lastName: 'Email', email: 'Ines@Teste.local' })
+      .send({ checkIn: day(15), checkOut: day(17), roomType: 'Standard', adults: 2, firstName: 'Ines', lastName: 'Email', email: 'Ines@Teste.local', documentType: 'Passaporte', documentNumber: 'P1234567' })
       .expect(201);
     const reservation = await ctx.prisma.reservation.findUniqueOrThrow({ where: { code: booking.body.code } });
 

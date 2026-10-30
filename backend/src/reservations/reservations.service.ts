@@ -9,6 +9,7 @@ import { toMoney } from '../common/money';
 import { MailService } from '../mail/mail.service';
 import { bookingConfirmedEmail } from '../mail/templates';
 import { PrismaService } from '../prisma/prisma.service';
+import { CompanionDto, companionData } from './dto/companion.dto';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { AvailabilityQueryDto, ReservationQueryDto } from './dto/reservation-query.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
@@ -22,10 +23,13 @@ export const ACTIVE_STATUSES: ReservationStatus[] = [
 const EDITABLE_STATUSES: ReservationStatus[] = [ReservationStatus.PENDING, ReservationStatus.CONFIRMED];
 
 export const reservationInclude = {
-  guest: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+  guest: {
+    select: { id: true, firstName: true, lastName: true, email: true, phone: true, nationality: true, documentType: true, documentNumber: true, birthDate: true },
+  },
   room: { select: { id: true, number: true, type: true } },
   depositPaymentType: { select: { id: true, name: true } },
   depositConfirmedBy: { select: { name: true } },
+  companions: { orderBy: { id: 'asc' } },
 } satisfies Prisma.ReservationInclude;
 
 export interface BookingInput {
@@ -41,6 +45,7 @@ export interface BookingInput {
   notes?: string;
   createdById?: number;
   deposit?: { percent: Prisma.Decimal; reference?: string; paymentTypeId?: number | null };
+  companions?: CompanionDto[];
 }
 
 function generateCode() {
@@ -179,6 +184,7 @@ export class ReservationsService {
           notes: input.notes,
           createdById: input.createdById,
           ...deposit,
+          ...(input.companions?.length ? { companions: { create: input.companions.map(companionData) } } : {}),
         },
         include: reservationInclude,
       });
@@ -233,6 +239,33 @@ export class ReservationsService {
       }
       return updated;
     });
+  }
+
+  async addCompanion(id: number, dto: CompanionDto, user: JwtPayload) {
+    const reservation = await this.findOne(id, user);
+    if (reservation.companions.length >= reservation.adults + reservation.children - 1) {
+      throw new BadRequestException(`A reserva e para ${reservation.adults + reservation.children} pessoas: o titular e ${reservation.companions.length} acompanhante(s) ja estao registados`);
+    }
+    await this.prisma.reservationCompanion.create({ data: { ...companionData(dto), reservationId: id } });
+    return this.findOne(id, user);
+  }
+
+  async updateCompanion(id: number, companionId: number, dto: CompanionDto, user: JwtPayload) {
+    const reservation = await this.findOne(id, user);
+    if (!reservation.companions.some((companion) => companion.id === companionId)) {
+      throw new NotFoundException('Acompanhante nao encontrado');
+    }
+    await this.prisma.reservationCompanion.update({ where: { id: companionId }, data: companionData(dto) });
+    return this.findOne(id, user);
+  }
+
+  async removeCompanion(id: number, companionId: number, user: JwtPayload) {
+    const reservation = await this.findOne(id, user);
+    if (!reservation.companions.some((companion) => companion.id === companionId)) {
+      throw new NotFoundException('Acompanhante nao encontrado');
+    }
+    await this.prisma.reservationCompanion.delete({ where: { id: companionId } });
+    return this.findOne(id, user);
   }
 
   async confirm(id: number, user: JwtPayload) {

@@ -3,7 +3,7 @@ import { computed, nextTick, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { api, errorMessage } from '@/services/api';
 import { fileUrl } from '@/services/files';
-import type { PublicHotel, PublicRoomType } from '@/types';
+import { DOCUMENT_TYPES, type PublicHotel, type PublicRoomType } from '@/types';
 import { addDays, formatDate, formatMoney, todayIso } from '@/utils/format';
 
 interface BookingResult {
@@ -29,7 +29,51 @@ const loading = ref(false);
 const search = reactive({ checkIn: addDays(todayIso(), 1), checkOut: addDays(todayIso(), 3), adults: 2, children: 0 });
 const results = ref<PublicRoomType[] | null>(null);
 const chosen = ref<PublicRoomType | null>(null);
-const guest = reactive({ firstName: '', lastName: '', email: '', phone: '', notes: '', depositPaymentTypeId: 0, depositReference: '' });
+const guest = reactive({
+  firstName: '',
+  lastName: '',
+  email: '',
+  phone: '',
+  notes: '',
+  birthDate: '',
+  nationality: '',
+  documentType: 'BI',
+  documentNumber: '',
+  taxId: '',
+  address: '',
+  depositPaymentTypeId: 0,
+  depositReference: '',
+});
+
+interface CompanionForm {
+  firstName: string;
+  lastName: string;
+  isChild: boolean;
+  birthDate: string;
+  nationality: string;
+  documentType: string;
+  documentNumber: string;
+}
+const companions = ref<CompanionForm[]>([]);
+const maxCompanions = computed(() => Math.max(search.adults + search.children - 1, 0));
+const childCompanions = computed(() => companions.value.filter((companion) => companion.isChild).length);
+
+function addCompanion() {
+  if (companions.value.length >= maxCompanions.value) return;
+  companions.value.push({
+    firstName: '',
+    lastName: guest.lastName,
+    isChild: childCompanions.value < search.children && companions.value.length >= search.adults - 1,
+    birthDate: '',
+    nationality: guest.nationality,
+    documentType: 'BI',
+    documentNumber: '',
+  });
+}
+
+watch(maxCompanions, (max) => {
+  if (companions.value.length > max) companions.value.splice(max);
+});
 const booking = ref<BookingResult | null>(null);
 const photo = reactive<Record<string, number>>({});
 const viewer = ref<{ images: string[]; index: number } | null>(null);
@@ -107,6 +151,7 @@ async function findAvailability() {
 }
 
 function newSearch() {
+  companions.value = [];
   results.value = null;
   chosen.value = null;
   booking.value = null;
@@ -129,6 +174,21 @@ async function book() {
         email: guest.email,
         phone: guest.phone || undefined,
         notes: guest.notes || undefined,
+        birthDate: guest.birthDate || undefined,
+        nationality: guest.nationality.trim() || undefined,
+        documentType: guest.documentType,
+        documentNumber: guest.documentNumber.trim(),
+        taxId: guest.taxId.trim() || undefined,
+        address: guest.address.trim() || undefined,
+        companions: companions.value.map((companion) => ({
+          firstName: companion.firstName.trim(),
+          lastName: companion.lastName.trim(),
+          isChild: companion.isChild,
+          birthDate: companion.birthDate || undefined,
+          nationality: companion.nationality.trim() || undefined,
+          documentType: companion.documentNumber.trim() ? companion.documentType : undefined,
+          documentNumber: companion.documentNumber.trim() || undefined,
+        })),
         depositPaymentTypeId: needsDeposit.value && guest.depositPaymentTypeId ? guest.depositPaymentTypeId : undefined,
         depositReference: needsDeposit.value ? guest.depositReference.trim() : undefined,
       })
@@ -374,7 +434,61 @@ async function book() {
               <input v-model="guest.lastName" class="input" placeholder="Apelido" autocomplete="family-name" required />
               <input v-model="guest.email" class="input" type="email" placeholder="Email" autocomplete="email" required />
               <input v-model="guest.phone" class="input" placeholder="Telefone" autocomplete="tel" />
+              <label class="text-xs font-medium text-slate-600">
+                Data de nascimento
+                <input v-model="guest.birthDate" class="input mt-1" type="date" :max="todayIso()" autocomplete="bday" />
+              </label>
+              <label class="text-xs font-medium text-slate-600">
+                Nacionalidade
+                <input v-model="guest.nationality" class="input mt-1" placeholder="Ex.: Mocambicana" maxlength="60" autocomplete="country-name" />
+              </label>
+              <label class="text-xs font-medium text-slate-600">
+                Documento de identificacao
+                <select v-model="guest.documentType" class="input mt-1" required>
+                  <option v-for="type in DOCUMENT_TYPES" :key="type" :value="type">{{ type }}</option>
+                </select>
+              </label>
+              <label class="text-xs font-medium text-slate-600">
+                Numero do documento
+                <input v-model="guest.documentNumber" class="input mt-1" placeholder="Ex.: 110100123456A" minlength="3" maxlength="50" required />
+              </label>
+              <input v-model="guest.taxId" class="input" placeholder="NIF (opcional, para a fatura)" maxlength="30" />
+              <input v-model="guest.address" class="input" placeholder="Morada" maxlength="255" autocomplete="street-address" />
+
+              <section v-if="maxCompanions > 0" class="space-y-3 rounded-xl bg-slate-50 p-4 ring-1 ring-slate-100 sm:col-span-2">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <h3 class="font-semibold text-slate-800">
+                    Acompanhantes <span class="text-sm font-normal text-slate-500">({{ companions.length }} de {{ maxCompanions }}, opcional)</span>
+                  </h3>
+                  <button v-if="companions.length < maxCompanions" type="button" class="rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100" @click="addCompanion">
+                    + Adicionar acompanhante
+                  </button>
+                </div>
+                <p v-if="!companions.length" class="text-xs text-slate-500">Pode indicar ja os dados de quem vem consigo; se preferir, entrega-os no check-in.</p>
+                <div v-for="(companion, index) in companions" :key="index" class="grid gap-2 rounded-lg bg-white p-3 ring-1 ring-slate-200 sm:grid-cols-4">
+                  <div class="flex items-center justify-between sm:col-span-4">
+                    <span class="text-xs font-semibold text-slate-600">Acompanhante {{ index + 1 }}</span>
+                    <span class="flex items-center gap-3">
+                      <label class="flex items-center gap-1.5 text-xs text-slate-600" :class="!companion.isChild && childCompanions >= search.children ? 'opacity-40' : ''">
+                        <input v-model="companion.isChild" type="checkbox" :disabled="!companion.isChild && childCompanions >= search.children" />
+                        Crianca
+                      </label>
+                      <button type="button" class="text-xs text-rose-600 hover:underline" @click="companions.splice(index, 1)">Remover</button>
+                    </span>
+                  </div>
+                  <input v-model="companion.firstName" class="input" placeholder="Nome" maxlength="100" required />
+                  <input v-model="companion.lastName" class="input" placeholder="Apelido" maxlength="100" required />
+                  <input v-model="companion.birthDate" class="input" type="date" :max="todayIso()" aria-label="Data de nascimento" title="Data de nascimento" />
+                  <input v-model="companion.nationality" class="input" placeholder="Nacionalidade" maxlength="60" />
+                  <select v-model="companion.documentType" class="input sm:col-span-2" aria-label="Tipo de documento">
+                    <option v-for="type in DOCUMENT_TYPES" :key="type" :value="type">{{ type }}</option>
+                  </select>
+                  <input v-model="companion.documentNumber" class="input sm:col-span-2" :placeholder="companion.isChild ? 'N.o do documento (se tiver)' : 'N.o do documento'" maxlength="50" />
+                </div>
+              </section>
+
               <textarea v-model="guest.notes" class="input sm:col-span-2" rows="2" placeholder="Pedidos especiais (hora de chegada, cama extra...)" />
+              <p class="text-[11px] text-slate-500 sm:col-span-2">Os dados pessoais servem apenas para o registo da estadia, como exige a lei, e para a fatura.</p>
 
               <section v-if="needsDeposit" class="space-y-3 rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 p-4 ring-1 ring-amber-200 sm:col-span-2">
                 <h3 class="font-semibold text-orange-900">Pagamento do sinal ({{ hotel.depositPercent }}%)</h3>

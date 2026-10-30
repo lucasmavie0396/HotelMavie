@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
-import { IsDateString, IsEmail, IsInt, IsOptional, IsString, Length, Max, MaxLength, Min } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsDateString, IsEmail, IsInt, IsOptional, IsString, Length, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { CompanionDto } from '../../reservations/dto/companion.dto';
 
 export class PublicAvailabilityQueryDto {
   @IsDateString({ strict: true })
@@ -63,6 +64,43 @@ export class PublicBookingDto {
   @IsString()
   @MaxLength(1000)
   notes?: string;
+
+  @IsOptional()
+  @IsDateString({ strict: true })
+  @Length(10, 10)
+  birthDate?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  nationality?: string;
+
+  @IsString()
+  @MinLength(2)
+  @MaxLength(30)
+  documentType: string;
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(50)
+  documentNumber: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  taxId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  address?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(19)
+  @ValidateNested({ each: true })
+  @Type(() => CompanionDto)
+  companions?: CompanionDto[];
 
   @IsOptional()
   @IsString()

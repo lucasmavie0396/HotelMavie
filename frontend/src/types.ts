@@ -88,7 +88,7 @@ export interface Reservation {
   pricePerNight: string;
   totalAmount: string;
   notes: string | null;
-  guest: Pick<Guest, 'id' | 'firstName' | 'lastName' | 'email' | 'phone'>;
+  guest: Pick<Guest, 'id' | 'firstName' | 'lastName' | 'email' | 'phone' | 'nationality' | 'documentType' | 'documentNumber' | 'birthDate'>;
   room: Pick<Room, 'id' | 'number' | 'type'>;
   depositAmount: string | null;
   depositReference: string | null;
@@ -97,7 +97,21 @@ export interface Reservation {
   depositConfirmedAt: string | null;
   depositPaymentType: { id: number; name: string } | null;
   depositConfirmedBy: { name: string } | null;
+  companions: Companion[];
 }
+
+export interface Companion {
+  id: number;
+  firstName: string;
+  lastName: string;
+  isChild: boolean;
+  birthDate: string | null;
+  nationality: string | null;
+  documentType: string | null;
+  documentNumber: string | null;
+}
+
+export const DOCUMENT_TYPES = ['BI', 'Passaporte', 'DIRE', 'Carta de conducao', 'Cartao de cidadao', 'Outro'];
 
 export interface DashboardSummary {
   rooms: Record<RoomStatus, number>;

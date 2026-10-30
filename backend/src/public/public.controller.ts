@@ -88,17 +88,36 @@ export class PublicController {
       throw new BadRequestException('Forma de pagamento invalida');
     }
     const children = dto.children ?? 0;
+    const companions = dto.companions ?? [];
+    if (companions.length > dto.adults + children - 1) {
+      throw new BadRequestException(`A reserva e para ${dto.adults + children} pessoa(s): no maximo ${dto.adults + children - 1} acompanhante(s) alem do titular`);
+    }
+    if (companions.filter((companion) => companion.isChild).length > children) {
+      throw new BadRequestException('Ha mais criancas nos acompanhantes do que na reserva');
+    }
     const candidates = await this.reservations.findAvailableRooms(hotel.id, checkIn, checkOut, dto.adults + children, dto.roomType);
     if (!candidates.length) {
       throw new ConflictException('Ja nao ha quartos deste tipo disponiveis para essas datas');
     }
 
     const email = dto.email.toLowerCase();
-    const guest =
-      (await this.prisma.guest.findFirst({ where: { hotelId: hotel.id, email } })) ??
-      (await this.prisma.guest.create({
-        data: { hotelId: hotel.id, firstName: dto.firstName, lastName: dto.lastName, email, phone: dto.phone },
-      }));
+    const text = (value?: string) => value?.trim() || null;
+    const personal = {
+      phone: text(dto.phone),
+      birthDate: dto.birthDate ? new Date(`${dto.birthDate}T00:00:00.000Z`) : null,
+      nationality: text(dto.nationality),
+      documentType: text(dto.documentType),
+      documentNumber: text(dto.documentNumber),
+      taxId: text(dto.taxId),
+      address: text(dto.address),
+    };
+    const existing = await this.prisma.guest.findFirst({ where: { hotelId: hotel.id, email } });
+    const guest = existing
+      ? await this.prisma.guest.update({
+          where: { id: existing.id },
+          data: Object.fromEntries(Object.entries(personal).filter(([key, value]) => value !== null && !existing[key as keyof typeof personal])),
+        })
+      : await this.prisma.guest.create({ data: { hotelId: hotel.id, firstName: dto.firstName.trim(), lastName: dto.lastName.trim(), email, ...personal } });
 
     for (const room of candidates) {
       try {
@@ -113,6 +132,7 @@ export class PublicController {
           source: ReservationSource.ONLINE,
           notes: dto.notes,
           deposit: needsDeposit ? { percent: hotel.depositPercent, reference, paymentTypeId: dto.depositPaymentTypeId } : undefined,
+          companions,
         });
         const stay = {
           code: reservation.code,
