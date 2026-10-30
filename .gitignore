@@ -12,7 +12,8 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 .idea/
-backups/
+/backups/
+backend/backups/
 backend/uploads/
 backend/keys/
 frontend/test-results/
