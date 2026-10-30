@@ -47,6 +47,7 @@ async function load() {
     categories.value = c.data;
     taxRates.value = t.data.filter((rate) => rate.active);
     printers.value = (await api.get<Printer[]>('/printers', { params })).data;
+    await loadNextSku();
   } catch (e) {
     error.value = errorMessage(e);
   }
@@ -98,16 +99,38 @@ const saveProduct = () =>
     reset();
   });
 
-const addCategory = () =>
+const editingCategoryId = ref<number | null>(null);
+const nextSku = ref('');
+
+async function loadNextSku() {
+  try {
+    nextSku.value = (await api.get<{ sku: string }>('/products/next-sku', { params: { hotelId: hotels.selectedId } })).data.sku;
+  } catch {
+    nextSku.value = '';
+  }
+}
+
+function editCategory(item: ProductCategory) {
+  editingCategoryId.value = item.id;
+  Object.assign(category, { name: item.name, outlet: item.outlet ?? '', prepStation: item.prepStation, printerId: item.printerId ?? 0 });
+}
+
+function resetCategory() {
+  editingCategoryId.value = null;
+  Object.assign(category, { name: '', outlet: '', prepStation: 'KITCHEN', printerId: 0 });
+}
+
+const saveCategory = () =>
   run(async () => {
-    await api.post('/product-categories', {
-      hotelId: hotels.selectedId,
+    const payload = {
       name: category.name,
       outlet: category.outlet || null,
       prepStation: category.prepStation,
       printerId: category.printerId || null,
-    });
-    Object.assign(category, { name: '', outlet: '', prepStation: 'KITCHEN', printerId: 0 });
+    };
+    if (editingCategoryId.value) await api.patch(`/product-categories/${editingCategoryId.value}`, payload);
+    else await api.post('/product-categories', { ...payload, hotelId: hotels.selectedId });
+    resetCategory();
   });
 
 onMounted(load);
@@ -126,7 +149,12 @@ onMounted(load);
         <h2 class="font-semibold sm:col-span-2">{{ editingId ? 'Editar produto' : 'Novo produto' }}</h2>
         <input v-model="form.name" class="input" placeholder="Nome" required />
         <div class="flex gap-2">
-          <input v-model="form.sku" class="input" placeholder="Codigo/SKU" />
+          <input
+            v-model="form.sku"
+            class="input"
+            :placeholder="editingId ? 'Codigo' : nextSku ? `Automatico: ${nextSku}` : 'Codigo automatico'"
+            :title="editingId ? 'Codigo do produto' : 'Deixa vazio para gerar o proximo codigo automaticamente'"
+          />
           <input v-model="form.unit" class="input w-20" placeholder="Unid." />
         </div>
         <select v-model.number="form.categoryId" class="input">
@@ -155,8 +183,9 @@ onMounted(load);
 
       <div class="card space-y-3">
         <h2 class="font-semibold">Categorias</h2>
-        <form class="grid grid-cols-2 gap-2" @submit.prevent="addCategory">
-          <input v-model="category.name" class="input col-span-2" placeholder="Nova categoria" required />
+        <form class="grid grid-cols-2 gap-2" :class="editingCategoryId ? 'rounded-xl bg-indigo-50 p-2 ring-1 ring-indigo-200' : ''" @submit.prevent="saveCategory">
+          <p v-if="editingCategoryId" class="col-span-2 text-xs font-semibold text-indigo-700">A editar categoria</p>
+          <input v-model="category.name" class="input col-span-2" :placeholder="editingCategoryId ? 'Nome da categoria' : 'Nova categoria'" required />
           <select v-model="category.outlet" class="input" aria-label="Onde se vende">
             <option value="">Restaurante e bar</option>
             <option value="RESTAURANT">So restaurante</option>
@@ -169,15 +198,21 @@ onMounted(load);
             <option :value="0">Impressora principal do posto</option>
             <option v-for="printer in printers.filter((p) => p.active)" :key="printer.id" :value="printer.id">Imprimir em: {{ printer.name }}</option>
           </select>
-          <button class="btn col-span-2" type="submit" :disabled="busy">Adicionar categoria</button>
+          <button v-if="editingCategoryId" class="btn-secondary" type="button" @click="resetCategory">Cancelar</button>
+          <button class="btn" :class="editingCategoryId ? '' : 'col-span-2'" type="submit" :disabled="busy">
+            {{ editingCategoryId ? 'Guardar' : 'Adicionar categoria' }}
+          </button>
         </form>
         <ul class="divide-y divide-slate-100 text-sm">
-          <li v-for="item in categories" :key="item.id" class="flex justify-between py-1.5">
-            {{ item.name }}
-            <span class="text-slate-500">
-              {{ item.outlet === 'BAR' ? 'Bar' : item.outlet === 'RESTAURANT' ? 'Restaurante' : 'Ambos' }} · {{ STATION_LABELS[item.prepStation] }}
-              <template v-if="item.printerId"> · {{ printerName(item.printerId) }}</template>
+          <li v-for="item in categories" :key="item.id" class="flex items-start justify-between gap-2 py-2" :class="editingCategoryId === item.id ? 'text-indigo-700' : ''">
+            <span class="min-w-0">
+              <span class="block font-medium">{{ item.name }}</span>
+              <span class="block text-xs text-slate-500">
+                {{ item.outlet === 'BAR' ? 'Bar' : item.outlet === 'RESTAURANT' ? 'Restaurante' : 'Ambos' }} · {{ STATION_LABELS[item.prepStation] }}
+                · {{ item.printerId ? printerName(item.printerId) ?? 'impressora inativa' : 'impressora principal do posto' }}
+              </span>
             </span>
+            <button class="shrink-0 text-xs text-indigo-600 hover:underline" type="button" @click="editCategory(item)">Editar</button>
           </li>
         </ul>
       </div>

@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, NotFoundException, Param, ParseIntPipe, Patch, Post, Put, Query } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -59,12 +59,27 @@ export class CatalogController {
     });
   }
 
+  @Get('products/next-sku')
+  async nextSkuPreview(@Query() query: HotelQueryDto, @CurrentUser() user: JwtPayload) {
+    return { sku: await this.nextSku(this.requireHotel(user, query.hotelId)) };
+  }
+
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
   @Post('products')
   async createProduct(@Body() { hotelId, ...data }: CreateProductDto, @CurrentUser() user: JwtPayload) {
     const scoped = this.requireHotel(user, hotelId);
     await this.assertRefs(scoped, data);
-    return this.prisma.product.create({ data: { ...data, hotelId: scoped } });
+    const sku = data.sku?.trim();
+    if (sku) {
+      return this.prisma.product.create({ data: { ...data, sku, hotelId: scoped } });
+    }
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.prisma.product.create({ data: { ...data, sku: await this.nextSku(scoped), hotelId: scoped } });
+      } catch (error) {
+        if (attempt >= 4 || !(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') throw error;
+      }
+    }
   }
 
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
@@ -93,6 +108,12 @@ export class CatalogController {
   @Put('products/:id/recipe')
   setRecipe(@Param('id', ParseIntPipe) id: number, @Body() dto: RecipeDto, @CurrentUser() user: JwtPayload) {
     return this.recipes.set(id, dto, user);
+  }
+
+  private async nextSku(hotelId: number) {
+    const products = await this.prisma.product.findMany({ where: { hotelId, sku: { not: null } }, select: { sku: true } });
+    const highest = products.reduce((max, product) => (/^\d+$/.test(product.sku ?? '') ? Math.max(max, Number(product.sku)) : max), 0);
+    return String(highest + 1).padStart(2, '0');
   }
 
   private async assertPrinter(hotelId: number, printerId?: number | null) {
