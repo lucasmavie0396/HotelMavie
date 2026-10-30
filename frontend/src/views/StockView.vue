@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { translated } from '@/i18n';
 import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
@@ -8,24 +10,17 @@ import { previewPdfFrom } from '@/services/print';
 import type { PaperWidth, StockDocument, StockDocumentType, StockLevelRow, StockLot, StockMovement, Supplier, Warehouse } from '@/types';
 import { formatDate, formatDateTime, formatMoney } from '@/utils/format';
 
-const MOVEMENT_LABELS: Record<StockMovement['type'], string> = {
-  PURCHASE: 'Compra',
-  SALE: 'Venda',
-  ADJUSTMENT: 'Ajuste',
-  TRANSFER_IN: 'Transf. entrada',
-  TRANSFER_OUT: 'Transf. saida',
-  WASTE: 'Quebra',
-  RETURN: 'Devolucao',
-};
-const TYPE_LABELS: Record<StockDocumentType, string> = { INVENTORY: 'Inventario', WASTE: 'Quebras', TRANSFER: 'Transferencia', RETURN: 'Devolucao a fornecedor' };
+const MOVEMENT_LABELS = translated<StockMovement['type']>('stock.movements', ['PURCHASE', 'SALE', 'ADJUSTMENT', 'TRANSFER_IN', 'TRANSFER_OUT', 'WASTE', 'RETURN']);
+const TYPE_LABELS = translated<StockDocumentType>('stock.types', ['INVENTORY', 'WASTE', 'TRANSFER', 'RETURN']);
 const TYPE_PREFIX: Record<StockDocumentType, string> = { INVENTORY: 'INV', WASTE: 'QB', TRANSFER: 'TR', RETURN: 'DV' };
-const STATUS_LABELS: Record<StockDocument['status'], string> = { DRAFT: 'Rascunho', POSTED: 'Lancado', CANCELLED: 'Cancelado' };
+const STATUS_LABELS = translated<StockDocument['status']>('stock.statuses', ['DRAFT', 'POSTED', 'CANCELLED']);
 const STATUS_CLASSES: Record<StockDocument['status'], string> = {
   DRAFT: 'bg-amber-100 text-amber-800',
   POSTED: 'bg-emerald-100 text-emerald-800',
   CANCELLED: 'bg-slate-100 text-slate-500',
 };
 
+const { t } = useI18n();
 const auth = useAuthStore();
 const hotels = useHotelsStore();
 const tab = ref<'levels' | 'documents'>('levels');
@@ -178,14 +173,14 @@ const saveDocument = (post: boolean) =>
 
 const postDocument = (d: StockDocument) =>
   run(async () => {
-    if (window.confirm(`Lancar ${docNumber(d)}? O stock sera atualizado e o documento deixa de poder ser alterado.`)) {
+    if (window.confirm(t('stock.confirmPost', { number: docNumber(d) }))) {
       await api.post(`/stock-documents/${d.id}/post`);
     }
   });
 
 const cancelDocument = (d: StockDocument) =>
   run(async () => {
-    if (window.confirm(`Cancelar ${docNumber(d)}?`)) {
+    if (window.confirm(t('stock.confirmCancel', { number: docNumber(d) }))) {
       await api.post(`/stock-documents/${d.id}/cancel`);
     }
   });
@@ -212,7 +207,7 @@ async function previewDocument(d: StockDocument, paper: PaperWidth) {
 
 async function previewCountSheet(withQuantities: boolean) {
   try {
-    await previewPdfFrom(`/warehouses/${warehouseId.value}/count-sheet`, { withQuantities, paper: 'A4' }, 'Folha de contagem', 'A4');
+    await previewPdfFrom(`/warehouses/${warehouseId.value}/count-sheet`, { withQuantities, paper: 'A4' }, t('stock.countSheet'), 'A4');
   } catch (e) {
     error.value = errorMessage(e);
   }
@@ -235,69 +230,69 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <PageHeader section="stock" subtitle="Existencias e documentos de inventario, quebras e transferencias">
+    <PageHeader section="stock" :subtitle="t('stock.subtitle')">
       <select v-model.number="warehouseId" class="input w-auto" @change="changeWarehouse">
-        <option v-for="w in warehouses" :key="w.id" :value="w.id">{{ w.name }}{{ w.isDefault ? ' (principal)' : '' }}</option>
+        <option v-for="w in warehouses" :key="w.id" :value="w.id">{{ w.name }}{{ w.isDefault ? ` (${t('stock.main')})` : '' }}</option>
       </select>
       <form v-if="isManager" class="flex gap-2" @submit.prevent="createWarehouse">
-        <input v-model="newWarehouse" class="input w-40" placeholder="Novo armazem" required />
-        <button class="btn-secondary" type="submit" :disabled="busy">Criar</button>
+        <input v-model="newWarehouse" class="input w-40" :placeholder="t('stock.newWarehouse')" required />
+        <button class="btn-secondary" type="submit" :disabled="busy">{{ t('common.create') }}</button>
       </form>
     </PageHeader>
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
-    <p v-if="!warehouses.length" class="text-sm text-slate-500">Cria um armazem para comecar. O primeiro fica como principal e e usado nas vendas.</p>
+    <p v-if="!warehouses.length" class="text-sm text-slate-500">{{ t('stock.noWarehouse') }}</p>
 
     <template v-if="warehouseId">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex rounded-lg bg-white p-0.5 text-sm text-slate-700 shadow">
           <button type="button" class="rounded px-4 py-1.5" :class="tab === 'levels' ? 'bg-indigo-600 text-white' : ''" @click="tab = 'levels'">
-            Existencias
+            {{ t('stock.levels') }}
           </button>
           <button type="button" class="rounded px-4 py-1.5" :class="tab === 'documents' ? 'bg-indigo-600 text-white' : ''" @click="tab = 'documents'">
-            Documentos
+            {{ t('stock.documents') }}
             <span v-if="drafts" class="ml-1 rounded-full bg-amber-400 px-1.5 text-xs text-white">{{ drafts }}</span>
           </button>
         </div>
         <div v-if="levels.length" class="flex flex-wrap gap-2">
-          <button v-if="isManager" class="btn-secondary" type="button" @click="newDocument('INVENTORY')">Novo inventario</button>
-          <button class="btn-secondary" type="button" @click="newDocument('WASTE')">Nova quebra</button>
-          <button v-if="isManager && otherWarehouses.length" class="btn-secondary" type="button" @click="newDocument('TRANSFER')">Nova transferencia</button>
-          <button v-if="isManager && suppliers.length" class="btn-secondary" type="button" @click="newDocument('RETURN')">Nova devolucao</button>
+          <button v-if="isManager" class="btn-secondary" type="button" @click="newDocument('INVENTORY')">{{ t('stock.newInventory') }}</button>
+          <button class="btn-secondary" type="button" @click="newDocument('WASTE')">{{ t('stock.newWaste') }}</button>
+          <button v-if="isManager && otherWarehouses.length" class="btn-secondary" type="button" @click="newDocument('TRANSFER')">{{ t('stock.newTransfer') }}</button>
+          <button v-if="isManager && suppliers.length" class="btn-secondary" type="button" @click="newDocument('RETURN')">{{ t('stock.newReturn') }}</button>
         </div>
       </div>
 
       <template v-if="tab === 'levels'">
         <div class="flex flex-wrap items-center gap-4 text-sm">
-          <label class="flex items-center gap-2"><input v-model="onlyLow" type="checkbox" />So abaixo do minimo</label>
-          <span class="text-slate-600">Valor em stock (custo medio): <strong>{{ formatMoney(stockValue, hotels.currency) }}</strong></span>
+          <label class="flex items-center gap-2"><input v-model="onlyLow" type="checkbox" />{{ t('stock.onlyLow') }}</label>
+          <span class="text-slate-600">{{ t('stock.value') }} <strong>{{ formatMoney(stockValue, hotels.currency) }}</strong></span>
           <span class="ml-auto flex gap-3 text-xs">
-            <button class="text-indigo-600 hover:underline" type="button" @click="previewCountSheet(false)">Folha de contagem</button>
-            <button v-if="isManager" class="text-indigo-600 hover:underline" type="button" @click="previewCountSheet(true)">Folha com quantidades</button>
+            <button class="text-indigo-600 hover:underline" type="button" @click="previewCountSheet(false)">{{ t('stock.countSheet') }}</button>
+            <button v-if="isManager" class="text-indigo-600 hover:underline" type="button" @click="previewCountSheet(true)">{{ t('stock.countSheetQty') }}</button>
           </span>
         </div>
 
         <div v-if="history" class="card overflow-x-auto p-0">
           <div class="flex items-center justify-between px-4 pt-4">
-            <h2 class="font-semibold">Historico · {{ history.product.name }}</h2>
-            <button class="text-sm text-slate-500 hover:underline" type="button" @click="history = null">Fechar</button>
+            <h2 class="font-semibold">{{ t('stock.history') }} · {{ history.product.name }}</h2>
+            <button class="text-sm text-slate-500 hover:underline" type="button" @click="history = null">{{ t('common.close') }}</button>
           </div>
           <div v-if="history.product.trackExpiry" class="flex flex-wrap gap-2 px-4 pt-3 text-xs">
-            <span class="text-slate-500">Lotes:</span>
+            <span class="text-slate-500">{{ t('stock.lots') }}</span>
             <span v-for="lot in history.lots" :key="lot.id" class="rounded-full bg-slate-100 px-2 py-0.5" :class="expiryClass(lot)">
-              {{ lot.code ?? 'sem lote' }} · {{ lot.expiryDate ? formatDate(lot.expiryDate) : 'sem validade' }} · {{ qty(lot.quantity) }} {{ history.product.unit }}
+              {{ lot.code ?? t('stock.noLot') }} · {{ lot.expiryDate ? formatDate(lot.expiryDate) : t('stock.noExpiry') }} · {{ qty(lot.quantity) }} {{ history.product.unit }}
             </span>
-            <span v-if="!history.lots.length" class="text-slate-400">sem lotes em stock</span>
+            <span v-if="!history.lots.length" class="text-slate-400">{{ t('stock.noLots') }}</span>
           </div>
           <table class="w-full text-left text-sm">
             <thead class="border-b border-slate-200 text-slate-600">
               <tr>
-                <th class="px-4 py-2">Data</th>
-                <th class="px-4 py-2">Tipo</th>
-                <th class="px-4 py-2">Documento</th>
-                <th class="px-4 py-2 text-right">Qtd</th>
-                <th class="px-4 py-2 text-right">Saldo</th>
-                <th class="px-4 py-2">Utilizador</th>
+                <th class="px-4 py-2">{{ t('common.date') }}</th>
+                <th class="px-4 py-2">{{ t('rooms.type') }}</th>
+                <th class="px-4 py-2">{{ t('guest.document') }}</th>
+                <th class="px-4 py-2 text-right">{{ t('folio.qty') }}</th>
+                <th class="px-4 py-2 text-right">{{ t('folio.balance') }}</th>
+                <th class="px-4 py-2">{{ t('stock.user') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -310,7 +305,7 @@ onMounted(load);
                 <td class="px-4 py-2 text-slate-500">{{ m.createdBy?.name ?? '-' }}</td>
               </tr>
               <tr v-if="!history.movements.length">
-                <td colspan="6" class="px-4 py-6 text-center text-slate-500">Sem movimentos neste armazem</td>
+                <td colspan="6" class="px-4 py-6 text-center text-slate-500">{{ t('stock.noMovements') }}</td>
               </tr>
             </tbody>
           </table>
@@ -320,10 +315,10 @@ onMounted(load);
           <table class="w-full text-left text-sm">
             <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
               <tr>
-                <th class="px-4 py-3">Produto</th>
-                <th class="px-4 py-3 text-right">Quantidade</th>
-                <th class="px-4 py-3 text-right">Minimo</th>
-                <th class="px-4 py-3 text-right">Custo medio</th>
+                <th class="px-4 py-3">{{ t('common.product') }}</th>
+                <th class="px-4 py-3 text-right">{{ t('common.quantity') }}</th>
+                <th class="px-4 py-3 text-right">{{ t('stock.minimum') }}</th>
+                <th class="px-4 py-3 text-right">{{ t('stock.averageCost') }}</th>
                 <th class="px-4 py-3"></th>
               </tr>
             </thead>
@@ -334,11 +329,11 @@ onMounted(load);
                 <td class="px-4 py-3 text-right">{{ qty(row.minStock) }}</td>
                 <td class="px-4 py-3 text-right">{{ formatMoney(row.cost, hotels.currency) }}</td>
                 <td class="px-4 py-3 text-right text-xs">
-                  <button class="text-indigo-600 hover:underline" type="button" @click="openHistory(row)">Historico</button>
+                  <button class="text-indigo-600 hover:underline" type="button" @click="openHistory(row)">{{ t('stock.history') }}</button>
                 </td>
               </tr>
               <tr v-if="!shown.length">
-                <td colspan="5" class="px-4 py-6 text-center text-slate-500">Sem produtos com controlo de stock</td>
+                <td colspan="5" class="px-4 py-6 text-center text-slate-500">{{ t('stock.noProducts') }}</td>
               </tr>
             </tbody>
           </table>
@@ -348,29 +343,29 @@ onMounted(load);
       <template v-else>
         <form v-if="form.open" class="card space-y-3" @submit.prevent="saveDocument(false)">
           <h2 class="font-semibold">
-            {{ editingDocument ? `Editar ${docNumber(editingDocument)}` : `Novo documento de ${TYPE_LABELS[form.type].toLowerCase()}` }}
+            {{ editingDocument ? t('stock.editDocument', { number: docNumber(editingDocument) }) : t('stock.newDocument', { type: TYPE_LABELS[form.type].toLowerCase() }) }}
             <span class="font-normal text-slate-500">· {{ warehouses.find((w) => w.id === warehouseId)?.name }}</span>
           </h2>
           <div class="grid gap-3 sm:grid-cols-3">
             <select v-if="form.type === 'TRANSFER'" v-model.number="form.toWarehouseId" class="input" required>
-              <option v-for="w in otherWarehouses" :key="w.id" :value="w.id">Para {{ w.name }}</option>
+              <option v-for="w in otherWarehouses" :key="w.id" :value="w.id">{{ t('stock.toWarehouse', { name: w.name }) }}</option>
             </select>
             <select v-if="form.type === 'RETURN'" v-model.number="form.supplierId" class="input" required>
-              <option v-for="s in suppliers" :key="s.id" :value="s.id">Devolver a {{ s.name }}</option>
+              <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ t('stock.returnTo', { name: s.name }) }}</option>
             </select>
             <input
               v-model="form.reason"
               class="input"
               :class="form.type === 'TRANSFER' || form.type === 'RETURN' ? 'sm:col-span-2' : 'sm:col-span-3'"
-              :placeholder="form.type === 'WASTE' ? 'Motivo da quebra' : form.type === 'RETURN' ? 'Motivo da devolucao' : 'Observacao (opcional)'"
+              :placeholder="form.type === 'WASTE' ? t('stock.wasteReason') : form.type === 'RETURN' ? t('stock.returnReason') : t('stock.observation')"
               :required="form.type === 'WASTE' || form.type === 'RETURN'"
               maxlength="200"
             />
           </div>
           <div class="grid grid-cols-[1fr_90px_110px_32px] gap-2 text-xs text-slate-500">
-            <span>Produto</span>
-            <span class="text-right">{{ form.type === 'INVENTORY' ? 'Atual' : 'Disponivel' }}</span>
-            <span>{{ form.type === 'INVENTORY' ? 'Contado' : 'Quantidade' }}</span>
+            <span>{{ t('common.product') }}</span>
+            <span class="text-right">{{ form.type === 'INVENTORY' ? t('stock.current') : t('stock.available') }}</span>
+            <span>{{ form.type === 'INVENTORY' ? t('stock.counted') : t('common.quantity') }}</span>
             <span></span>
           </div>
           <div v-for="(line, index) in form.items" :key="index" class="grid grid-cols-[1fr_90px_110px_32px] items-center gap-2">
@@ -387,26 +382,26 @@ onMounted(load);
               :min="form.type === 'INVENTORY' ? 0 : 0.001"
               step="0.001"
               required
-              aria-label="Quantidade"
+              :aria-label="t('common.quantity')"
             />
-            <button class="text-rose-600" type="button" :disabled="form.items.length === 1" aria-label="Remover linha" @click="form.items.splice(index, 1)">
+            <button class="text-rose-600" type="button" :disabled="form.items.length === 1" :aria-label="t('common.removeLine')" @click="form.items.splice(index, 1)">
               &times;
             </button>
           </div>
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <button class="text-sm text-indigo-600 hover:underline" type="button" :disabled="form.items.length >= levels.length" @click="addLine">+ linha</button>
+            <button class="text-sm text-indigo-600 hover:underline" type="button" :disabled="form.items.length >= levels.length" @click="addLine">{{ t('common.addLine') }}</button>
             <span class="text-sm text-slate-500">{{ form.items.length }} produto(s)</span>
           </div>
           <div class="flex flex-wrap justify-end gap-2">
-            <button class="btn-secondary" type="button" @click="form.open = false">Fechar</button>
-            <button class="btn-secondary" type="submit" :disabled="busy">Guardar rascunho</button>
-            <button class="btn" type="button" :disabled="busy" @click="saveDocument(true)">Guardar e lancar</button>
+            <button class="btn-secondary" type="button" @click="form.open = false">{{ t('common.close') }}</button>
+            <button class="btn-secondary" type="submit" :disabled="busy">{{ t('stock.saveDraft') }}</button>
+            <button class="btn" type="button" :disabled="busy" @click="saveDocument(true)">{{ t('stock.savePost') }}</button>
           </div>
         </form>
 
         <div class="flex flex-wrap items-center gap-2 text-sm">
           <select v-model="typeFilter" class="input w-auto">
-            <option value="">Todos os tipos</option>
+            <option value="">{{ t('stock.allTypes') }}</option>
             <option v-for="(label, key) in TYPE_LABELS" :key="key" :value="key">{{ label }}</option>
           </select>
         </div>
@@ -415,12 +410,12 @@ onMounted(load);
           <table class="w-full text-left text-sm">
             <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
               <tr>
-                <th class="px-4 py-3">Data</th>
-                <th class="px-4 py-3">Documento</th>
-                <th class="px-4 py-3">Armazem</th>
-                <th class="px-4 py-3">Produtos</th>
-                <th class="px-4 py-3">Motivo</th>
-                <th class="px-4 py-3">Estado</th>
+                <th class="px-4 py-3">{{ t('common.date') }}</th>
+                <th class="px-4 py-3">{{ t('guest.document') }}</th>
+                <th class="px-4 py-3">{{ t('stock.warehouse') }}</th>
+                <th class="px-4 py-3">{{ t('stock.products') }}</th>
+                <th class="px-4 py-3">{{ t('common.reason') }}</th>
+                <th class="px-4 py-3">{{ t('common.status') }}</th>
                 <th class="px-4 py-3"></th>
               </tr>
             </thead>
@@ -445,9 +440,9 @@ onMounted(load);
                     <button class="text-slate-600 hover:underline" type="button" @click="previewDocument(d, 'A4')">PDF</button>
                     <button class="text-slate-600 hover:underline" type="button" @click="previewDocument(d, 'MM80')">80 mm</button>
                     <template v-if="d.status === 'DRAFT' && (isManager || d.type === 'WASTE')">
-                      <button class="text-indigo-600 hover:underline" type="button" @click="editDocument(d)">Editar</button>
-                      <button class="font-semibold text-emerald-700 hover:underline" type="button" @click="postDocument(d)">Lancar</button>
-                      <button class="text-rose-600 hover:underline" type="button" @click="cancelDocument(d)">Cancelar</button>
+                      <button class="text-indigo-600 hover:underline" type="button" @click="editDocument(d)">{{ t('common.edit') }}</button>
+                      <button class="font-semibold text-emerald-700 hover:underline" type="button" @click="postDocument(d)">{{ t('stock.post') }}</button>
+                      <button class="text-rose-600 hover:underline" type="button" @click="cancelDocument(d)">{{ t('common.cancel') }}</button>
                     </template>
                   </td>
                 </tr>
@@ -456,13 +451,13 @@ onMounted(load);
                     <table class="w-full text-sm">
                       <thead class="text-xs text-slate-500">
                         <tr>
-                          <th class="py-1 text-left">Produto</th>
+                          <th class="py-1 text-left">{{ t('common.product') }}</th>
                           <template v-if="d.type === 'INVENTORY'">
-                            <th class="py-1 text-right">Antes</th>
-                            <th class="py-1 text-right">Contado</th>
-                            <th class="py-1 text-right">Diferenca</th>
+                            <th class="py-1 text-right">{{ t('stock.before') }}</th>
+                            <th class="py-1 text-right">{{ t('stock.counted') }}</th>
+                            <th class="py-1 text-right">{{ t('stock.difference') }}</th>
                           </template>
-                          <th v-else class="py-1 text-right">Quantidade</th>
+                          <th v-else class="py-1 text-right">{{ t('common.quantity') }}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -483,13 +478,13 @@ onMounted(load);
                       </tbody>
                     </table>
                     <p class="mt-2 text-xs text-slate-500">
-                      Criado em {{ formatDateTime(d.createdAt) }}{{ d.createdBy ? ` por ${d.createdBy.name}` : '' }}{{ d.postedAt ? ` · lancado em ${formatDateTime(d.postedAt)}` : '' }}
+                      {{ t('stock.createdAt', { date: formatDateTime(d.createdAt) }) }}{{ d.createdBy ? ` ${t('stock.by', { name: d.createdBy.name })}` : '' }}{{ d.postedAt ? ` · ${t('stock.postedAt', { date: formatDateTime(d.postedAt) })}` : '' }}
                     </p>
                   </td>
                 </tr>
               </template>
               <tr v-if="!filteredDocuments.length">
-                <td colspan="7" class="px-4 py-6 text-center text-slate-500">Sem documentos neste armazem</td>
+                <td colspan="7" class="px-4 py-6 text-center text-slate-500">{{ t('stock.noDocuments') }}</td>
               </tr>
             </tbody>
           </table>

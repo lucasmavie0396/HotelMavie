@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { translated } from '@/i18n';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
 import { previewPdfFrom } from '@/services/print';
 import type { PaperWidth, Product, Purchase, PurchaseSuggestion, Supplier, Warehouse } from '@/types';
 import { formatDateTime, formatMoney } from '@/utils/format';
 
-const STATUS_LABELS: Record<Purchase['status'], string> = { DRAFT: 'Rascunho', PARTIAL: 'Recebida em parte', RECEIVED: 'Recebida', CANCELLED: 'Cancelada' };
+const STATUS_LABELS = translated<Purchase['status']>('purchases.statuses', ['DRAFT', 'PARTIAL', 'RECEIVED', 'CANCELLED']);
 const STATUS_CLASSES: Record<Purchase['status'], string> = {
   DRAFT: 'bg-amber-100 text-amber-800',
   PARTIAL: 'bg-sky-100 text-sky-800',
@@ -15,6 +17,7 @@ const STATUS_CLASSES: Record<Purchase['status'], string> = {
   CANCELLED: 'bg-slate-100 text-slate-500',
 };
 
+const { t } = useI18n();
 const hotels = useHotelsStore();
 const tab = ref<'purchases' | 'suppliers'>('purchases');
 const purchases = ref<Purchase[]>([]);
@@ -157,22 +160,22 @@ const confirmReception = () =>
 
 const closePurchase = (item: Purchase) =>
   run(async () => {
-    if (window.confirm('Dar a compra por concluida? O que falta receber deixa de ficar pendente.')) {
+    if (window.confirm(t('purchases.confirmClose'))) {
       await api.post(`/purchases/${item.id}/close`);
     }
   });
 
 const sendPurchase = (item: Purchase) =>
   run(async () => {
-    if (!window.confirm(`Enviar a encomenda por email para ${item.supplier.email}?`)) return;
+    if (!window.confirm(t('purchases.confirmSend', { to: item.supplier.email }))) return;
     const { data } = await api.post<{ status: string; to: string; error?: string }>(`/purchases/${item.id}/send`);
-    if (data.status === 'FAILED') throw new Error(`Falha no envio: ${data.error ?? 'erro desconhecido'}`);
-    notice.value = data.status === 'LOGGED' ? `Email registado para ${data.to} (sem SMTP configurado, nao saiu)` : `Encomenda enviada para ${data.to}`;
+    if (data.status === 'FAILED') throw new Error(t('purchases.sendFailed', { error: data.error ?? '-' }));
+    notice.value = data.status === 'LOGGED' ? t('purchases.sendLogged', { to: data.to }) : t('purchases.sent', { to: data.to });
   });
 
 async function previewPurchase(item: Purchase, paper: PaperWidth) {
   try {
-    await previewPdfFrom(`/purchases/${item.id}/pdf`, { paper }, `Nota de encomenda ${purchaseNumber(item)}`, paper);
+    await previewPdfFrom(`/purchases/${item.id}/pdf`, { paper }, t('purchases.orderNote', { number: purchaseNumber(item) }), paper);
   } catch (e) {
     error.value = errorMessage(e);
   }
@@ -209,12 +212,12 @@ const createFromSuggestions = () =>
       });
     }
     suggest.open = false;
-    notice.value = `${bySupplier.size} rascunho(s) de compra criados`;
+    notice.value = t('purchases.draftsCreated', { n: bySupplier.size });
   });
 
 const cancel = (item: Purchase) =>
   run(async () => {
-    if (window.confirm('Cancelar esta compra?')) {
+    if (window.confirm(t('purchases.confirmCancel'))) {
       await api.post(`/purchases/${item.id}/cancel`);
     }
   });
@@ -238,13 +241,13 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <PageHeader section="purchases" subtitle="Encomendas a fornecedores e rececao de mercadoria">
+    <PageHeader section="purchases" :subtitle="t('purchases.subtitle')">
       <div class="flex rounded-lg bg-white p-0.5 text-sm text-slate-700 shadow">
         <button type="button" class="rounded px-4 py-1.5" :class="tab === 'purchases' ? 'bg-indigo-600 text-white' : ''" @click="tab = 'purchases'">
-          Encomendas
+          {{ t('purchases.orders') }}
         </button>
         <button type="button" class="rounded px-4 py-1.5" :class="tab === 'suppliers' ? 'bg-indigo-600 text-white' : ''" @click="tab = 'suppliers'">
-          Fornecedores
+          {{ t('purchases.suppliers') }}
         </button>
       </div>
     </PageHeader>
@@ -257,38 +260,38 @@ onMounted(load);
         Para registar compras precisas de pelo menos um fornecedor, um armazem e um produto com controlo de stock.
       </p>
       <div v-else-if="!showForm" class="flex flex-wrap gap-2">
-        <button class="btn" type="button" @click="newPurchase">Nova compra</button>
-        <button class="btn-secondary" type="button" @click="loadSuggestions">Sugestoes de encomenda</button>
+        <button class="btn" type="button" @click="newPurchase">{{ t('purchases.new') }}</button>
+        <button class="btn-secondary" type="button" @click="loadSuggestions">{{ t('purchases.suggestions') }}</button>
       </div>
 
       <div v-if="suggest.open" class="card space-y-3">
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <h2 class="font-semibold">Sugestoes de encomenda</h2>
+          <h2 class="font-semibold">{{ t('purchases.suggestions') }}</h2>
           <div class="flex items-center gap-2">
             <select v-model.number="suggest.warehouseId" class="input w-auto" @change="loadSuggestions">
               <option v-for="w in warehouses" :key="w.id" :value="w.id">{{ w.name }}</option>
             </select>
-            <button class="text-sm text-slate-500 hover:underline" type="button" @click="suggest.open = false">Fechar</button>
+            <button class="text-sm text-slate-500 hover:underline" type="button" @click="suggest.open = false">{{ t('common.close') }}</button>
           </div>
         </div>
-        <p class="text-xs text-slate-500">Produtos abaixo do minimo. A quantidade sugerida repoe o dobro do minimo, descontando o que ja esta encomendado.</p>
+        <p class="text-xs text-slate-500">{{ t('purchases.suggestionsHint') }}</p>
         <div class="overflow-x-auto">
           <table class="w-full text-left text-sm">
             <thead class="border-b border-slate-200 text-slate-600">
               <tr>
                 <th class="py-2"></th>
-                <th class="py-2">Produto</th>
-                <th class="py-2 text-right">Stock</th>
-                <th class="py-2 text-right">Minimo</th>
-                <th class="py-2 text-right">Encomendado</th>
-                <th class="py-2">Encomendar</th>
-                <th class="py-2">Custo</th>
-                <th class="py-2">Fornecedor</th>
+                <th class="py-2">{{ t('common.product') }}</th>
+                <th class="py-2 text-right">{{ t('products.stock') }}</th>
+                <th class="py-2 text-right">{{ t('stock.minimum') }}</th>
+                <th class="py-2 text-right">{{ t('purchases.ordered') }}</th>
+                <th class="py-2">{{ t('purchases.order') }}</th>
+                <th class="py-2">{{ t('products.cost') }}</th>
+                <th class="py-2">{{ t('purchases.supplier') }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="row in suggest.rows" :key="row.productId" class="border-b border-slate-100">
-                <td class="py-2 pr-2"><input v-model="row.selected" type="checkbox" :aria-label="`Incluir ${row.name}`" /></td>
+                <td class="py-2 pr-2"><input v-model="row.selected" type="checkbox" :aria-label="t('purchases.include', { name: row.name })" /></td>
                 <td class="py-2 font-medium">{{ row.name }}</td>
                 <td class="py-2 text-right text-rose-700">{{ qty(row.quantity) }} {{ row.unit }}</td>
                 <td class="py-2 text-right">{{ qty(row.minStock) }}</td>
@@ -302,33 +305,33 @@ onMounted(load);
                 </td>
               </tr>
               <tr v-if="!suggest.rows.length">
-                <td colspan="8" class="py-6 text-center text-slate-500">Nada a encomendar neste armazem</td>
+                <td colspan="8" class="py-6 text-center text-slate-500">{{ t('purchases.nothing') }}</td>
               </tr>
             </tbody>
           </table>
         </div>
         <div class="flex justify-end">
-          <button class="btn" type="button" :disabled="busy || !suggest.rows.some((r) => r.selected)" @click="createFromSuggestions">Criar rascunhos por fornecedor</button>
+          <button class="btn" type="button" :disabled="busy || !suggest.rows.some((r) => r.selected)" @click="createFromSuggestions">{{ t('purchases.createDrafts') }}</button>
         </div>
       </div>
 
       <form v-if="reception" class="card space-y-3" @submit.prevent="confirmReception">
-        <h2 class="font-semibold">Rececao · {{ purchaseNumber(reception.purchase) }} · {{ reception.purchase.supplier.name }}</h2>
-        <p class="text-xs text-slate-500">Indica o que chegou. O que ficar por receber mantem a compra aberta (recebida em parte).</p>
+        <h2 class="font-semibold">{{ t('purchases.reception') }} · {{ purchaseNumber(reception.purchase) }} · {{ reception.purchase.supplier.name }}</h2>
+        <p class="text-xs text-slate-500">{{ t('purchases.receptionHint') }}</p>
         <div v-for="line in reception.lines" :key="line.itemId" class="grid items-center gap-2 sm:grid-cols-[1fr_110px_120px_150px]">
           <span class="text-sm">
             <span class="font-medium">{{ line.name }}</span>
-            <span class="block text-xs text-slate-500">faltam {{ qty(line.remaining) }} {{ line.unit }}</span>
+            <span class="block text-xs text-slate-500">{{ t('purchases.remaining', { n: qty(line.remaining), unit: line.unit }) }}</span>
           </span>
-          <input v-model.number="line.quantity" class="input" type="number" min="0" :max="line.remaining" step="0.001" aria-label="Quantidade recebida" />
+          <input v-model.number="line.quantity" class="input" type="number" min="0" :max="line.remaining" step="0.001" :aria-label="t('purchases.receivedQty')" />
           <template v-if="line.trackExpiry">
-            <input v-model="line.lot" class="input" placeholder="Lote" maxlength="40" />
-            <input v-model="line.expiryDate" class="input" type="date" aria-label="Validade" />
+            <input v-model="line.lot" class="input" :placeholder="t('purchases.lot')" maxlength="40" />
+            <input v-model="line.expiryDate" class="input" type="date" :aria-label="t('purchases.expiry')" />
           </template>
         </div>
         <div class="flex justify-end gap-2">
-          <button class="btn-secondary" type="button" @click="reception = null">Cancelar</button>
-          <button class="btn" type="submit" :disabled="busy">Dar entrada em stock</button>
+          <button class="btn-secondary" type="button" @click="reception = null">{{ t('common.cancel') }}</button>
+          <button class="btn" type="submit" :disabled="busy">{{ t('purchases.receiveStock') }}</button>
         </div>
       </form>
 
@@ -338,17 +341,17 @@ onMounted(load);
             <option v-for="s in suppliers.filter((x) => x.active)" :key="s.id" :value="s.id">{{ s.name }}</option>
           </select>
           <select v-model.number="purchase.warehouseId" class="input" required>
-            <option v-for="w in warehouses" :key="w.id" :value="w.id">Entrada em {{ w.name }}</option>
+            <option v-for="w in warehouses" :key="w.id" :value="w.id">{{ t('purchases.into', { name: w.name }) }}</option>
           </select>
-          <input v-model="purchase.supplierRef" class="input" placeholder="N.o da fatura do fornecedor" />
+          <input v-model="purchase.supplierRef" class="input" :placeholder="t('purchases.supplierRef')" />
         </div>
         <div v-for="(line, index) in purchase.items" :key="index" class="grid grid-cols-[1fr_100px_120px_32px] items-center gap-2">
           <select v-model.number="line.productId" class="input" @change="onProductChange(line)">
             <option v-for="p in products" :key="p.id" :value="p.id">{{ p.name }} ({{ p.unit }})</option>
           </select>
-          <input v-model.number="line.quantity" class="input" type="number" min="0.001" step="0.001" aria-label="Quantidade" />
-          <input v-model.number="line.unitCost" class="input" type="number" min="0" step="0.0001" aria-label="Custo unitario" />
-          <button class="text-rose-600" type="button" :disabled="purchase.items.length === 1" aria-label="Remover linha" @click="purchase.items.splice(index, 1)">
+          <input v-model.number="line.quantity" class="input" type="number" min="0.001" step="0.001" :aria-label="t('common.quantity')" />
+          <input v-model.number="line.unitCost" class="input" type="number" min="0" step="0.0001" :aria-label="t('purchases.unitCost')" />
+          <button class="text-rose-600" type="button" :disabled="purchase.items.length === 1" :aria-label="t('common.removeLine')" @click="purchase.items.splice(index, 1)">
             &times;
           </button>
         </div>
@@ -358,13 +361,13 @@ onMounted(load);
             type="button"
             @click="purchase.items.push({ productId: products[0].id, quantity: 1, unitCost: Number(products[0].cost) })"
           >
-            + linha
+            {{ t('common.addLine') }}
           </button>
-          <span class="font-semibold">Total {{ money(draftTotal) }}</span>
+          <span class="font-semibold">{{ t('common.total') }} {{ money(draftTotal) }}</span>
         </div>
         <div class="flex justify-end gap-2">
-          <button class="btn-secondary" type="button" @click="showForm = false">Cancelar</button>
-          <button class="btn" type="submit" :disabled="busy">Guardar rascunho</button>
+          <button class="btn-secondary" type="button" @click="showForm = false">{{ t('common.cancel') }}</button>
+          <button class="btn" type="submit" :disabled="busy">{{ t('stock.saveDraft') }}</button>
         </div>
       </form>
 
@@ -372,14 +375,14 @@ onMounted(load);
         <table class="w-full text-left text-sm">
           <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
             <tr>
-              <th class="px-4 py-3">Data</th>
+              <th class="px-4 py-3">{{ t('common.date') }}</th>
               <th class="px-4 py-3">N.o</th>
-              <th class="px-4 py-3">Fornecedor</th>
-              <th class="px-4 py-3">Ref.</th>
-              <th class="px-4 py-3">Armazem</th>
-              <th class="px-4 py-3">Produtos</th>
-              <th class="px-4 py-3 text-right">Total</th>
-              <th class="px-4 py-3">Estado</th>
+              <th class="px-4 py-3">{{ t('purchases.supplier') }}</th>
+              <th class="px-4 py-3">{{ t('purchases.ref') }}</th>
+              <th class="px-4 py-3">{{ t('stock.warehouse') }}</th>
+              <th class="px-4 py-3">{{ t('stock.products') }}</th>
+              <th class="px-4 py-3 text-right">{{ t('common.total') }}</th>
+              <th class="px-4 py-3">{{ t('common.status') }}</th>
               <th class="px-4 py-3"></th>
             </tr>
           </thead>
@@ -388,14 +391,14 @@ onMounted(load);
               <td class="px-4 py-3 whitespace-nowrap">{{ formatDateTime(item.orderedAt) }}</td>
               <td class="px-4 py-3 whitespace-nowrap">
                 {{ purchaseNumber(item) }}
-                <span v-if="item.sentAt" class="block text-xs text-slate-500">enviada {{ formatDateTime(item.sentAt) }}</span>
+                <span v-if="item.sentAt" class="block text-xs text-slate-500">{{ t('purchases.sentAt', { date: formatDateTime(item.sentAt) }) }}</span>
               </td>
               <td class="px-4 py-3 font-medium">{{ item.supplier.name }}</td>
               <td class="px-4 py-3">{{ item.supplierRef ?? '-' }}</td>
               <td class="px-4 py-3">{{ item.warehouse.name }}</td>
               <td class="px-4 py-3 text-slate-600">
                 <span v-for="(line, index) in item.items" :key="line.id">
-                  {{ index ? ', ' : '' }}{{ qty(line.quantity) }} {{ line.product.name }}<template v-if="item.status === 'PARTIAL'"> ({{ qty(line.receivedQuantity) }} recebido)</template>
+                  {{ index ? ', ' : '' }}{{ qty(line.quantity) }} {{ line.product.name }}<template v-if="item.status === 'PARTIAL'"> ({{ t('purchases.received', { n: qty(line.receivedQuantity) }) }})</template>
                 </span>
               </td>
               <td class="px-4 py-3 text-right">{{ money(item.total) }}</td>
@@ -411,21 +414,21 @@ onMounted(load);
                   type="button"
                   @click="sendPurchase(item)"
                 >
-                  Enviar
+                  {{ t('purchases.send') }}
                 </button>
                 <template v-if="item.status === 'DRAFT'">
-                  <button class="text-indigo-600 hover:underline" type="button" @click="editPurchase(item)">Editar</button>
-                  <button class="font-semibold text-emerald-700 hover:underline" type="button" @click="startReception(item)">Receber</button>
-                  <button class="text-rose-600 hover:underline" type="button" @click="cancel(item)">Cancelar</button>
+                  <button class="text-indigo-600 hover:underline" type="button" @click="editPurchase(item)">{{ t('common.edit') }}</button>
+                  <button class="font-semibold text-emerald-700 hover:underline" type="button" @click="startReception(item)">{{ t('roomAccount.receive') }}</button>
+                  <button class="text-rose-600 hover:underline" type="button" @click="cancel(item)">{{ t('common.cancel') }}</button>
                 </template>
                 <template v-if="item.status === 'PARTIAL'">
-                  <button class="font-semibold text-emerald-700 hover:underline" type="button" @click="startReception(item)">Receber resto</button>
-                  <button class="text-slate-600 hover:underline" type="button" @click="closePurchase(item)">Concluir</button>
+                  <button class="font-semibold text-emerald-700 hover:underline" type="button" @click="startReception(item)">{{ t('purchases.receiveRest') }}</button>
+                  <button class="text-slate-600 hover:underline" type="button" @click="closePurchase(item)">{{ t('purchases.complete') }}</button>
                 </template>
               </td>
             </tr>
             <tr v-if="!purchases.length">
-              <td colspan="9" class="px-4 py-6 text-center text-slate-500">Sem compras</td>
+              <td colspan="9" class="px-4 py-6 text-center text-slate-500">{{ t('purchases.empty') }}</td>
             </tr>
           </tbody>
         </table>
@@ -434,16 +437,16 @@ onMounted(load);
 
     <template v-else>
       <form class="card grid gap-3 sm:grid-cols-5" @submit.prevent="addSupplier">
-        <input v-model="supplier.name" class="input sm:col-span-2" placeholder="Nome" required />
-        <input v-model="supplier.taxId" class="input" placeholder="NIF" />
-        <input v-model="supplier.email" class="input" type="email" placeholder="Email" />
-        <input v-model="supplier.phone" class="input" placeholder="Telefone" />
-        <button class="btn sm:col-span-5 sm:justify-self-end" type="submit" :disabled="busy">Adicionar fornecedor</button>
+        <input v-model="supplier.name" class="input sm:col-span-2" :placeholder="t('common.name')" required />
+        <input v-model="supplier.taxId" class="input" :placeholder="t('purchases.taxId')" />
+        <input v-model="supplier.email" class="input" type="email" :placeholder="t('common.email')" />
+        <input v-model="supplier.phone" class="input" :placeholder="t('common.phone')" />
+        <button class="btn sm:col-span-5 sm:justify-self-end" type="submit" :disabled="busy">{{ t('purchases.addSupplier') }}</button>
       </form>
       <div class="card overflow-x-auto p-0">
         <table class="w-full text-left text-sm">
           <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
-            <tr><th class="px-4 py-3">Nome</th><th class="px-4 py-3">NIF</th><th class="px-4 py-3">Contacto</th><th class="px-4 py-3"></th></tr>
+            <tr><th class="px-4 py-3">{{ t('common.name') }}</th><th class="px-4 py-3">{{ t('purchases.taxId') }}</th><th class="px-4 py-3">{{ t('purchases.contact') }}</th><th class="px-4 py-3"></th></tr>
           </thead>
           <tbody>
             <tr v-for="item in suppliers" :key="item.id" class="border-b border-slate-100" :class="item.active ? '' : 'text-slate-400'">
@@ -452,7 +455,7 @@ onMounted(load);
               <td class="px-4 py-3">{{ [item.email, item.phone].filter(Boolean).join(' · ') || '-' }}</td>
               <td class="px-4 py-3 text-right">
                 <button class="text-xs text-indigo-600 hover:underline" type="button" @click="toggleSupplier(item)">
-                  {{ item.active ? 'Desativar' : 'Ativar' }}
+                  {{ item.active ? t('purchases.deactivate') : t('purchases.activate') }}
                 </button>
               </td>
             </tr>
