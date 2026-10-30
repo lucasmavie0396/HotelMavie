@@ -65,7 +65,7 @@ export class ReportRenderService {
   private async logo(hotel: Hotel) {
     if (!hotel.logoFile) return null;
     try {
-      return (await this.uploads.read(hotel.logoFile)).bytes;
+      return await this.uploads.readForPdf(hotel.logoFile);
     } catch {
       return null;
     }

@@ -9,6 +9,7 @@ import { BlockList, isIP, LookupFunction } from 'node:net';
 import { existsSync, mkdirSync } from 'node:fs';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import sharp from 'sharp';
 import { Public } from '../common/decorators/public.decorator';
 
 export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -127,9 +128,28 @@ export function detectImage(bytes: Buffer) {
   return null;
 }
 
+const MAX_IMAGE_SIZE = 1600;
+const PDF_IMAGE_SIZE = 600;
+
+export async function optimizeImage(bytes: Buffer, kind: ImageKind, size = MAX_IMAGE_SIZE) {
+  try {
+    const image = sharp(bytes, { failOn: 'error' }).rotate().resize({ width: size, height: size, fit: 'inside', withoutEnlargement: true });
+    const output =
+      kind === 'png'
+        ? await image.png({ compressionLevel: 9, palette: true, quality: 90 }).toBuffer()
+        : kind === 'jpg'
+          ? await image.jpeg({ quality: 82, mozjpeg: true }).toBuffer()
+          : await image.webp({ quality: 82 }).toBuffer();
+    return output.length < bytes.length ? output : bytes;
+  } catch {
+    return bytes;
+  }
+}
+
 @Injectable()
 export class UploadsService {
   readonly dir: string;
+  private readonly pdfCache = new Map<string, Buffer>();
 
   constructor(config: ConfigService) {
     this.dir = resolve(config.get<string>('UPLOAD_DIR') || 'uploads');
@@ -152,8 +172,19 @@ export class UploadsService {
       throw new BadRequestException(`Formato de imagem nao suportado (aceites: ${allowed.map((item) => item.toUpperCase()).join(', ')})`);
     }
     const file = `${randomBytes(16).toString('hex')}.${kind}`;
-    await writeFile(join(this.dir, file), bytes);
+    await writeFile(join(this.dir, file), await optimizeImage(bytes, kind));
     return file;
+  }
+
+  async readForPdf(file: string) {
+    const cached = this.pdfCache.get(file);
+    if (cached) return cached;
+    const { bytes } = await this.read(file);
+    const kind = detectImage(bytes);
+    const small = kind === 'png' || kind === 'jpg' ? await optimizeImage(bytes, kind, PDF_IMAGE_SIZE) : bytes;
+    if (this.pdfCache.size >= 50) this.pdfCache.delete(this.pdfCache.keys().next().value!);
+    this.pdfCache.set(file, small);
+    return small;
   }
 
   async remove(file: string | null | undefined) {

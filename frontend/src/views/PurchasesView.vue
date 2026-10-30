@@ -185,7 +185,7 @@ async function loadSuggestions() {
     const { data } = await api.get<PurchaseSuggestion[]>('/purchases/suggestions', { params: { hotelId: hotels.selectedId, warehouseId: suggest.warehouseId } });
     suggest.rows = data.map((row) => ({
       ...row,
-      selected: Boolean(row.supplier),
+      selected: Boolean(row.supplier ?? suppliers.value.some((s) => s.active)),
       order: Number(row.suggested),
       supplierId: row.supplier?.id ?? suppliers.value.find((s) => s.active)?.id ?? 0,
       cost: Number(row.unitCost),

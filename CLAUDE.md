@@ -57,6 +57,7 @@ npm --prefix backend run test:e2e
 npm --prefix frontend install
 npm --prefix frontend run dev
 npm --prefix frontend run build
+npm --prefix frontend run test:ui
 
 docker compose up -d --build
 docker compose exec backend npm run db:seed
@@ -134,6 +135,8 @@ docker compose exec backend npm run db:seed
 - Unitários em `src/**/*.spec.ts`; e2e em `backend/test/*.e2e-spec.ts` contra a app real e uma base de dados própria (`<DATABASE_URL>_test` ou `TEST_DATABASE_URL`), apagada e recriada com `migrate deploy` em cada execução. O setup recusa qualquer base cujo nome não termine em `_test`.
 - Cada teste cria o seu próprio hotel (`test/helpers.ts`), por isso os testes não dependem uns dos outros.
 - Qualquer alteração a reservas, faturação, caixa, POS ou stocks tem de manter `npm --prefix backend run test:e2e` verde; acrescentar um teste para cada regra nova.
+- Testes de interface (Playwright) em `frontend/e2e/`: exigem `backend` e `frontend` compilados; `backend/scripts/ui-test-server.mjs` recria a base `<DATABASE_URL>_ui_test` com dados fixos (gestor `gestor-ui@teste.local`, impressoras em modo PDF) e arranca a API na porta 3100 a servir o `frontend/dist`.
+- Imagens carregadas passam pelo `sharp` (máximo 1600 px, recomprimidas); os PDFs usam uma versão de 600 px do logotipo (`UploadsService.readForPdf`).
 - Concorrência: usar `SELECT ... FOR UPDATE` e ler os valores bloqueados na própria consulta (em REPEATABLE READ uma leitura normal depois do lock pode devolver dados antigos). Nunca usar `this.prisma` dentro de um `$transaction` (esgota o pool de ligações); preparar o que for preciso antes da transação.
 
 Regras de negócio a manter: preços são sempre com IVA incluído (base calculada na fatura); documentos emitidos nunca se alteram nem apagam (corrige-se com nota de crédito); valores monetários usam `Prisma.Decimal` via `common/money.ts`.

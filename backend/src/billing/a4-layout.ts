@@ -22,7 +22,7 @@ type Doc = PDFKit.PDFDocument;
 export async function loadLogo(uploads: UploadsService, hotel: Pick<Hotel, 'logoFile'>) {
   if (!hotel.logoFile) return null;
   try {
-    return (await uploads.read(hotel.logoFile)).bytes;
+    return await uploads.readForPdf(hotel.logoFile);
   } catch {
     return null;
   }

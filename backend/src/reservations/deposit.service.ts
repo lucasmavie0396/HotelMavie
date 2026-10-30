@@ -183,7 +183,7 @@ export class DepositService {
 
   async render(reservation: DepositReservation) {
     const { hotel, guest } = reservation;
-    const logo = hotel.logoFile ? await this.uploads.read(hotel.logoFile).then((file) => file.bytes).catch(() => null) : null;
+    const logo = hotel.logoFile ? await this.uploads.readForPdf(hotel.logoFile).catch(() => null) : null;
     const timeZone = process.env.AT_TIMEZONE ?? 'Europe/Lisbon';
     const money = (value: { toString(): string } | number) =>
       new Intl.NumberFormat('pt-PT', { style: 'currency', currency: hotel.currency }).format(Number(value.toString()));
