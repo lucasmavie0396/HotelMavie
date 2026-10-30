@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { UserRole } from '@prisma/client';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -83,14 +84,17 @@ describe('Fotos dos produtos', () => {
         query: { pages: { '1': { title: 'File:Cerveja.jpg', index: 1, imageinfo: [{ thumburl: 'https://upload.wikimedia.org/c.jpg', mime: 'image/jpeg', extmetadata: { LicenseShortName: { value: 'CC BY 4.0' } } }] } } },
       });
     });
+    const config = ctx.app.get(ConfigService);
+    config.set('GOOGLE_SEARCH_API_KEY', '');
+    config.set('GOOGLE_SEARCH_CX', '');
     try {
       await ctx.http().get('/api/products/image-search?q=cerveja').set(reception).expect(403);
 
       const wiki = await ctx.http().get('/api/products/image-search?q=cerveja').set(manager).expect(200);
       expect(wiki.body).toMatchObject({ provider: 'wikimedia', results: [{ title: 'Cerveja', url: 'https://upload.wikimedia.org/c.jpg', thumb: 'https://upload.wikimedia.org/c.jpg', license: 'CC BY 4.0' }] });
 
-      process.env.GOOGLE_SEARCH_API_KEY = 'chave-teste';
-      process.env.GOOGLE_SEARCH_CX = 'motor-teste';
+      config.set('GOOGLE_SEARCH_API_KEY', 'chave-teste');
+      config.set('GOOGLE_SEARCH_CX', 'motor-teste');
       calls.length = 0;
       const google = await ctx.http().get('/api/products/image-search?q=cerveja 2M').set(manager).expect(200);
       expect(google.body.provider).toBe('google');
@@ -106,8 +110,8 @@ describe('Fotos dos produtos', () => {
       const failed = await ctx.http().get('/api/products/image-search?q=erro').set(manager).expect(502);
       expect(failed.body.message).toContain('Quota exceeded');
     } finally {
-      delete process.env.GOOGLE_SEARCH_API_KEY;
-      delete process.env.GOOGLE_SEARCH_CX;
+      config.set('GOOGLE_SEARCH_API_KEY', '');
+      config.set('GOOGLE_SEARCH_CX', '');
       fetchMock.mockRestore();
     }
   });

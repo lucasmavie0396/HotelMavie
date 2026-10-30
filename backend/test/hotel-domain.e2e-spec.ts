@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { UserRole } from '@prisma/client';
 import { domainVariants, normalizeDomain, siteTarget } from '../src/hotels/domains';
 import { createApp, createHotel, createUser, login, TestContext, uid } from './helpers';
@@ -49,7 +50,8 @@ describe('Dominio proprio do hotel', () => {
     await ctx.http().get(`/api/hotels/${hotel.id}/domain-check`).set(admin).expect(400);
     await ctx.http().patch(`/api/hotels/${hotel.id}`).set(admin).send({ customDomain: `hotel-${uid()}.invalid` }).expect(200);
 
-    process.env.SITE_DNS_TARGET = '203.0.113.10';
+    const config = ctx.app.get(ConfigService);
+    config.set('SITE_DNS_TARGET', '203.0.113.10');
     try {
       const check = await ctx.http().get(`/api/hotels/${hotel.id}/domain-check`).set(admin).expect(200);
       expect(check.body).toMatchObject({ target: '203.0.113.10', ok: false });
@@ -60,7 +62,7 @@ describe('Dominio proprio do hotel', () => {
       expect(check.body.records.every((record: { exists: boolean }) => !record.exists)).toBe(true);
       await ctx.http().patch(`/api/hotels/${hotel.id}`).set(admin).send({ customDomain: '203.0.113.10' }).expect(400);
     } finally {
-      delete process.env.SITE_DNS_TARGET;
+      config.set('SITE_DNS_TARGET', '');
     }
     await ctx.http().get(`/api/hotels/${hotel.id}/domain-check`).set(manager).expect(403);
   });
