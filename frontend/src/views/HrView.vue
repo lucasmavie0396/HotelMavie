@@ -2,34 +2,30 @@
 import PageHeader from '@/components/PageHeader.vue';
 import PayrollPanel from '@/components/PayrollPanel.vue';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { translated } from '@/i18n';
 import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
 import type { ContractType, Employee, MonthlyRow, Shift, TimeEntry } from '@/types';
 import { addDays, formatDateTime, todayIso, toIsoDate } from '@/utils/format';
 
-const CONTRACTS: Record<ContractType, string> = {
-  PERMANENT: 'Sem termo',
-  FIXED_TERM: 'A termo',
-  PART_TIME: 'Tempo parcial',
-  INTERN: 'Estagio',
-  OTHER: 'Outro',
-};
-const WEEKDAYS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'];
+const CONTRACTS = translated<ContractType>('hr.contracts', ['PERMANENT', 'FIXED_TERM', 'PART_TIME', 'INTERN', 'OTHER']);
 
+const { t } = useI18n();
 const auth = useAuthStore();
 const hotels = useHotelsStore();
 const isManager = computed(() => auth.user?.role !== 'RECEPTION');
 type Tab = 'clock' | 'schedule' | 'employees' | 'monthly' | 'payroll';
 const tab = ref<Tab>('clock');
 const tabs = computed<{ value: Tab; label: string }[]>(() => [
-  { value: 'clock', label: 'Ponto' },
-  { value: 'schedule', label: 'Escala' },
+  { value: 'clock', label: t('hr.tabs.clock') },
+  { value: 'schedule', label: t('hr.tabs.schedule') },
   ...(isManager.value
     ? ([
-        { value: 'employees', label: 'Funcionarios' },
-        { value: 'monthly', label: 'Mapa mensal' },
-        { value: 'payroll', label: 'Salarios' },
+        { value: 'employees', label: t('hr.tabs.employees') },
+        { value: 'monthly', label: t('hr.tabs.monthly') },
+        { value: 'payroll', label: t('hr.tabs.payroll') },
       ] as const)
     : []),
 ]);
@@ -122,18 +118,18 @@ const clock = (employeeId?: number) =>
   run(async () => {
     const { data } = await api.post<TimeEntry>('/hr/clock', employeeId ? { employeeId } : {});
     await loadClock();
-    notice.value = data.clockOut ? 'Saida registada' : 'Entrada registada';
+    notice.value = data.clockOut ? t('hr.clockedOut') : t('hr.clockedIn');
   });
 
 async function fixEntry(entry: TimeEntry) {
-  const clockOut = window.prompt('Hora de saida (AAAA-MM-DD HH:mm):', entry.clockOut ? formatLocal(entry.clockOut) : `${todayIso()} 18:00`);
+  const clockOut = window.prompt(t('hr.promptClockOut'), entry.clockOut ? formatLocal(entry.clockOut) : `${todayIso()} 18:00`);
   if (!clockOut) return;
-  const notes = window.prompt('Motivo da correcao:');
+  const notes = window.prompt(t('hr.promptReason'));
   if (!notes) return;
   await run(async () => {
     await api.patch(`/hr/time-entries/${entry.id}`, { clockOut: new Date(clockOut.replace(' ', 'T')).toISOString(), notes });
     await loadClock();
-  }, 'Picagem corrigida');
+  }, t('hr.entryFixed'));
 }
 
 function formatLocal(iso: string) {
@@ -154,11 +150,11 @@ const addShift = () =>
   run(async () => {
     await api.post('/hr/shifts', shiftForm);
     await loadShifts();
-  }, 'Turno criado');
+  }, t('hr.shiftCreated'));
 
 const removeShift = (shift: Shift) =>
   run(async () => {
-    if (!window.confirm(`Apagar o turno ${shift.startTime}-${shift.endTime} de ${shift.employee.fullName}?`)) return;
+    if (!window.confirm(t('hr.confirmShiftDelete', { from: shift.startTime, to: shift.endTime, name: shift.employee.fullName }))) return;
     await api.delete(`/hr/shifts/${shift.id}`);
     await loadShifts();
   });
@@ -167,7 +163,7 @@ const copyWeek = () =>
   run(async () => {
     const { data } = await api.post('/hr/shifts/copy-week', { hotelId: hotels.selectedId, fromWeek: addDays(weekStart.value, -7), toWeek: weekStart.value });
     await loadShifts();
-    notice.value = `${data.copied} turnos copiados da semana anterior`;
+    notice.value = t('hr.weekCopied', { n: data.copied });
   });
 
 function editEmployee(employee: Employee) {
@@ -218,18 +214,18 @@ const saveEmployee = () =>
     }
     resetEmployee();
     await loadEmployees();
-  }, 'Ficha guardada');
+  }, t('hr.employeeSaved'));
 
 function exportMonthly() {
   const rows = [
-    ['Funcionario', 'Funcao', 'Turnos', 'Horas previstas', 'Dias trabalhados', 'Horas trabalhadas', 'Diferenca', 'Picagens abertas', 'Picagens corrigidas'],
+    ['employee', 'jobTitle', 'shifts', 'scheduledHours', 'workedDays', 'workedHours', 'difference', 'openEntries', 'editedEntries'].map((key) => t(`hr.csv.${key}`)),
     ...monthly.value.map((r) => [r.fullName, r.jobTitle, r.scheduledShifts, hours(r.scheduledMinutes), r.workedDays, hours(r.workedMinutes), hours(r.differenceMinutes), r.openEntries, r.editedEntries]),
   ];
   const csv = rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(';')).join('\r\n');
   const url = URL.createObjectURL(new Blob([`﻿${csv}`], { type: 'text/csv;charset=utf-8' }));
   const link = document.createElement('a');
   link.href = url;
-  link.download = `mapa-horas-${month.value}.csv`;
+  link.download = `${t('hr.csvFile')}-${month.value}.csv`;
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -243,7 +239,7 @@ onBeforeUnmount(() => clearInterval(timer));
 
 <template>
   <section class="space-y-6">
-    <PageHeader section="hr" subtitle="Fichas, escalas, ponto e mapa mensal">
+    <PageHeader section="hr" :subtitle="t('hr.subtitle')">
       <div class="flex rounded-lg bg-white p-0.5 text-sm shadow">
         <button
           v-for="item in tabs"
@@ -266,49 +262,49 @@ onBeforeUnmount(() => clearInterval(timer));
         <div v-if="clockStatus.employee">
           <p class="text-lg font-semibold">{{ clockStatus.employee.fullName }}</p>
           <p class="text-sm text-slate-600">
-            {{ clockStatus.open ? `Em servico desde ${formatDateTime(clockStatus.open.clockIn)} (${elapsed(clockStatus.open.clockIn)})` : 'Fora de servico' }}
+            {{ clockStatus.open ? t('hr.onDutySince', { date: formatDateTime(clockStatus.open.clockIn), elapsed: elapsed(clockStatus.open.clockIn) }) : t('hr.offDuty') }}
           </p>
         </div>
-        <p v-else class="text-sm text-slate-500">A tua conta nao esta ligada a uma ficha de funcionario. Pede a um gestor para a associar.</p>
+        <p v-else class="text-sm text-slate-500">{{ t('hr.noEmployee') }}</p>
         <button v-if="clockStatus.employee" class="btn px-8 py-3 text-base" type="button" :disabled="busy" @click="clock()">
-          {{ clockStatus.open ? 'Picar saida' : 'Picar entrada' }}
+          {{ clockStatus.open ? t('hr.clockOut') : t('hr.clockIn') }}
         </button>
       </div>
 
       <div v-if="isManager" class="card flex flex-wrap items-end gap-2">
         <label class="text-sm">
-          Picar por outro funcionario
+          {{ t('hr.clockForOther') }}
           <select v-model.number="clockFor" class="input">
-            <option :value="0" disabled>Escolher...</option>
+            <option :value="0" disabled>{{ t('hr.choose') }}</option>
             <option v-for="e in activeEmployees" :key="e.id" :value="e.id">{{ e.fullName }}</option>
           </select>
         </label>
-        <button class="btn-secondary" type="button" :disabled="!clockFor || busy" @click="clock(clockFor)">Picar entrada / saida</button>
+        <button class="btn-secondary" type="button" :disabled="!clockFor || busy" @click="clock(clockFor)">{{ t('hr.clockInOut') }}</button>
       </div>
 
       <div class="card overflow-x-auto p-0">
-        <h2 class="px-4 pt-4 font-semibold">Ultimos 7 dias</h2>
+        <h2 class="px-4 pt-4 font-semibold">{{ t('hr.last7') }}</h2>
         <table class="w-full text-left text-sm">
           <thead class="border-b border-slate-200 text-slate-600">
-            <tr><th class="px-4 py-2">Funcionario</th><th class="px-4 py-2">Entrada</th><th class="px-4 py-2">Saida</th><th class="px-4 py-2">Duracao</th><th class="px-4 py-2">Notas</th><th></th></tr>
+            <tr><th class="px-4 py-2">{{ t('hr.employee') }}</th><th class="px-4 py-2">{{ t('hr.in') }}</th><th class="px-4 py-2">{{ t('hr.out') }}</th><th class="px-4 py-2">{{ t('hr.duration') }}</th><th class="px-4 py-2">{{ t('common.notes') }}</th><th></th></tr>
           </thead>
           <tbody>
             <tr v-for="entry in entries" :key="entry.id" class="border-b border-slate-100">
-              <td class="px-4 py-2">{{ entry.employee.fullName }} <span v-if="entry.source === 'MANAGER'" class="text-xs text-slate-500">(gestor)</span></td>
+              <td class="px-4 py-2">{{ entry.employee.fullName }} <span v-if="entry.source === 'MANAGER'" class="text-xs text-slate-500">({{ t('hr.byManager') }})</span></td>
               <td class="px-4 py-2">{{ formatDateTime(entry.clockIn) }}</td>
-              <td class="px-4 py-2">{{ entry.clockOut ? formatDateTime(entry.clockOut) : 'em servico' }}</td>
+              <td class="px-4 py-2">{{ entry.clockOut ? formatDateTime(entry.clockOut) : t('hr.onDuty') }}</td>
               <td class="px-4 py-2">
                 {{ entry.clockOut ? hours(Math.round((new Date(entry.clockOut).getTime() - new Date(entry.clockIn).getTime()) / 60000)) : elapsed(entry.clockIn) }}
               </td>
               <td class="px-4 py-2 text-slate-500">
                 {{ entry.notes }}
-                <span v-if="entry.editedBy" class="text-xs">(corrigido por {{ entry.editedBy.name }})</span>
+                <span v-if="entry.editedBy" class="text-xs">({{ t('hr.fixedBy', { name: entry.editedBy.name }) }})</span>
               </td>
               <td class="px-4 py-2 text-right">
-                <button v-if="isManager" class="text-xs text-indigo-600 hover:underline" type="button" @click="fixEntry(entry)">Corrigir</button>
+                <button v-if="isManager" class="text-xs text-indigo-600 hover:underline" type="button" @click="fixEntry(entry)">{{ t('hr.fix') }}</button>
               </td>
             </tr>
-            <tr v-if="!entries.length"><td colspan="6" class="px-4 py-4 text-center text-slate-500">Sem picagens</td></tr>
+            <tr v-if="!entries.length"><td colspan="6" class="px-4 py-4 text-center text-slate-500">{{ t('hr.noEntries') }}</td></tr>
           </tbody>
         </table>
       </div>
@@ -318,34 +314,34 @@ onBeforeUnmount(() => clearInterval(timer));
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="flex items-center gap-2">
           <button class="btn-secondary" type="button" @click="moveWeek(-7)">&larr;</button>
-          <span class="text-sm font-medium">Semana de {{ weekDays[0].split('-').reverse().join('/') }}</span>
+          <span class="text-sm font-medium">{{ t('hr.weekOf') }} {{ weekDays[0].split('-').reverse().join('/') }}</span>
           <button class="btn-secondary" type="button" @click="moveWeek(7)">&rarr;</button>
         </div>
-        <button v-if="isManager" class="btn-secondary" type="button" :disabled="busy" @click="copyWeek">Copiar semana anterior</button>
+        <button v-if="isManager" class="btn-secondary" type="button" :disabled="busy" @click="copyWeek">{{ t('hr.copyWeek') }}</button>
       </div>
 
       <form v-if="isManager" class="card grid gap-3 sm:grid-cols-2 xl:grid-cols-6" @submit.prevent="addShift">
         <select v-model.number="shiftForm.employeeId" class="input xl:col-span-2" required>
-          <option :value="0" disabled>Funcionario</option>
+          <option :value="0" disabled>{{ t('hr.employee') }}</option>
           <option v-for="e in activeEmployees" :key="e.id" :value="e.id">{{ e.fullName }}</option>
         </select>
         <input v-model="shiftForm.date" class="input" type="date" required />
         <div class="flex min-w-0 items-center gap-1">
-          <input v-model="shiftForm.startTime" class="input min-w-0" type="time" aria-label="Inicio" required />
+          <input v-model="shiftForm.startTime" class="input min-w-0" type="time" :aria-label="t('hr.start')" required />
           <span class="text-slate-400">-</span>
-          <input v-model="shiftForm.endTime" class="input min-w-0" type="time" aria-label="Fim" required />
+          <input v-model="shiftForm.endTime" class="input min-w-0" type="time" :aria-label="t('hr.end')" required />
         </div>
-        <label class="flex items-center gap-1 text-sm">Pausa <input v-model.number="shiftForm.breakMinutes" class="input w-20" type="number" min="0" max="240" /> min</label>
-        <button class="btn" type="submit" :disabled="busy || !shiftForm.employeeId">Adicionar turno</button>
+        <label class="flex items-center gap-1 text-sm">{{ t('hr.break') }} <input v-model.number="shiftForm.breakMinutes" class="input w-20" type="number" min="0" max="240" /> min</label>
+        <button class="btn" type="submit" :disabled="busy || !shiftForm.employeeId">{{ t('hr.addShift') }}</button>
       </form>
 
       <div class="card overflow-x-auto p-0">
         <table class="w-full table-fixed text-xs">
           <thead class="bg-slate-50 text-slate-600">
             <tr>
-              <th class="w-40 px-3 py-2 text-left">Funcionario</th>
+              <th class="w-40 px-3 py-2 text-left">{{ t('hr.employee') }}</th>
               <th v-for="(date, i) in weekDays" :key="date" class="px-2 py-2" :class="date === todayIso() ? 'text-indigo-700' : ''">
-                {{ WEEKDAYS[i] }} {{ date.slice(8) }}/{{ date.slice(5, 7) }}
+                {{ t(`labels.weekdays[${i}]`) }} {{ date.slice(8) }}/{{ date.slice(5, 7) }}
               </th>
             </tr>
           </thead>
@@ -355,11 +351,11 @@ onBeforeUnmount(() => clearInterval(timer));
               <td v-for="date in weekDays" :key="date" class="px-1 py-1">
                 <div v-for="shift in shiftsOn(employee.id, date)" :key="shift.id" class="mb-1 flex items-center justify-between rounded bg-indigo-50 px-1.5 py-1 text-indigo-900">
                   <span>{{ shift.startTime }}-{{ shift.endTime }}</span>
-                  <button v-if="isManager" class="text-rose-600" type="button" aria-label="Apagar turno" @click="removeShift(shift)">&times;</button>
+                  <button v-if="isManager" class="text-rose-600" type="button" :aria-label="t('hr.deleteShift')" @click="removeShift(shift)">&times;</button>
                 </div>
               </td>
             </tr>
-            <tr v-if="!activeEmployees.length"><td colspan="8" class="px-3 py-4 text-center text-slate-500">Sem funcionarios ativos</td></tr>
+            <tr v-if="!activeEmployees.length"><td colspan="8" class="px-3 py-4 text-center text-slate-500">{{ t('hr.noActive') }}</td></tr>
           </tbody>
         </table>
       </div>
@@ -367,45 +363,45 @@ onBeforeUnmount(() => clearInterval(timer));
 
     <template v-if="tab === 'employees'">
       <form class="card grid gap-3 sm:grid-cols-3" @submit.prevent="saveEmployee">
-        <h2 class="font-semibold sm:col-span-3">{{ editingEmployee ? 'Editar ficha' : 'Nova ficha de funcionario' }}</h2>
-        <input v-model="employeeForm.fullName" class="input" placeholder="Nome completo" required />
-        <input v-model="employeeForm.jobTitle" class="input" placeholder="Funcao (ex.: Rececionista)" required />
-        <input v-model="employeeForm.department" class="input" placeholder="Departamento" />
+        <h2 class="font-semibold sm:col-span-3">{{ editingEmployee ? t('hr.editEmployee') : t('hr.newEmployee') }}</h2>
+        <input v-model="employeeForm.fullName" class="input" :placeholder="t('hr.fullName')" required />
+        <input v-model="employeeForm.jobTitle" class="input" :placeholder="t('hr.jobTitleExample')" required />
+        <input v-model="employeeForm.department" class="input" :placeholder="t('hr.department')" />
         <input v-model="employeeForm.email" class="input" type="email" placeholder="Email" />
-        <input v-model="employeeForm.phone" class="input" placeholder="Telefone" />
-        <input v-model="employeeForm.taxId" class="input" placeholder="NIF" />
-        <input v-model="employeeForm.socialSecurityNumber" class="input" placeholder="N.o Seguranca Social" />
+        <input v-model="employeeForm.phone" class="input" :placeholder="t('common.phone')" />
+        <input v-model="employeeForm.taxId" class="input" :placeholder="t('purchases.taxId')" />
+        <input v-model="employeeForm.socialSecurityNumber" class="input" :placeholder="t('hr.ssn')" />
         <input v-model="employeeForm.iban" class="input sm:col-span-2" placeholder="IBAN" />
         <select v-model="employeeForm.contractType" class="input">
           <option v-for="(label, type) in CONTRACTS" :key="type" :value="type">{{ label }}</option>
         </select>
-        <label class="text-sm">Inicio<input v-model="employeeForm.startDate" class="input" type="date" required /></label>
-        <label class="text-sm">Fim (opcional)<input v-model="employeeForm.endDate" class="input" type="date" /></label>
-        <label class="text-sm">Horas semanais<input v-model.number="employeeForm.weeklyHours" class="input" type="number" min="1" max="80" step="0.5" /></label>
-        <label class="text-sm">Vencimento base<input v-model.number="employeeForm.baseSalary" class="input" type="number" min="0" step="0.01" /></label>
-        <label class="text-sm" title="Taxa da tabela de retencao na fonte em vigor para a situacao do trabalhador">
-          Retencao IRS (%)
+        <label class="text-sm">{{ t('hr.start') }}<input v-model="employeeForm.startDate" class="input" type="date" required /></label>
+        <label class="text-sm">{{ t('hr.endOptional') }}<input v-model="employeeForm.endDate" class="input" type="date" /></label>
+        <label class="text-sm">{{ t('hr.weeklyHours') }}<input v-model.number="employeeForm.weeklyHours" class="input" type="number" min="1" max="80" step="0.5" /></label>
+        <label class="text-sm">{{ t('hr.baseSalary') }}<input v-model.number="employeeForm.baseSalary" class="input" type="number" min="0" step="0.01" /></label>
+        <label class="text-sm" :title="t('hr.irsHint')">
+          {{ t('hr.irsRate') }}
           <input v-model.number="employeeForm.irsRate" class="input" type="number" min="0" max="60" step="0.01" />
         </label>
         <label v-if="auth.user?.role === 'ADMIN'" class="text-sm">
-          Conta de acesso (para picar o ponto)
+          {{ t('hr.account') }}
           <select v-model.number="employeeForm.userId" class="input">
-            <option :value="0">Sem conta</option>
+            <option :value="0">{{ t('hr.noAccount') }}</option>
             <option v-for="u in users.filter((x) => !x.hotelId || x.hotelId === hotels.selectedId)" :key="u.id" :value="u.id">{{ u.name }} ({{ u.email }})</option>
           </select>
         </label>
-        <label class="flex items-center gap-2 text-sm"><input v-model="employeeForm.active" type="checkbox" />Ativo</label>
-        <textarea v-model="employeeForm.notes" class="input sm:col-span-3" rows="2" placeholder="Notas" />
+        <label class="flex items-center gap-2 text-sm"><input v-model="employeeForm.active" type="checkbox" />{{ t('common.active') }}</label>
+        <textarea v-model="employeeForm.notes" class="input sm:col-span-3" rows="2" :placeholder="t('common.notes')" />
         <div class="flex justify-end gap-2 sm:col-span-3">
-          <button v-if="editingEmployee" class="btn-secondary" type="button" @click="resetEmployee">Cancelar</button>
-          <button class="btn" type="submit" :disabled="busy">Guardar</button>
+          <button v-if="editingEmployee" class="btn-secondary" type="button" @click="resetEmployee">{{ t('common.cancel') }}</button>
+          <button class="btn" type="submit" :disabled="busy">{{ t('common.save') }}</button>
         </div>
       </form>
 
       <div class="card overflow-x-auto p-0">
         <table class="w-full text-left text-sm">
           <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
-            <tr><th class="px-4 py-3">Nome</th><th class="px-4 py-3">Funcao</th><th class="px-4 py-3">Contrato</th><th class="px-4 py-3">Horas/sem.</th><th class="px-4 py-3">Conta</th><th></th></tr>
+            <tr><th class="px-4 py-3">{{ t('common.name') }}</th><th class="px-4 py-3">{{ t('hr.jobTitle') }}</th><th class="px-4 py-3">{{ t('hr.contract') }}</th><th class="px-4 py-3">{{ t('hr.hoursWeek') }}</th><th class="px-4 py-3">{{ t('hr.accountShort') }}</th><th></th></tr>
           </thead>
           <tbody>
             <tr v-for="employee in employees" :key="employee.id" class="border-b border-slate-100" :class="employee.active ? '' : 'text-slate-400'">
@@ -414,9 +410,9 @@ onBeforeUnmount(() => clearInterval(timer));
               <td class="px-4 py-3">{{ employee.contractType ? CONTRACTS[employee.contractType] : '-' }}</td>
               <td class="px-4 py-3">{{ Number(employee.weeklyHours ?? 0) }}</td>
               <td class="px-4 py-3">{{ employee.user?.email ?? '-' }}</td>
-              <td class="px-4 py-3 text-right"><button class="text-xs text-indigo-600 hover:underline" type="button" @click="editEmployee(employee)">Editar</button></td>
+              <td class="px-4 py-3 text-right"><button class="text-xs text-indigo-600 hover:underline" type="button" @click="editEmployee(employee)">{{ t('common.edit') }}</button></td>
             </tr>
-            <tr v-if="!employees.length"><td colspan="6" class="px-4 py-4 text-center text-slate-500">Sem fichas</td></tr>
+            <tr v-if="!employees.length"><td colspan="6" class="px-4 py-4 text-center text-slate-500">{{ t('hr.noEmployees') }}</td></tr>
           </tbody>
         </table>
       </div>
@@ -424,21 +420,21 @@ onBeforeUnmount(() => clearInterval(timer));
 
     <template v-if="tab === 'monthly'">
       <form class="flex flex-wrap items-end gap-2" @submit.prevent="run(loadMonthly)">
-        <label class="text-sm">Mes<input v-model="month" class="input" type="month" required /></label>
-        <button class="btn" type="submit">Atualizar</button>
-        <button class="btn-secondary" type="button" :disabled="!monthly.length" @click="exportMonthly">Exportar CSV</button>
+        <label class="text-sm">{{ t('common.month') }}<input v-model="month" class="input" type="month" required /></label>
+        <button class="btn" type="submit">{{ t('common.update') }}</button>
+        <button class="btn-secondary" type="button" :disabled="!monthly.length" @click="exportMonthly">{{ t('hr.exportCsv') }}</button>
       </form>
       <div class="card overflow-x-auto p-0">
         <table class="w-full text-left text-sm">
           <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
             <tr>
-              <th class="px-4 py-3">Funcionario</th>
-              <th class="px-4 py-3 text-right">Turnos</th>
-              <th class="px-4 py-3 text-right">Previstas</th>
-              <th class="px-4 py-3 text-right">Dias</th>
-              <th class="px-4 py-3 text-right">Trabalhadas</th>
-              <th class="px-4 py-3 text-right">Diferenca</th>
-              <th class="px-4 py-3">Alertas</th>
+              <th class="px-4 py-3">{{ t('hr.employee') }}</th>
+              <th class="px-4 py-3 text-right">{{ t('hr.csv.shifts') }}</th>
+              <th class="px-4 py-3 text-right">{{ t('hr.scheduled') }}</th>
+              <th class="px-4 py-3 text-right">{{ t('hr.days') }}</th>
+              <th class="px-4 py-3 text-right">{{ t('hr.worked') }}</th>
+              <th class="px-4 py-3 text-right">{{ t('hr.csv.difference') }}</th>
+              <th class="px-4 py-3">{{ t('hr.alerts') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -452,11 +448,11 @@ onBeforeUnmount(() => clearInterval(timer));
                 {{ hours(row.differenceMinutes) }}
               </td>
               <td class="px-4 py-3 text-xs">
-                <span v-if="row.openEntries" class="mr-2 text-rose-700">{{ row.openEntries }} sem saida</span>
-                <span v-if="row.editedEntries" class="text-slate-500">{{ row.editedEntries }} corrigidas</span>
+                <span v-if="row.openEntries" class="mr-2 text-rose-700">{{ t('hr.withoutOut', { n: row.openEntries }) }}</span>
+                <span v-if="row.editedEntries" class="text-slate-500">{{ t('hr.edited', { n: row.editedEntries }) }}</span>
               </td>
             </tr>
-            <tr v-if="!monthly.length"><td colspan="7" class="px-4 py-4 text-center text-slate-500">Sem dados para este mes</td></tr>
+            <tr v-if="!monthly.length"><td colspan="7" class="px-4 py-4 text-center text-slate-500">{{ t('hr.noMonthly') }}</td></tr>
           </tbody>
         </table>
       </div>

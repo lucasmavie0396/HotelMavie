@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
 import type { AuditLog } from '@/types';
 import { addDays, formatDateTime, todayIso } from '@/utils/format';
 
+const { t, te } = useI18n();
 const hotels = useHotelsStore();
 const logs = ref<AuditLog[]>([]);
 const actions = ref<Record<string, string>>({});
@@ -46,25 +48,27 @@ async function load() {
   }
 }
 
+const actionLabel = (key: string, fallback: string) => (te(`audit.actions.${key}`) ? t(`audit.actions.${key}`) : fallback);
+
 onMounted(load);
 </script>
 
 <template>
   <section class="space-y-6">
-    <PageHeader section="audit" subtitle="Quem alterou precos, anulou artigos, fez estornos, notas de credito e alteracoes de seguranca" />
+    <PageHeader section="audit" :subtitle="t('audit.subtitle')" />
 
     <form class="card flex flex-wrap items-end gap-3 text-sm" @submit.prevent="load">
-      <label>De<input v-model="filters.from" class="input" type="date" required /></label>
-      <label>Ate<input v-model="filters.to" class="input" type="date" required /></label>
+      <label>{{ t('common.from') }}<input v-model="filters.from" class="input" type="date" required /></label>
+      <label>{{ t('common.to') }}<input v-model="filters.to" class="input" type="date" required /></label>
       <label>
-        Acao
+        {{ t('audit.action') }}
         <select v-model="filters.action" class="input">
-          <option value="">Todas</option>
-          <option v-for="(label, key) in actions" :key="key" :value="key">{{ label }}</option>
+          <option value="">{{ t('audit.all') }}</option>
+          <option v-for="(label, key) in actions" :key="key" :value="key">{{ actionLabel(String(key), label) }}</option>
         </select>
       </label>
-      <button class="btn" type="submit" :disabled="loading">Filtrar</button>
-      <input v-model="search" class="input ml-auto w-56" placeholder="Procurar no texto ou utilizador" />
+      <button class="btn" type="submit" :disabled="loading">{{ t('common.filter') }}</button>
+      <input v-model="search" class="input ml-auto w-56" :placeholder="t('audit.search')" />
     </form>
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
@@ -73,10 +77,10 @@ onMounted(load);
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
           <tr>
-            <th class="px-4 py-3">Data</th>
-            <th class="px-4 py-3">Acao</th>
-            <th class="px-4 py-3">Detalhe</th>
-            <th class="px-4 py-3">Utilizador</th>
+            <th class="px-4 py-3">{{ t('common.date') }}</th>
+            <th class="px-4 py-3">{{ t('audit.action') }}</th>
+            <th class="px-4 py-3">{{ t('audit.detail') }}</th>
+            <th class="px-4 py-3">{{ t('audit.user') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -84,14 +88,14 @@ onMounted(load);
             <td class="px-4 py-3 whitespace-nowrap">{{ formatDateTime(log.createdAt) }}</td>
             <td class="px-4 py-3">
               <span class="rounded-full px-2 py-0.5 text-xs whitespace-nowrap" :class="ACTION_CLASSES[log.action] ?? 'bg-indigo-100 text-indigo-800'">
-                {{ actions[log.action] ?? log.action }}
+                {{ actionLabel(log.action, actions[log.action] ?? log.action) }}
               </span>
             </td>
             <td class="px-4 py-3">{{ log.summary }}</td>
-            <td class="px-4 py-3 whitespace-nowrap text-slate-600">{{ log.user?.name ?? 'Sistema' }}</td>
+            <td class="px-4 py-3 whitespace-nowrap text-slate-600">{{ log.user?.name ?? t('audit.system') }}</td>
           </tr>
           <tr v-if="!shown.length">
-            <td colspan="4" class="px-4 py-6 text-center text-slate-500">{{ loading ? 'A carregar...' : 'Sem registos no periodo' }}</td>
+            <td colspan="4" class="px-4 py-6 text-center text-slate-500">{{ loading ? t('common.loading') : t('audit.empty') }}</td>
           </tr>
         </tbody>
       </table>

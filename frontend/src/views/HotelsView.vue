@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
 import { computed, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
 import type { Hotel } from '@/types';
@@ -14,6 +15,7 @@ interface DomainCheck {
   instructions: { type: string; name: string; value: string }[];
 }
 
+const { t } = useI18n();
 const hotels = useHotelsStore();
 const error = ref('');
 const saving = ref(false);
@@ -98,49 +100,49 @@ async function verify(hotel: Hotel) {
 
 <template>
   <section class="space-y-6">
-    <PageHeader section="hotels" subtitle="Hoteis geridos e site publico de cada um" />
+    <PageHeader section="hotels" :subtitle="t('hotels.subtitle')" />
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
 
     <form class="card grid gap-3 sm:grid-cols-4" @submit.prevent="save">
-      <h2 class="font-semibold sm:col-span-4">{{ editingId ? 'Editar hotel' : 'Novo hotel' }}</h2>
-      <input v-model="form.name" class="input sm:col-span-2" placeholder="Nome do hotel" required />
-      <input v-model="form.currency" class="input" placeholder="Moeda (EUR, AOA, MZN...)" maxlength="3" required />
+      <h2 class="font-semibold sm:col-span-4">{{ editingId ? t('hotels.edit') : t('hotels.new') }}</h2>
+      <input v-model="form.name" class="input sm:col-span-2" :placeholder="t('hotels.name')" required />
+      <input v-model="form.currency" class="input" :placeholder="t('hotels.currencyHint')" maxlength="3" required />
       <input v-model="form.email" class="input" type="email" placeholder="Email" />
-      <input v-model="form.phone" class="input" placeholder="Telefone" />
-      <input v-model="form.address" class="input sm:col-span-3" placeholder="Morada" />
+      <input v-model="form.phone" class="input" :placeholder="t('common.phone')" />
+      <input v-model="form.address" class="input sm:col-span-3" :placeholder="t('hotels.address')" />
 
       <fieldset class="grid gap-3 rounded-xl bg-slate-50 p-4 ring-1 ring-slate-100 sm:col-span-4 sm:grid-cols-3">
-        <legend class="px-1 text-sm font-semibold text-slate-700">Site publico do hotel</legend>
+        <legend class="px-1 text-sm font-semibold text-slate-700">{{ t('hotels.publicSite') }}</legend>
         <label class="text-sm">
-          Endereco no sistema
+          {{ t('hotels.slug') }}
           <span class="mt-1 flex items-center rounded-lg border border-slate-300 bg-white pl-3 text-sm text-slate-500">
             /h/<input v-model="form.publicSlug" class="w-full rounded-r-lg border-0 bg-transparent px-1 py-2 text-slate-800 focus:ring-0 focus:outline-none" placeholder="hotel-mavie" />
           </span>
         </label>
         <label class="text-sm sm:col-span-2">
-          Dominio proprio (opcional)
+          {{ t('hotels.customDomainOptional') }}
           <input v-model="form.customDomain" class="input mt-1" placeholder="www.hotelmavie.co.mz" maxlength="253" />
           <span v-if="domainPreview" class="mt-1 block text-xs text-slate-500">
-            O site abre em <strong>https://{{ domainPreview }}</strong> depois de o dominio apontar para este servidor (ver Verificar DNS).
+            {{ t('hotels.opensAt') }} <strong>https://{{ domainPreview }}</strong> {{ t('hotels.afterDns') }}
           </span>
         </label>
         <label class="flex items-center gap-2 text-sm sm:col-span-3">
           <input v-model="form.publicEnabled" type="checkbox" />
-          Site publico ativo
+          {{ t('hotels.publicActive') }}
         </label>
       </fieldset>
 
       <div class="flex justify-end gap-2 sm:col-span-4">
-        <button v-if="editingId" class="btn-secondary" type="button" @click="reset">Cancelar</button>
-        <button class="btn" type="submit" :disabled="saving">{{ editingId ? 'Guardar' : 'Adicionar hotel' }}</button>
+        <button v-if="editingId" class="btn-secondary" type="button" @click="reset">{{ t('common.cancel') }}</button>
+        <button class="btn" type="submit" :disabled="saving">{{ editingId ? t('common.save') : t('hotels.add') }}</button>
       </div>
     </form>
 
     <div v-if="editing?.customDomain" class="card space-y-3">
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <h2 class="font-semibold">Dominio {{ editing.customDomain }}</h2>
-        <button class="btn-secondary" type="button" :disabled="checking" @click="verify(editing)">{{ checking ? 'A verificar...' : 'Verificar DNS' }}</button>
+        <h2 class="font-semibold">{{ t('hotels.domain') }} {{ editing.customDomain }}</h2>
+        <button class="btn-secondary" type="button" :disabled="checking" @click="verify(editing)">{{ checking ? t('hotels.checking') : t('hotels.checkDns') }}</button>
       </div>
       <template v-if="check">
         <p
@@ -148,14 +150,14 @@ async function verify(hotel: Hotel) {
           :class="!check.target ? 'bg-amber-50 text-amber-800' : check.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-800'"
         >
           <template v-if="!check.target">
-            O sistema nao sabe o endereco publico deste servidor. Defina SITE_DNS_TARGET no backend\.env (o IP publico ou o nome do servidor) e reinicie.
+            {{ t('hotels.noTarget') }}
           </template>
-          <template v-else-if="check.ok">O dominio ja aponta para este servidor ({{ check.target }}).</template>
-          <template v-else>O dominio ainda nao aponta para este servidor ({{ check.target }}). Crie estes registos no fornecedor do dominio:</template>
+          <template v-else-if="check.ok">{{ t('hotels.dnsOk', { target: check.target }) }}</template>
+          <template v-else>{{ t('hotels.dnsMissing', { target: check.target }) }}</template>
         </p>
         <table v-if="check.instructions.length" class="w-full text-left text-sm">
           <thead class="text-xs text-slate-500 uppercase">
-            <tr><th class="py-1">Tipo</th><th class="py-1">Nome</th><th class="py-1">Valor</th></tr>
+            <tr><th class="py-1">{{ t('rooms.type') }}</th><th class="py-1">{{ t('common.name') }}</th><th class="py-1">{{ t('common.value') }}</th></tr>
           </thead>
           <tbody>
             <tr v-for="item in check.instructions" :key="`${item.type}${item.name}${item.value}`" class="border-t border-slate-100">
@@ -169,12 +171,11 @@ async function verify(hotel: Hotel) {
           <li v-for="record in check.records" :key="record.name">
             <span :class="record.ok ? 'text-emerald-700' : 'text-slate-500'">{{ record.ok ? '✓' : '•' }}</span>
             <span class="font-mono">{{ record.name }}</span>:
-            {{ record.exists ? [...record.cname.map((value) => `CNAME ${value}`), ...record.a.map((value) => `A ${value}`), ...record.aaaa.map((value) => `AAAA ${value}`)].join(', ') : 'sem registos DNS' }}
+            {{ record.exists ? [...record.cname.map((value) => `CNAME ${value}`), ...record.a.map((value) => `A ${value}`), ...record.aaaa.map((value) => `AAAA ${value}`)].join(', ') : t('hotels.noRecords') }}
           </li>
         </ul>
         <p class="text-xs text-slate-500">
-          As alteracoes de DNS podem demorar ate algumas horas a propagar. Depois e preciso ativar o dominio no servidor web e o certificado HTTPS
-          (ver o guia de instalacao).
+          {{ t('hotels.dnsHint') }}
         </p>
       </template>
     </div>
@@ -183,11 +184,11 @@ async function verify(hotel: Hotel) {
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
           <tr>
-            <th class="px-4 py-3">Nome</th>
-            <th class="px-4 py-3">Moeda</th>
-            <th class="px-4 py-3">Site publico</th>
-            <th class="px-4 py-3">Dominio proprio</th>
-            <th class="px-4 py-3">Contacto</th>
+            <th class="px-4 py-3">{{ t('common.name') }}</th>
+            <th class="px-4 py-3">{{ t('hotels.currency') }}</th>
+            <th class="px-4 py-3">{{ t('hotels.publicSiteShort') }}</th>
+            <th class="px-4 py-3">{{ t('hotels.customDomain') }}</th>
+            <th class="px-4 py-3">{{ t('hotels.contact') }}</th>
             <th class="px-4 py-3"></th>
           </tr>
         </thead>
@@ -203,7 +204,7 @@ async function verify(hotel: Hotel) {
               >
                 /h/{{ hotel.publicSlug }}
               </RouterLink>
-              <span v-else class="text-slate-400">Inativo</span>
+              <span v-else class="text-slate-400">{{ t('common.inactive') }}</span>
             </td>
             <td class="px-4 py-3">
               <a v-if="hotel.customDomain" :href="`https://${hotel.customDomain}`" target="_blank" rel="noopener" class="text-indigo-600 hover:underline">
@@ -213,7 +214,7 @@ async function verify(hotel: Hotel) {
             </td>
             <td class="px-4 py-3">{{ hotel.email ?? hotel.phone ?? '-' }}</td>
             <td class="px-4 py-3 text-right">
-              <button class="text-xs text-indigo-600 hover:underline" type="button" @click="edit(hotel)">Editar</button>
+              <button class="text-xs text-indigo-600 hover:underline" type="button" @click="edit(hotel)">{{ t('common.edit') }}</button>
             </td>
           </tr>
         </tbody>

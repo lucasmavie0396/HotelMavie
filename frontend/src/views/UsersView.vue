@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
 import { onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { translated } from '@/i18n';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
 import type { BackupStatus, UserRole } from '@/types';
@@ -23,8 +25,9 @@ interface BackupFile {
   createdAt: string;
 }
 
-const ROLE_LABELS: Record<UserRole, string> = { ADMIN: 'Administrador', MANAGER: 'Gestor', RECEPTION: 'Rececao' };
+const ROLE_LABELS = translated<UserRole>('labels.role', ['ADMIN', 'MANAGER', 'RECEPTION']);
 
+const { t } = useI18n();
 const hotels = useHotelsStore();
 const users = ref<StaffUser[]>([]);
 const backups = ref<BackupFile[]>([]);
@@ -92,21 +95,21 @@ const save = () =>
       await api.post('/users', payload);
     }
     reset();
-  }, 'Utilizador guardado');
+  }, t('users.saved'));
 
-const createBackup = () => run(() => api.post('/backups'), 'Backup criado');
+const createBackup = () => run(() => api.post('/backups'), t('users.backupCreated'));
 
 const runScheduled = () =>
   run(async () => {
     const { data } = await api.post<BackupStatus['lastRun']>('/backups/run-scheduled');
     if (data && !data.ok) throw new Error(data.error);
-  }, 'Backup criado, copiado e backups antigos limpos');
+  }, t('users.backupRun'));
 
 const resetTwoFactor = (user: StaffUser) =>
   run(async () => {
-    if (!window.confirm(`Desativar o 2FA de ${user.name}? A pessoa tera de o voltar a ativar e as sessoes abertas terminam.`)) return;
+    if (!window.confirm(t('users.confirmReset2fa', { name: user.name }))) return;
     await api.post(`/users/${user.id}/2fa/reset`);
-  }, '2FA desativado');
+  }, t('users.twoFactorReset'));
 
 async function download(name: string) {
   try {
@@ -127,21 +130,21 @@ onMounted(load);
 
 <template>
   <section class="space-y-6">
-    <PageHeader section="users" title="Funcionarios e sistema" subtitle="Contas, papeis, sessoes e backups" />
+    <PageHeader section="users" :title="t('users.title')" :subtitle="t('users.subtitle')" />
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
     <p v-if="notice" class="text-sm text-emerald-700">{{ notice }}</p>
 
     <form class="card grid gap-3 sm:grid-cols-3" @submit.prevent="save">
-      <h2 class="font-semibold sm:col-span-3">{{ editingId ? 'Editar utilizador' : 'Novo utilizador' }}</h2>
-      <input v-model="form.name" class="input" placeholder="Nome" required />
+      <h2 class="font-semibold sm:col-span-3">{{ editingId ? t('users.edit') : t('users.new') }}</h2>
+      <input v-model="form.name" class="input" :placeholder="t('common.name')" required />
       <input v-model="form.email" class="input" type="email" placeholder="Email" required />
       <input
         v-model="form.password"
         class="input"
         type="password"
         autocomplete="new-password"
-        :placeholder="editingId ? 'Nova password (opcional)' : 'Password (min. 8)'"
+        :placeholder="editingId ? t('users.newPassword') : t('users.password')"
         :required="!editingId"
         minlength="8"
       />
@@ -151,13 +154,13 @@ onMounted(load);
       <select v-model.number="form.hotelId" class="input" :disabled="form.role === 'ADMIN'">
         <option v-for="hotel in hotels.hotels" :key="hotel.id" :value="hotel.id">{{ hotel.name }}</option>
       </select>
-      <label class="flex items-center gap-2 text-sm"><input v-model="form.active" type="checkbox" />Ativo</label>
+      <label class="flex items-center gap-2 text-sm"><input v-model="form.active" type="checkbox" />{{ t('common.active') }}</label>
       <p class="text-xs text-slate-500 sm:col-span-2">
-        Gestor: configuracao, compras, devolucoes e notas de credito. Rececao: operacao diaria. Mudar a password ou desativar termina as sessoes abertas.
+        {{ t('users.rolesHint') }}
       </p>
       <div class="flex justify-end gap-2">
-        <button v-if="editingId" class="btn-secondary" type="button" @click="reset">Cancelar</button>
-        <button class="btn" type="submit" :disabled="busy">Guardar</button>
+        <button v-if="editingId" class="btn-secondary" type="button" @click="reset">{{ t('common.cancel') }}</button>
+        <button class="btn" type="submit" :disabled="busy">{{ t('common.save') }}</button>
       </div>
     </form>
 
@@ -165,11 +168,11 @@ onMounted(load);
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
           <tr>
-            <th class="px-4 py-3">Nome</th>
+            <th class="px-4 py-3">{{ t('common.name') }}</th>
             <th class="px-4 py-3">Email</th>
-            <th class="px-4 py-3">Papel</th>
+            <th class="px-4 py-3">{{ t('users.role') }}</th>
             <th class="px-4 py-3">Hotel</th>
-            <th class="px-4 py-3">Estado</th>
+            <th class="px-4 py-3">{{ t('common.status') }}</th>
             <th class="px-4 py-3">2FA</th>
             <th class="px-4 py-3"></th>
           </tr>
@@ -179,16 +182,16 @@ onMounted(load);
             <td class="px-4 py-3 font-medium">{{ user.name }}</td>
             <td class="px-4 py-3">{{ user.email }}</td>
             <td class="px-4 py-3">{{ ROLE_LABELS[user.role] }}</td>
-            <td class="px-4 py-3">{{ user.hotelId ? hotels.nameOf(user.hotelId) : 'Todos' }}</td>
-            <td class="px-4 py-3">{{ user.active ? 'Ativo' : 'Inativo' }}</td>
+            <td class="px-4 py-3">{{ user.hotelId ? hotels.nameOf(user.hotelId) : t('common.all') }}</td>
+            <td class="px-4 py-3">{{ user.active ? t('common.active') : t('common.inactive') }}</td>
             <td class="px-4 py-3">
               <span class="rounded-full px-2 py-0.5 text-xs" :class="user.totpEnabled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'">
-                {{ user.totpEnabled ? 'Ativo' : 'Nao' }}
+                {{ user.totpEnabled ? t('common.active') : t('common.no') }}
               </span>
             </td>
             <td class="space-x-3 px-4 py-3 text-right whitespace-nowrap">
-              <button v-if="user.totpEnabled" class="text-xs text-rose-600 hover:underline" type="button" :disabled="busy" @click="resetTwoFactor(user)">Desativar 2FA</button>
-              <button class="text-xs text-indigo-600 hover:underline" type="button" @click="edit(user)">Editar</button>
+              <button v-if="user.totpEnabled" class="text-xs text-rose-600 hover:underline" type="button" :disabled="busy" @click="resetTwoFactor(user)">{{ t('users.reset2fa') }}</button>
+              <button class="text-xs text-indigo-600 hover:underline" type="button" @click="edit(user)">{{ t('common.edit') }}</button>
             </td>
           </tr>
         </tbody>
@@ -197,34 +200,33 @@ onMounted(load);
 
     <div class="card space-y-3">
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <h2 class="font-semibold">Backups da base de dados</h2>
-        <button class="btn" type="button" :disabled="busy" @click="createBackup">Criar backup agora</button>
+        <h2 class="font-semibold">{{ t('users.backups') }}</h2>
+        <button class="btn" type="button" :disabled="busy" @click="createBackup">{{ t('users.createBackup') }}</button>
       </div>
       <div v-if="backupStatus" class="rounded-xl p-3 text-sm" :class="backupStatus.enabled ? 'bg-emerald-50 text-emerald-900' : 'bg-amber-50 text-amber-900'">
         <template v-if="backupStatus.enabled">
           <p>
-            Backup automatico todos os dias as {{ String(backupStatus.hour).padStart(2, '0') }}:00, guardados {{ backupStatus.keepDays }} dias{{
-              backupStatus.copyDir ? `, com copia em ${backupStatus.copyDir}` : ' (sem pasta de copia externa: define BACKUP_COPY_DIR)'
+            {{ t('users.autoBackup', { hour: String(backupStatus.hour).padStart(2, '0'), days: backupStatus.keepDays }) }}{{
+              backupStatus.copyDir ? t('users.copyTo', { dir: backupStatus.copyDir }) : t('users.noCopy')
             }}.
           </p>
-          <p v-if="backupStatus.nextRunAt" class="text-xs">Proximo: {{ formatDateTime(backupStatus.nextRunAt) }}</p>
+          <p v-if="backupStatus.nextRunAt" class="text-xs">{{ t('users.next') }}: {{ formatDateTime(backupStatus.nextRunAt) }}</p>
           <p v-if="backupStatus.lastRun" class="text-xs" :class="backupStatus.lastRun.ok ? '' : 'font-semibold text-rose-700'">
-            Ultimo: {{ formatDateTime(backupStatus.lastRun.at) }} · {{ backupStatus.lastRun.ok ? `${backupStatus.lastRun.file}${backupStatus.lastRun.copied ? ' (copiado)' : ''}` : backupStatus.lastRun.error }}
+            {{ t('users.last') }}: {{ formatDateTime(backupStatus.lastRun.at) }} · {{ backupStatus.lastRun.ok ? `${backupStatus.lastRun.file}${backupStatus.lastRun.copied ? ` (${t('users.copied')})` : ''}` : backupStatus.lastRun.error }}
           </p>
-          <button class="mt-2 text-xs font-medium text-indigo-700 hover:underline" type="button" :disabled="busy" @click="runScheduled">Executar agora com copia e limpeza</button>
+          <button class="mt-2 text-xs font-medium text-indigo-700 hover:underline" type="button" :disabled="busy" @click="runScheduled">{{ t('users.runScheduled') }}</button>
         </template>
         <p v-else>
-          Backups automaticos desligados. No ficheiro .env do servidor define BACKUP_AUTO_HOUR (hora do dia, 0-23), BACKUP_KEEP_DAYS (dias a guardar, 14 por defeito) e
-          BACKUP_COPY_DIR (pasta fora do servidor, por exemplo uma partilha de rede ou pasta sincronizada com a nuvem) e reinicia a API.
+          {{ t('users.autoOff') }}
         </p>
       </div>
-      <p class="text-xs text-slate-500">Os backups ficam na pasta do servidor (BACKUP_DIR).</p>
+      <p class="text-xs text-slate-500">{{ t('users.backupDir') }}</p>
       <ul class="divide-y divide-slate-100 text-sm">
         <li v-for="file in backups" :key="file.name" class="flex items-center justify-between py-2">
           <span>{{ file.name }} <span class="text-slate-500">· {{ formatDateTime(file.createdAt) }} · {{ (file.size / 1024).toFixed(0) }} KB</span></span>
-          <button class="text-xs text-indigo-600 hover:underline" type="button" @click="download(file.name)">Descarregar</button>
+          <button class="text-xs text-indigo-600 hover:underline" type="button" @click="download(file.name)">{{ t('common.download') }}</button>
         </li>
-        <li v-if="!backups.length" class="py-2 text-slate-500">Ainda nao ha backups</li>
+        <li v-if="!backups.length" class="py-2 text-slate-500">{{ t('users.noBackups') }}</li>
       </ul>
     </div>
   </section>
