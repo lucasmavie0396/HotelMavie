@@ -16,7 +16,7 @@ import {
 import { PaperWidth, UserRole } from '@prisma/client';
 import { IsEmail, IsEnum, IsIn, IsOptional } from 'class-validator';
 import { MailService } from '../mail/mail.service';
-import { invoiceEmail } from '../mail/templates';
+import { invoiceEmail, MailLang, mailLang } from '../mail/templates';
 import type { Response } from 'express';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -47,12 +47,20 @@ export class PaperQueryDto {
   @IsOptional()
   @IsIn(['ticket'])
   format?: string;
+
+  @IsOptional()
+  @IsIn(['pt', 'en'])
+  lang?: MailLang;
 }
 
 class EmailInvoiceDto {
   @IsOptional()
   @IsEmail()
   to?: string;
+
+  @IsOptional()
+  @IsIn(['pt', 'en'])
+  lang?: MailLang;
 }
 
 @Controller()
@@ -132,7 +140,13 @@ export class BillingController {
       return this.sendPdf(res, await this.tickets.render(ticket, query.paper ?? PaperWidth.MM80), invoice.fullNumber);
     }
     const hotel = await this.prisma.hotel.findUniqueOrThrow({ where: { id: invoice.hotelId } });
-    this.sendPdf(res, await this.pdf.render(invoice, hotel), invoice.fullNumber);
+    this.sendPdf(res, await this.pdf.render(invoice, hotel, query.lang ?? (await this.guestLang(invoice.reservationId))), invoice.fullNumber);
+  }
+
+  private async guestLang(reservationId: number | null) {
+    if (!reservationId) return 'pt' as const;
+    const reservation = await this.prisma.reservation.findUnique({ where: { id: reservationId }, select: { locale: true } });
+    return mailLang(reservation?.locale);
   }
 
   @Post('invoices/:id/email')
@@ -144,7 +158,8 @@ export class BillingController {
       throw new BadRequestException('O documento nao tem email do cliente: indica o destinatario');
     }
     const hotel = await this.prisma.hotel.findUniqueOrThrow({ where: { id: invoice.hotelId } });
-    const content = invoiceEmail(hotel, invoice);
+    const lang = dto.lang ?? (await this.guestLang(invoice.reservationId));
+    const content = invoiceEmail(hotel, invoice, lang);
     const log = await this.mail.send({
       hotelId: hotel.id,
       kind: 'INVOICE',
@@ -153,7 +168,7 @@ export class BillingController {
       relatedId: invoice.id,
       ...content,
       attachments: [
-        { filename: `${invoice.fullNumber.replace(/[^\w-]+/g, '-')}.pdf`, content: await this.pdf.render(invoice, hotel), contentType: 'application/pdf' },
+        { filename: `${invoice.fullNumber.replace(/[^\w-]+/g, '-')}.pdf`, content: await this.pdf.render(invoice, hotel, lang), contentType: 'application/pdf' },
       ],
     });
     if (log.status === 'FAILED') {
@@ -203,7 +218,7 @@ export class BillingController {
       return this.sendPdf(res, await this.tickets.render(ticket, query.paper ?? PaperWidth.MM80), receipt.fullNumber);
     }
     const hotel = await this.prisma.hotel.findUniqueOrThrow({ where: { id: receipt.hotelId } });
-    this.sendPdf(res, await this.pdf.renderReceipt(receipt, hotel), receipt.fullNumber);
+    this.sendPdf(res, await this.pdf.renderReceipt(receipt, hotel, query.lang ?? 'pt'), receipt.fullNumber);
   }
 
   @Get('cash-registers')

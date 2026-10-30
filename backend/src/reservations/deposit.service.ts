@@ -9,7 +9,7 @@ import { nightsBetween } from '../common/dates';
 import { canAccessHotel } from '../common/hotel-scope';
 import { toMoney } from '../common/money';
 import { MailService } from '../mail/mail.service';
-import { depositConfirmedEmail } from '../mail/templates';
+import { depositConfirmedEmail, mailLang } from '../mail/templates';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadsService } from '../uploads/uploads';
 
@@ -37,13 +37,83 @@ export class ConfirmDepositDto {
   sendEmail?: boolean;
 }
 
-const STATUS_LABELS: Record<ReservationStatus, string> = {
-  PENDING: 'Pendente',
-  CONFIRMED: 'Confirmada',
-  CHECKED_IN: 'Em casa',
-  CHECKED_OUT: 'Terminada',
-  CANCELLED: 'Cancelada',
-  NO_SHOW: 'No-show',
+const TEXT = {
+  pt: {
+    status: { PENDING: 'Pendente', CONFIRMED: 'Confirmada', CHECKED_IN: 'Em casa', CHECKED_OUT: 'Terminada', CANCELLED: 'Cancelada', NO_SHOW: 'No-show' } as Record<ReservationStatus, string>,
+    title: 'Comprovativo de sinal',
+    number: 'N.o',
+    date: 'Data',
+    booking: 'Reserva',
+    guest: 'Hospede',
+    name: 'Nome',
+    email: 'Email',
+    phone: 'Telefone',
+    taxId: 'NIF',
+    document: 'Documento',
+    stay: 'Estadia',
+    code: 'Codigo',
+    room: 'Quarto',
+    roomValue: (type: string, number: string) => `${type} (n.o ${number})`,
+    checkIn: 'Entrada',
+    checkOut: 'Saida',
+    nights: 'Noites',
+    guests: 'Hospedes',
+    guestsValue: (adults: number, children: number) => `${adults} adulto(s)${children ? `, ${children} crianca(s)` : ''}`,
+    amounts: 'Valores',
+    description: 'Descricao',
+    price: 'Preco',
+    total: 'Total',
+    lodging: (type: string) => `Alojamento ${type}`,
+    payment: 'Pagamento do sinal',
+    method: 'Forma',
+    reference: 'Referencia',
+    confirmedBy: 'Confirmado por',
+    bookingTotal: 'Total da reserva',
+    received: (percent: number) => `Sinal recebido (${percent}%)`,
+    remaining: 'Restante a pagar',
+    message: (amount: string) =>
+      `O valor restante de ${amount} sera cobrado no check-in ou no check-out, juntamente com os consumos da estadia. A fatura e emitida no check-out e inclui o valor deste sinal.`,
+    notes: 'Observacoes',
+    notice: 'Documento interno, sem valor fiscal. Nao substitui a fatura.',
+  },
+  en: {
+    status: { PENDING: 'Pending', CONFIRMED: 'Confirmed', CHECKED_IN: 'In house', CHECKED_OUT: 'Completed', CANCELLED: 'Cancelled', NO_SHOW: 'No-show' } as Record<ReservationStatus, string>,
+    title: 'Deposit receipt',
+    number: 'No.',
+    date: 'Date',
+    booking: 'Booking',
+    guest: 'Guest',
+    name: 'Name',
+    email: 'Email',
+    phone: 'Phone',
+    taxId: 'Tax no.',
+    document: 'Document',
+    stay: 'Stay',
+    code: 'Code',
+    room: 'Room',
+    roomValue: (type: string, number: string) => `${type} (no. ${number})`,
+    checkIn: 'Check-in',
+    checkOut: 'Check-out',
+    nights: 'Nights',
+    guests: 'Guests',
+    guestsValue: (adults: number, children: number) => `${adults} adult(s)${children ? `, ${children} child(ren)` : ''}`,
+    amounts: 'Amounts',
+    description: 'Description',
+    price: 'Price',
+    total: 'Total',
+    lodging: (type: string) => `Accommodation ${type}`,
+    payment: 'Deposit payment',
+    method: 'Method',
+    reference: 'Reference',
+    confirmedBy: 'Confirmed by',
+    bookingTotal: 'Booking total',
+    received: (percent: number) => `Deposit received (${percent}%)`,
+    remaining: 'Balance due',
+    message: (amount: string) =>
+      `The remaining balance of ${amount} will be charged at check-in or check-out, together with any extras. The invoice is issued at check-out and includes this deposit.`,
+    notes: 'Notes',
+    notice: 'Internal document with no tax value. It does not replace the invoice.',
+  },
 };
 
 const depositInclude = {
@@ -161,6 +231,7 @@ export class DepositService {
         depositReference: reservation.depositReference,
       },
       toMoney(reservation.totalAmount).sub(reservation.depositAmount ?? 0),
+      mailLang(reservation.locale),
     );
     return this.mail.send({
       hotelId: reservation.hotelId,
@@ -181,12 +252,13 @@ export class DepositService {
     return reservation;
   }
 
-  async render(reservation: DepositReservation) {
+  async render(reservation: DepositReservation, lang = mailLang(reservation.locale)) {
     const { hotel, guest } = reservation;
+    const text = TEXT[lang];
     const logo = hotel.logoFile ? await this.uploads.readForPdf(hotel.logoFile).catch(() => null) : null;
     const timeZone = process.env.AT_TIMEZONE ?? 'Europe/Lisbon';
     const money = (value: { toString(): string } | number) =>
-      new Intl.NumberFormat('pt-PT', { style: 'currency', currency: hotel.currency }).format(Number(value.toString()));
+      new Intl.NumberFormat(lang === 'en' ? 'en-GB' : 'pt-PT', { style: 'currency', currency: hotel.currency }).format(Number(value.toString()));
     const total = toMoney(reservation.totalAmount);
     const deposit = toMoney(reservation.depositAmount ?? 0);
     const remaining = total.sub(deposit);
@@ -197,7 +269,7 @@ export class DepositService {
       const doc = new PDFDocument({
         size: 'A4',
         margins: { top: A4.margin, bottom: 20, left: A4.margin, right: A4.margin },
-        info: { Title: `Comprovativo de sinal ${reservation.code}`, Author: hotel.name },
+        info: { Title: `${text.title} ${reservation.code}`, Author: hotel.name },
       });
       const chunks: Buffer[] = [];
       doc.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -206,52 +278,52 @@ export class DepositService {
       const left = A4.margin;
       const width = doc.page.width - A4.margin * 2;
 
-      const meta = [`N.o SN-${reservation.code}`];
-      if (reservation.depositConfirmedAt) meta.push(`Data: ${reservation.depositConfirmedAt.toLocaleString('pt-PT', { timeZone })}`);
-      meta.push(`Reserva ${STATUS_LABELS[reservation.status].toLowerCase()}`);
-      let y = drawHeader(doc, { hotel, logo, title: 'Comprovativo de sinal', meta });
+      const meta = [`${text.number} SN-${reservation.code}`];
+      if (reservation.depositConfirmedAt) meta.push(`${text.date}: ${reservation.depositConfirmedAt.toLocaleString(lang === 'en' ? 'en-GB' : 'pt-PT', { timeZone })}`);
+      meta.push(`${text.booking} ${text.status[reservation.status].toLowerCase()}`);
+      let y = drawHeader(doc, { hotel, logo, title: text.title, meta });
 
       const half = (width - 14) / 2;
-      const guestRows: [string, string][] = [['Nome', `${guest.firstName} ${guest.lastName}`]];
-      if (guest.email) guestRows.push(['Email', guest.email]);
-      if (guest.phone) guestRows.push(['Telefone', guest.phone]);
-      if (guest.taxId) guestRows.push(['NIF', guest.taxId]);
-      if (guest.documentNumber) guestRows.push(['Documento', [guest.documentType, guest.documentNumber].filter(Boolean).join(' ')]);
+      const guestRows: [string, string][] = [[text.name, `${guest.firstName} ${guest.lastName}`]];
+      if (guest.email) guestRows.push([text.email, guest.email]);
+      if (guest.phone) guestRows.push([text.phone, guest.phone]);
+      if (guest.taxId) guestRows.push([text.taxId, guest.taxId]);
+      if (guest.documentNumber) guestRows.push([text.document, [guest.documentType, guest.documentNumber].filter(Boolean).join(' ')]);
       const stayRows: [string, string][] = [
-        ['Codigo', reservation.code],
-        ['Quarto', `${reservation.room.type} (n.o ${reservation.room.number})`],
-        ['Entrada', day(reservation.checkIn)],
-        ['Saida', day(reservation.checkOut)],
-        ['Noites', String(nights)],
-        ['Hospedes', `${reservation.adults} adulto(s)${reservation.children ? `, ${reservation.children} crianca(s)` : ''}`],
+        [text.code, reservation.code],
+        [text.room, text.roomValue(reservation.room.type, reservation.room.number)],
+        [text.checkIn, day(reservation.checkIn)],
+        [text.checkOut, day(reservation.checkOut)],
+        [text.nights, String(nights)],
+        [text.guests, text.guestsValue(reservation.adults, reservation.children)],
       ];
-      y = Math.max(infoCard(doc, left, y, half, 'Hospede', guestRows), infoCard(doc, left + half + 14, y, half, 'Estadia', stayRows)) + 18;
+      y = Math.max(infoCard(doc, left, y, half, text.guest, guestRows), infoCard(doc, left + half + 14, y, half, text.stay, stayRows)) + 18;
 
-      y = sectionTitle(doc, 'Valores', left, y, width);
+      y = sectionTitle(doc, text.amounts, left, y, width);
       const columns: Column[] = [
-        { label: 'Descricao', width: width - 230 },
-        { label: 'Noites', width: 60, align: 'right' },
-        { label: 'Preco', width: 85, align: 'right' },
-        { label: 'Total', width: 85, align: 'right' },
+        { label: text.description, width: width - 230 },
+        { label: text.nights, width: 60, align: 'right' },
+        { label: text.price, width: 85, align: 'right' },
+        { label: text.total, width: 85, align: 'right' },
       ];
       y = tableHeader(doc, left, y, columns);
-      y = tableRow(doc, left, y, columns, [`Alojamento ${reservation.room.type}`, String(nights), money(reservation.pricePerNight), money(total)], 0);
+      y = tableRow(doc, left, y, columns, [text.lodging(reservation.room.type), String(nights), money(reservation.pricePerNight), money(total)], 0);
       y += 14;
 
       const paymentRows: [string, string][] = [
-        ['Forma', reservation.depositPaymentType?.name ?? '-'],
-        ['Referencia', reservation.depositReference ?? '-'],
-        ['Confirmado por', reservation.depositConfirmedBy?.name ?? '-'],
+        [text.method, reservation.depositPaymentType?.name ?? '-'],
+        [text.reference, reservation.depositReference ?? '-'],
+        [text.confirmedBy, reservation.depositConfirmedBy?.name ?? '-'],
       ];
-      const paymentBottom = infoCard(doc, left, y, half, 'Pagamento do sinal', paymentRows, 90);
+      const paymentBottom = infoCard(doc, left, y, half, text.payment, paymentRows, 90);
       const totalsBottom = totalsBox(doc, left + width - 240, y, 240, [
-        { label: 'Total da reserva', value: money(total) },
-        { label: `Sinal recebido (${percent}%)`, value: `-${money(deposit)}`, color: COLORS.good },
-        { label: 'Restante a pagar', value: money(remaining), strong: true },
+        { label: text.bookingTotal, value: money(total) },
+        { label: text.received(percent), value: `-${money(deposit)}`, color: COLORS.good },
+        { label: text.remaining, value: money(remaining), strong: true },
       ]);
       y = Math.max(paymentBottom, totalsBottom) + 18;
 
-      const message = `O valor restante de ${money(remaining)} sera cobrado no check-in ou no check-out, juntamente com os consumos da estadia. A fatura e emitida no check-out e inclui o valor deste sinal.`;
+      const message = text.message(money(remaining));
       doc.font('Helvetica').fontSize(8.5);
       const messageHeight = doc.heightOfString(message, { width: width - 24 }) + 18;
       doc.roundedRect(left, y, width, messageHeight, 8).fill(COLORS.soft);
@@ -259,7 +331,7 @@ export class DepositService {
       doc.fillColor(COLORS.text).font('Helvetica').fontSize(8.5).text(message, left + 14, y + 9, { width: width - 24 });
       y += messageHeight + 12;
       if (reservation.notes) {
-        doc.fillColor(COLORS.muted).fontSize(8).text(`Observacoes: ${reservation.notes}`, left, y, { width });
+        doc.fillColor(COLORS.muted).fontSize(8).text(`${text.notes}: ${reservation.notes}`, left, y, { width });
         y = doc.y + 8;
       }
       if (hotel.invoiceFooter) {
@@ -268,7 +340,7 @@ export class DepositService {
 
       const noticeY = doc.page.height - 52;
       doc.page.margins.bottom = 0;
-      doc.fillColor(COLORS.muted).font('Helvetica-Bold').fontSize(7.5).text('Documento interno, sem valor fiscal. Nao substitui a fatura.', left, noticeY, { width, align: 'center', lineBreak: false });
+      doc.fillColor(COLORS.muted).font('Helvetica-Bold').fontSize(7.5).text(text.notice, left, noticeY, { width, align: 'center', lineBreak: false });
       drawFooter(doc, [hotel.name, hotel.phone, hotel.email].filter(Boolean).join(' · '));
       doc.end();
     });

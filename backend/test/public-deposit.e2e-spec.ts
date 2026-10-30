@@ -133,6 +133,31 @@ describe('Site publico e sinal', () => {
     await ctx.http().post(`/api/reservations/${reservation.id}/check-out`).set(reception).expect(409);
   });
 
+  it('reserva feita em ingles: email, comprovativo, erros da API e textos do site em ingles', async () => {
+    const { hotel } = await createHotel(ctx.prisma, { depositPercent: 50 });
+    await ctx.prisma.hotel.update({ where: { id: hotel.id }, data: { publicDescriptionEn: 'Sea view hotel', paymentInstructionsEn: 'Bank transfer to IBAN X' } });
+    const slug = hotel.publicSlug;
+    const info = await ctx.http().get(`/api/public/hotels/${slug}`).expect(200);
+    expect(info.body).toMatchObject({ publicDescriptionEn: 'Sea view hotel', paymentInstructionsEn: 'Bank transfer to IBAN X' });
+
+    const payload = { checkIn: day(10), checkOut: day(12), roomType: 'Standard', adults: 2, firstName: 'John', lastName: 'Smith', email: 'john@teste.local', documentType: 'Passaporte', documentNumber: 'P1234567' };
+    const missing = await ctx.http().post(`/api/public/hotels/${slug}/reservations`).set('X-Forwarded-For', '10.77.0.1').set('X-Lang', 'en').send({ ...payload, locale: 'en' }).expect(400);
+    expect(missing.body.message).toBe('Enter the deposit payment reference (50% of the booking amount)');
+    const portuguese = await ctx.http().post(`/api/public/hotels/${slug}/reservations`).set('X-Forwarded-For', '10.77.0.1').send({ ...payload, locale: 'en' }).expect(400);
+    expect(portuguese.body.message).toContain('Indica a referencia');
+
+    const booked = await ctx.http().post(`/api/public/hotels/${slug}/reservations`).set('X-Forwarded-For', '10.77.0.1').set('X-Lang', 'en').send({ ...payload, locale: 'en', depositReference: 'TX-1', depositPaymentTypeId: info.body.paymentTypes[0].id }).expect(201);
+    const reservation = await ctx.prisma.reservation.findUniqueOrThrow({ where: { code: booked.body.code } });
+    expect(reservation.locale).toBe('en');
+    expect((await waitForLog(reservation.id, 'BOOKING_REQUEST'))?.subject).toBe(`Booking request ${booked.body.code} received - ${hotel.name}`);
+
+    const reception = await staff(hotel.id);
+    await ctx.http().post(`/api/reservations/${reservation.id}/deposit/confirm`).set(reception).send({}).expect(200);
+    expect((await ctx.prisma.emailLog.findFirst({ where: { relatedId: reservation.id, kind: 'DEPOSIT_CONFIRMED' } }))?.subject).toContain('deposit received');
+    const pdf = await ctx.http().get(`/api/reservations/${reservation.id}/deposit/pdf`).set(reception).buffer(true).expect(200);
+    expect((pdf.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
+  });
+
   it('sinal registado ao balcao, em numerario exige caixa aberta', async () => {
     const { hotel, rooms } = await createHotel(ctx.prisma, { depositPercent: 50 });
     const reception = await staff(hotel.id);

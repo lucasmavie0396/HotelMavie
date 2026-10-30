@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
 import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 
+const { t } = useI18n();
 const auth = useAuthStore();
 const route = useRoute();
 const router = useRouter();
@@ -55,7 +58,7 @@ const submitCode = () =>
 const requestReset = () =>
   attempt(async () => {
     await api.post('/auth/forgot-password', { email: email.value });
-    notice.value = 'Se o email existir, recebe uma mensagem com um link para repor a password (valido durante 60 minutos).';
+    notice.value = t('login.resetSent');
     step.value = 'password';
   });
 
@@ -67,17 +70,18 @@ function show(value: 'password' | 'forgot') {
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center px-4">
+  <div class="relative flex min-h-screen items-center justify-center px-4">
+    <LanguageSwitcher class="absolute top-4 right-4" />
     <form v-if="step === 'password'" class="card w-full max-w-sm space-y-4" @submit.prevent="submit">
-      <h1 class="text-xl font-semibold">Entrar no MAVIE-HGest</h1>
+      <h1 class="text-xl font-semibold">{{ t('login.title') }}</h1>
 
       <label class="block space-y-1">
-        <span class="text-sm font-medium">Email</span>
+        <span class="text-sm font-medium">{{ t('login.email') }}</span>
         <input v-model="email" class="input" type="email" autocomplete="username" required />
       </label>
 
       <label class="block space-y-1">
-        <span class="text-sm font-medium">Password</span>
+        <span class="text-sm font-medium">{{ t('login.password') }}</span>
         <input v-model="password" class="input" type="password" autocomplete="current-password" required />
       </label>
 
@@ -85,33 +89,33 @@ function show(value: 'password' | 'forgot') {
       <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
 
       <button class="btn w-full" type="submit" :disabled="loading">
-        {{ loading ? 'A entrar...' : 'Entrar' }}
+        {{ loading ? t('login.submitting') : t('login.submit') }}
       </button>
-      <button class="w-full text-center text-sm text-indigo-600 hover:underline" type="button" @click="show('forgot')">Esqueci-me da password</button>
+      <button class="w-full text-center text-sm text-indigo-600 hover:underline" type="button" @click="show('forgot')">{{ t('login.forgot') }}</button>
     </form>
 
     <form v-else-if="step === 'code'" class="card w-full max-w-sm space-y-4" @submit.prevent="submitCode">
-      <h1 class="text-xl font-semibold">Verificacao em dois passos</h1>
-      <p class="text-sm text-slate-600">Introduza o codigo de 6 digitos da aplicacao autenticadora, ou um codigo de recuperacao.</p>
+      <h1 class="text-xl font-semibold">{{ t('login.twoFactorTitle') }}</h1>
+      <p class="text-sm text-slate-600">{{ t('login.twoFactorText') }}</p>
       <label class="block space-y-1">
-        <span class="text-sm font-medium">Codigo</span>
+        <span class="text-sm font-medium">{{ t('login.code') }}</span>
         <input v-model="code" class="input text-center text-lg tracking-widest" inputmode="numeric" autocomplete="one-time-code" maxlength="12" required autofocus />
       </label>
       <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
-      <button class="btn w-full" type="submit" :disabled="loading">{{ loading ? 'A verificar...' : 'Confirmar' }}</button>
-      <button class="w-full text-center text-sm text-slate-500 hover:underline" type="button" @click="show('password')">Voltar</button>
+      <button class="btn w-full" type="submit" :disabled="loading">{{ loading ? t('login.verifying') : t('login.confirm') }}</button>
+      <button class="w-full text-center text-sm text-slate-500 hover:underline" type="button" @click="show('password')">{{ t('login.back') }}</button>
     </form>
 
     <form v-else class="card w-full max-w-sm space-y-4" @submit.prevent="requestReset">
-      <h1 class="text-xl font-semibold">Repor password</h1>
-      <p class="text-sm text-slate-600">Indique o email da conta. Enviamos um link para definir uma nova password.</p>
+      <h1 class="text-xl font-semibold">{{ t('login.resetTitle') }}</h1>
+      <p class="text-sm text-slate-600">{{ t('login.resetText') }}</p>
       <label class="block space-y-1">
-        <span class="text-sm font-medium">Email</span>
+        <span class="text-sm font-medium">{{ t('login.email') }}</span>
         <input v-model="email" class="input" type="email" autocomplete="username" required />
       </label>
       <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
-      <button class="btn w-full" type="submit" :disabled="loading">Enviar link</button>
-      <button class="w-full text-center text-sm text-slate-500 hover:underline" type="button" @click="show('password')">Voltar</button>
+      <button class="btn w-full" type="submit" :disabled="loading">{{ t('login.sendLink') }}</button>
+      <button class="w-full text-center text-sm text-slate-500 hover:underline" type="button" @click="show('password')">{{ t('login.back') }}</button>
     </form>
   </div>
 </template>

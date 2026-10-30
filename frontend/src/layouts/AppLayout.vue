@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
 import NotificationsBell from '@/components/NotificationsBell.vue';
 import PdfPreviewDialog from '@/components/PdfPreviewDialog.vue';
 import { useAuthStore } from '@/stores/auth';
@@ -9,6 +11,7 @@ import { fileUrl } from '@/services/files';
 import { useHotelsStore } from '@/stores/hotels';
 import { SECTIONS } from '@/utils/sections';
 
+const { t } = useI18n();
 const auth = useAuthStore();
 const hotels = useHotelsStore();
 const route = useRoute();
@@ -96,30 +99,31 @@ async function logout() {
           v-if="hotels.hotels.length > 1"
           v-model.number="hotels.selectedId"
           class="input w-auto"
-          aria-label="Hotel ativo"
+          :aria-label="t('layout.activeHotel')"
         >
           <option v-for="hotel in hotels.hotels" :key="hotel.id" :value="hotel.id">{{ hotel.name }}</option>
         </select>
         <span v-else class="text-sm font-medium">{{ hotels.selected?.name }}</span>
         <div class="flex items-center gap-3">
           <NotificationsBell v-if="hotels.selectedId" :key="hotels.selectedId" />
-          <RouterLink :to="{ name: 'account' }" class="text-sm text-slate-600 hover:text-indigo-600 hover:underline" title="A minha conta e seguranca">{{ auth.user?.name }}</RouterLink>
-          <button class="btn-secondary" type="button" @click="logout">Sair</button>
+          <LanguageSwitcher />
+          <RouterLink :to="{ name: 'account' }" class="text-sm text-slate-600 hover:text-indigo-600 hover:underline" :title="t('layout.accountTitle')">{{ auth.user?.name }}</RouterLink>
+          <button class="btn-secondary" type="button" @click="logout">{{ t('layout.logout') }}</button>
         </div>
       </header>
       <main ref="content" class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6">
         <RouterView v-if="hotels.selectedId || route.name === 'hotels'" :key="hotels.selectedId ?? 0" />
         <p v-else-if="hotels.loaded" class="text-sm text-slate-500">
-          Nao ha nenhum hotel associado a esta conta.
+          {{ t('layout.noHotel') }}
           <RouterLink v-if="auth.user?.role === 'ADMIN'" :to="{ name: 'hotels' }" class="text-indigo-600 hover:underline">
-            Criar hotel
+            {{ t('layout.createHotel') }}
           </RouterLink>
         </p>
         <div v-else-if="hotels.loadError" class="space-y-2 text-sm">
-          <p class="text-rose-600">Nao foi possivel ligar ao servidor: {{ hotels.loadError }}</p>
-          <button class="btn-secondary" type="button" @click="hotels.load(true)">Tentar novamente</button>
+          <p class="text-rose-600">{{ t('layout.serverError', { error: hotels.loadError }) }}</p>
+          <button class="btn-secondary" type="button" @click="hotels.load(true)">{{ t('layout.retry') }}</button>
         </div>
-        <p v-else class="text-sm text-slate-500">A carregar...</p>
+        <p v-else class="text-sm text-slate-500">{{ t('common.loading') }}</p>
       </main>
     </div>
     <PdfPreviewDialog />

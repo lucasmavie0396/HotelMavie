@@ -34,8 +34,10 @@ export interface Hotel {
   ticketFooter: string | null;
   logoFile: string | null;
   publicDescription: string | null;
+  publicDescriptionEn: string | null;
   depositPercent: string;
   paymentInstructions: string | null;
+  paymentInstructionsEn: string | null;
 }
 
 export interface RoomImage {
@@ -54,6 +56,7 @@ export interface Room {
   status: RoomStatus;
   floor: number | null;
   description: string | null;
+  descriptionEn: string | null;
   images: RoomImage[];
 }
 
@@ -139,6 +142,7 @@ export interface PublicRoomType {
   capacity: number;
   pricePerNight: string;
   description: string | null;
+  descriptionEn: string | null;
   available: number;
   images: string[];
   nights?: number;
@@ -147,7 +151,7 @@ export interface PublicRoomType {
 }
 
 export interface PublicHotel
-  extends Pick<Hotel, 'name' | 'publicSlug' | 'email' | 'phone' | 'address' | 'city' | 'currency' | 'logoFile' | 'publicDescription' | 'paymentInstructions'> {
+  extends Pick<Hotel, 'name' | 'publicSlug' | 'email' | 'phone' | 'address' | 'city' | 'currency' | 'logoFile' | 'publicDescription' | 'publicDescriptionEn' | 'paymentInstructions' | 'paymentInstructionsEn'> {
   depositPercent: number;
   paymentTypes: { id: number; name: string; requiresReference: boolean }[];
   roomTypes: PublicRoomType[];

@@ -1,12 +1,14 @@
+import { localeTag, translated } from '@/i18n';
 import type { ChargeType, InvoiceType, PaymentMethod, ReservationSource, ReservationStatus, RoomStatus } from '@/types';
 
 const formatters = new Map<string, Intl.NumberFormat>();
 
 export function formatMoney(value: string | number, currency = import.meta.env.VITE_CURRENCY || 'EUR') {
-  let formatter = formatters.get(currency);
+  const key = `${localeTag()}:${currency}`;
+  let formatter = formatters.get(key);
   if (!formatter) {
-    formatter = new Intl.NumberFormat('pt-PT', { style: 'currency', currency });
-    formatters.set(currency, formatter);
+    formatter = new Intl.NumberFormat(localeTag(), { style: 'currency', currency });
+    formatters.set(key, formatter);
   }
   return formatter.format(Number(value));
 }
@@ -31,12 +33,7 @@ export function todayIso() {
 
 export const ROOM_STATUSES: RoomStatus[] = ['AVAILABLE', 'OCCUPIED', 'CLEANING', 'MAINTENANCE'];
 
-export const ROOM_STATUS_LABELS: Record<RoomStatus, string> = {
-  AVAILABLE: 'Disponivel',
-  OCCUPIED: 'Ocupado',
-  CLEANING: 'Limpeza',
-  MAINTENANCE: 'Manutencao',
-};
+export const ROOM_STATUS_LABELS = translated('labels.roomStatus', ROOM_STATUSES);
 
 export const ROOM_STATUS_CLASSES: Record<RoomStatus, string> = {
   AVAILABLE: 'bg-emerald-100 text-emerald-800',
@@ -54,14 +51,7 @@ export const RESERVATION_STATUSES: ReservationStatus[] = [
   'NO_SHOW',
 ];
 
-export const RESERVATION_STATUS_LABELS: Record<ReservationStatus, string> = {
-  PENDING: 'Pendente',
-  CONFIRMED: 'Confirmada',
-  CHECKED_IN: 'Em casa',
-  CHECKED_OUT: 'Saiu',
-  CANCELLED: 'Cancelada',
-  NO_SHOW: 'No-show',
-};
+export const RESERVATION_STATUS_LABELS = translated('labels.reservationStatus', RESERVATION_STATUSES);
 
 export const RESERVATION_STATUS_CLASSES: Record<ReservationStatus, string> = {
   PENDING: 'bg-amber-100 text-amber-800',
@@ -72,35 +62,14 @@ export const RESERVATION_STATUS_CLASSES: Record<ReservationStatus, string> = {
   NO_SHOW: 'bg-rose-100 text-rose-800',
 };
 
-export const RESERVATION_SOURCE_LABELS: Record<ReservationSource, string> = {
-  DESK: 'Balcao',
-  PHONE: 'Telefone',
-  EMAIL: 'Email',
-  ONLINE: 'Online',
-};
+export const RESERVATION_SOURCE_LABELS = translated<ReservationSource>('labels.reservationSource', ['DESK', 'PHONE', 'EMAIL', 'ONLINE']);
 
-export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
-  CASH: 'Numerario',
-  CARD: 'Cartao',
-  TRANSFER: 'Transferencia',
-  MOBILE: 'Pagamento movel',
-  OTHER: 'Outro',
-};
+export const PAYMENT_METHOD_LABELS = translated<PaymentMethod>('labels.paymentMethod', ['CASH', 'CARD', 'TRANSFER', 'MOBILE', 'OTHER']);
 
-export const INVOICE_TYPE_LABELS: Record<InvoiceType, string> = {
-  INVOICE: 'Fatura',
-  INVOICE_RECEIPT: 'Fatura-recibo',
-  CREDIT_NOTE: 'Nota de credito',
-  RECEIPT: 'Recibo',
-};
+export const INVOICE_TYPE_LABELS = translated<InvoiceType>('labels.invoiceType', ['INVOICE', 'INVOICE_RECEIPT', 'CREDIT_NOTE', 'RECEIPT']);
 
-export const CHARGE_TYPE_LABELS: Record<ChargeType, string> = {
-  ACCOMMODATION: 'Alojamento',
-  RESTAURANT: 'Restaurante',
-  BAR: 'Bar',
-  EXTRA: 'Extra',
-};
+export const CHARGE_TYPE_LABELS = translated<ChargeType>('labels.chargeType', ['ACCOMMODATION', 'RESTAURANT', 'BAR', 'EXTRA']);
 
 export function formatDateTime(value: string) {
-  return new Date(value).toLocaleString('pt-PT', { dateStyle: 'short', timeStyle: 'short' });
+  return new Date(value).toLocaleString(localeTag(), { dateStyle: 'short', timeStyle: 'short' });
 }

@@ -5,6 +5,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
+import { translateErrors } from './common/i18n';
 
 export function trustProxy(value: string | undefined): boolean | number | string {
   if (value === undefined || value === '') return 1;
@@ -52,6 +53,7 @@ export function configureApp(app: NestExpressApplication) {
   const corsOrigin = config.get<string>('CORS_ORIGIN');
   app.set('trust proxy', trustProxy(config.get<string>('TRUST_PROXY')));
   app.setGlobalPrefix('api');
+  app.use(translateErrors);
   app.useBodyParser('json', { limit: '8mb' });
   app.enableCors({
     origin: corsOrigin ? corsOrigin.split(',').map((origin) => origin.trim()) : true,

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { closePdf, pdfPreview, showPdfAt } from '@/services/print';
 
+const { t } = useI18n();
 const frame = ref<HTMLIFrameElement | null>(null);
 const narrow = computed(() => pdfPreview.paper !== 'A4');
 const fileName = computed(() => `${pdfPreview.title.replace(/[^\w-]+/g, '-').replace(/-+/g, '-').toLowerCase() || 'documento'}.pdf`);
@@ -41,25 +43,25 @@ onBeforeUnmount(() => {
       <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">
         <div class="min-w-0">
           <p class="truncate font-semibold">{{ pdfPreview.title }}</p>
-          <p class="text-xs text-slate-500">{{ narrow ? `Talao ${pdfPreview.paper === 'MM58' ? '58' : '80'} mm` : 'Folha A4' }} · pre-visualizacao</p>
+          <p class="text-xs text-slate-500">{{ narrow ? t('pdf.receipt', { mm: pdfPreview.paper === 'MM58' ? '58' : '80' }) : t('pdf.a4') }} · {{ t('pdf.preview') }}</p>
         </div>
         <div v-if="pdfPreview.queue.length > 1" class="flex items-center gap-1 text-sm">
-          <button class="btn-secondary px-2" type="button" :disabled="pdfPreview.index === 0" aria-label="Documento anterior" @click="showPdfAt(pdfPreview.index - 1)">&lsaquo;</button>
-          <span class="px-1 whitespace-nowrap text-slate-600">{{ pdfPreview.index + 1 }} de {{ pdfPreview.queue.length }}</span>
+          <button class="btn-secondary px-2" type="button" :disabled="pdfPreview.index === 0" :aria-label="t('pdf.previous')" @click="showPdfAt(pdfPreview.index - 1)">&lsaquo;</button>
+          <span class="px-1 whitespace-nowrap text-slate-600">{{ t('pdf.of', { index: pdfPreview.index + 1, count: pdfPreview.queue.length }) }}</span>
           <button
             class="btn-secondary px-2"
             type="button"
             :disabled="pdfPreview.index === pdfPreview.queue.length - 1"
-            aria-label="Documento seguinte"
+            :aria-label="t('pdf.next')"
             @click="showPdfAt(pdfPreview.index + 1)"
           >
             &rsaquo;
           </button>
         </div>
         <div class="flex gap-2">
-          <button class="btn" type="button" @click="print">Imprimir</button>
-          <a class="btn-secondary" :href="pdfPreview.url" :download="fileName">Descarregar</a>
-          <button class="btn-secondary" type="button" @click="closePdf">Fechar</button>
+          <button class="btn" type="button" @click="print">{{ t('common.print') }}</button>
+          <a class="btn-secondary" :href="pdfPreview.url" :download="fileName">{{ t('common.download') }}</a>
+          <button class="btn-secondary" type="button" @click="closePdf">{{ t('common.close') }}</button>
         </div>
       </div>
       <iframe ref="frame" :src="pdfPreview.url" class="min-h-0 flex-1 bg-slate-100" :title="pdfPreview.title" />

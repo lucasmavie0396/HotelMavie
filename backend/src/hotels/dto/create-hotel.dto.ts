@@ -69,6 +69,11 @@ export class CreateHotelDto {
   publicDescription?: string | null;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  publicDescriptionEn?: string | null;
+
+  @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @Max(100)
@@ -78,6 +83,11 @@ export class CreateHotelDto {
   @IsString()
   @MaxLength(2000)
   paymentInstructions?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  paymentInstructionsEn?: string | null;
 
   @IsOptional()
   @IsString()

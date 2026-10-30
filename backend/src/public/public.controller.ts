@@ -18,6 +18,7 @@ const roomSelect = {
   capacity: true,
   pricePerNight: true,
   description: true,
+  descriptionEn: true,
   images: { select: { file: true }, orderBy: [{ sortOrder: 'asc' as const }, { id: 'asc' as const }] },
 };
 
@@ -46,8 +47,10 @@ export class PublicController {
         currency: true,
         logoFile: true,
         publicDescription: true,
+        publicDescriptionEn: true,
         depositPercent: true,
         paymentInstructions: true,
+        paymentInstructionsEn: true,
         rooms: { select: roomSelect },
       },
     });
@@ -131,6 +134,7 @@ export class PublicController {
           children,
           source: ReservationSource.ONLINE,
           notes: dto.notes,
+          locale: dto.locale ?? 'pt',
           deposit: needsDeposit ? { percent: hotel.depositPercent, reference, paymentTypeId: dto.depositPaymentTypeId } : undefined,
           companions,
         });
@@ -146,7 +150,7 @@ export class PublicController {
           depositAmount: reservation.depositAmount,
           depositReference: reservation.depositReference,
         };
-        const toGuest = bookingRequestEmail(hotel, stay);
+        const toGuest = bookingRequestEmail(hotel, stay, dto.locale === 'en' ? 'en' : 'pt');
         this.mail.queue({ hotelId: hotel.id, kind: 'BOOKING_REQUEST', to: email, replyTo: hotel.email, relatedId: reservation.id, ...toGuest });
         if (hotel.email) {
           const toHotel = newBookingAlertEmail(hotel, stay, email);
@@ -199,11 +203,11 @@ export class PublicController {
   }
 
   private groupByType<
-    T extends { type: string; capacity: number; pricePerNight: { toString(): string }; description: string | null; images?: { file: string }[] },
+    T extends { type: string; capacity: number; pricePerNight: { toString(): string }; description: string | null; descriptionEn?: string | null; images?: { file: string }[] },
   >(rooms: T[]) {
     const types = new Map<
       string,
-      { type: string; capacity: number; pricePerNight: string; description: string | null; available: number; images: string[] }
+      { type: string; capacity: number; pricePerNight: string; description: string | null; descriptionEn: string | null; available: number; images: string[] }
     >();
     for (const room of rooms) {
       const price = Number(room.pricePerNight);
@@ -215,6 +219,7 @@ export class PublicController {
           capacity: room.capacity,
           pricePerNight: price.toFixed(2),
           description: room.description,
+          descriptionEn: room.descriptionEn ?? null,
           available: 1,
           images: files.slice(0, MAX_TYPE_IMAGES),
         });
@@ -223,6 +228,7 @@ export class PublicController {
       current.available++;
       current.capacity = Math.max(current.capacity, room.capacity);
       current.description ??= room.description;
+      current.descriptionEn ??= room.descriptionEn ?? null;
       for (const file of files) {
         if (current.images.length < MAX_TYPE_IMAGES && !current.images.includes(file)) current.images.push(file);
       }

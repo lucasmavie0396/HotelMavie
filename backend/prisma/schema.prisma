@@ -39,8 +39,10 @@ model Hotel {
   ticketFooter           String?           @db.VarChar(255)
   logoFile               String?           @db.VarChar(100)
   publicDescription      String?           @db.Text
+  publicDescriptionEn    String?           @db.Text
   depositPercent         Decimal           @default(60) @db.Decimal(5, 2)
   paymentInstructions    String?           @db.Text
+  paymentInstructionsEn  String?           @db.Text
   accommodationTaxRateId Int?
   accommodationTaxRate   TaxRate?          @relation("AccommodationTaxRate", fields: [accommodationTaxRateId], references: [id], onDelete: SetNull)
   createdAt              DateTime          @default(now())
@@ -160,6 +162,7 @@ model Room {
   status        RoomStatus    @default(AVAILABLE)
   floor         Int?
   description   String?       @db.Text
+  descriptionEn String?       @db.Text
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   reservations  Reservation[]
@@ -239,6 +242,7 @@ model Reservation {
   pricePerNight        Decimal                @db.Decimal(10, 2)
   totalAmount          Decimal                @db.Decimal(12, 2)
   notes                String?                @db.Text
+  locale               String                 @default("pt") @db.VarChar(5)
   checkedInAt          DateTime?
   checkedOutAt         DateTime?
   cancelledAt          DateTime?

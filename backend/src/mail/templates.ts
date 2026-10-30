@@ -12,13 +12,78 @@ export function formatDate(date: Date | string) {
   return `${day}/${month}/${year}`;
 }
 
-export function formatMoney(value: { toString(): string } | number, currency: string) {
-  return new Intl.NumberFormat('pt-PT', { style: 'currency', currency }).format(Number(value.toString()));
+export type MailLang = 'pt' | 'en';
+
+export function mailLang(value?: string | null): MailLang {
+  return value === 'en' ? 'en' : 'pt';
 }
 
-function layout(hotel: Hotel, title: string, body: string) {
+export function formatMoney(value: { toString(): string } | number, currency: string, lang: MailLang = 'pt') {
+  return new Intl.NumberFormat(lang === 'en' ? 'en-GB' : 'pt-PT', { style: 'currency', currency }).format(Number(value.toString()));
+}
+
+const GUEST_TEXT = {
+  pt: {
+    code: 'Codigo',
+    room: 'Quarto',
+    checkIn: 'Entrada',
+    checkOut: 'Saida',
+    guests: 'Hospedes',
+    guestsValue: (adults: number, children: number) => `${adults} adultos${children ? `, ${children} criancas` : ''}`,
+    total: 'Total',
+    deposit: 'Sinal',
+    reference: 'Referencia do pagamento',
+    hello: (name: string) => `Ola ${name},`,
+    requestSubject: (code: string, hotel: string) => `Pedido de reserva ${code} recebido - ${hotel}`,
+    requestTitle: 'Recebemos o seu pedido de reserva',
+    requestWithDeposit: 'Obrigado pelo seu pedido. A reserva fica pendente ate o hotel confirmar a rececao do sinal; vai receber o comprovativo por email nessa altura.',
+    requestPlain: 'Obrigado pelo seu pedido. A reserva fica pendente ate o hotel a confirmar; vai receber um novo email nessa altura.',
+    requestChanges: 'Para qualquer alteracao responda a este email indicando o codigo da reserva.',
+    confirmedSubject: (code: string, hotel: string) => `Reserva ${code} confirmada - ${hotel}`,
+    confirmedTitle: 'A sua reserva esta confirmada',
+    confirmedText: 'Temos o prazer de confirmar a sua reserva.',
+    seeYou: 'Ate breve!',
+    depositSubject: (code: string, hotel: string) => `Reserva ${code} confirmada - sinal recebido - ${hotel}`,
+    depositTitle: 'Sinal recebido: a sua reserva esta confirmada',
+    depositText: 'Confirmamos a rececao do sinal e a sua reserva. Segue em anexo o comprovativo.',
+    depositRemaining: (amount: string) => `O valor restante, <strong>${amount}</strong>, sera cobrado no check-in ou no check-out, juntamente com os consumos.`,
+    invoiceTitle: (number: string) => `Documento ${number}`,
+    invoiceText: (number: string, amount: string) => `Segue em anexo o documento <strong>${number}</strong>, no valor de ${amount}.`,
+    thanks: 'Obrigado pela preferencia.',
+  },
+  en: {
+    code: 'Code',
+    room: 'Room',
+    checkIn: 'Check-in',
+    checkOut: 'Check-out',
+    guests: 'Guests',
+    guestsValue: (adults: number, children: number) => `${adults} adult(s)${children ? `, ${children} child(ren)` : ''}`,
+    total: 'Total',
+    deposit: 'Deposit',
+    reference: 'Payment reference',
+    hello: (name: string) => `Hello ${name},`,
+    requestSubject: (code: string, hotel: string) => `Booking request ${code} received - ${hotel}`,
+    requestTitle: 'We have received your booking request',
+    requestWithDeposit: 'Thank you for your request. The booking stays pending until the hotel confirms receipt of the deposit; you will then receive the receipt by email.',
+    requestPlain: 'Thank you for your request. The booking stays pending until the hotel confirms it; you will receive another email then.',
+    requestChanges: 'For any change, reply to this email quoting your booking code.',
+    confirmedSubject: (code: string, hotel: string) => `Booking ${code} confirmed - ${hotel}`,
+    confirmedTitle: 'Your booking is confirmed',
+    confirmedText: 'We are pleased to confirm your booking.',
+    seeYou: 'See you soon!',
+    depositSubject: (code: string, hotel: string) => `Booking ${code} confirmed - deposit received - ${hotel}`,
+    depositTitle: 'Deposit received: your booking is confirmed',
+    depositText: 'We confirm receipt of the deposit and your booking. Please find the receipt attached.',
+    depositRemaining: (amount: string) => `The remaining balance of <strong>${amount}</strong> will be charged at check-in or check-out, together with any extras.`,
+    invoiceTitle: (number: string) => `Document ${number}`,
+    invoiceText: (number: string, amount: string) => `Please find attached document <strong>${number}</strong>, for ${amount}.`,
+    thanks: 'Thank you for choosing us.',
+  },
+};
+
+function layout(hotel: Hotel, title: string, body: string, lang: MailLang = 'pt') {
   const contacts = [hotel.address, hotel.phone, hotel.email].filter(Boolean).map(escapeHtml).join(' · ');
-  return `<!doctype html><html lang="pt"><body style="margin:0;background:#f1f5f9;font-family:Arial,sans-serif;color:#0f172a">
+  return `<!doctype html><html lang="${lang}"><body style="margin:0;background:#f1f5f9;font-family:Arial,sans-serif;color:#0f172a">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px">
 <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;padding:28px">
 <tr><td style="font-size:20px;font-weight:bold;padding-bottom:4px">${escapeHtml(hotel.name)}</td></tr>
@@ -41,35 +106,34 @@ export interface StaySummary {
   depositReference?: string | null;
 }
 
-function stayTable(stay: StaySummary, currency: string) {
+function stayTable(stay: StaySummary, currency: string, lang: MailLang = 'pt') {
+  const text = GUEST_TEXT[lang];
   const rows: [string, string][] = [
-    ['Codigo', `<strong>${escapeHtml(stay.code)}</strong>`],
-    ['Quarto', escapeHtml(stay.roomType)],
-    ['Entrada', formatDate(stay.checkIn)],
-    ['Saida', formatDate(stay.checkOut)],
-    ['Hospedes', `${stay.adults} adultos${stay.children ? `, ${stay.children} criancas` : ''}`],
-    ['Total', formatMoney(stay.totalAmount, currency)],
+    [text.code, `<strong>${escapeHtml(stay.code)}</strong>`],
+    [text.room, escapeHtml(stay.roomType)],
+    [text.checkIn, formatDate(stay.checkIn)],
+    [text.checkOut, formatDate(stay.checkOut)],
+    [text.guests, text.guestsValue(stay.adults, stay.children)],
+    [text.total, formatMoney(stay.totalAmount, currency, lang)],
   ];
   if (stay.depositAmount) {
-    rows.push(['Sinal', formatMoney(stay.depositAmount, currency)]);
-    if (stay.depositReference) rows.push(['Referencia do pagamento', escapeHtml(stay.depositReference)]);
+    rows.push([text.deposit, formatMoney(stay.depositAmount, currency, lang)]);
+    if (stay.depositReference) rows.push([text.reference, escapeHtml(stay.depositReference)]);
   }
   return `<table role="presentation" cellpadding="6" style="border-collapse:collapse;margin:12px 0">${rows
     .map(([label, value]) => `<tr><td style="color:#64748b">${label}</td><td>${value}</td></tr>`)
     .join('')}</table>`;
 }
 
-export function bookingRequestEmail(hotel: Hotel, stay: StaySummary) {
+export function bookingRequestEmail(hotel: Hotel, stay: StaySummary, lang: MailLang = 'pt') {
+  const text = GUEST_TEXT[lang];
   return {
-    subject: `Pedido de reserva ${stay.code} recebido - ${hotel.name}`,
+    subject: text.requestSubject(stay.code, hotel.name),
     html: layout(
       hotel,
-      'Recebemos o seu pedido de reserva',
-      `<p>Ola ${escapeHtml(stay.guestName)},</p><p>Obrigado pelo seu pedido. ${
-        stay.depositAmount
-          ? 'A reserva fica pendente ate o hotel confirmar a rececao do sinal; vai receber o comprovativo por email nessa altura.'
-          : 'A reserva fica pendente ate o hotel a confirmar; vai receber um novo email nessa altura.'
-      }</p>${stayTable(stay, hotel.currency)}<p>Para qualquer alteracao responda a este email indicando o codigo da reserva.</p>`,
+      text.requestTitle,
+      `<p>${text.hello(escapeHtml(stay.guestName))}</p><p>${stay.depositAmount ? text.requestWithDeposit : text.requestPlain}</p>${stayTable(stay, hotel.currency, lang)}<p>${text.requestChanges}</p>`,
+      lang,
     ),
   };
 }
@@ -85,35 +149,45 @@ export function newBookingAlertEmail(hotel: Hotel, stay: StaySummary, guestEmail
   };
 }
 
-export function bookingConfirmedEmail(hotel: Hotel, stay: StaySummary) {
+export function bookingConfirmedEmail(hotel: Hotel, stay: StaySummary, lang: MailLang = 'pt') {
+  const text = GUEST_TEXT[lang];
   return {
-    subject: `Reserva ${stay.code} confirmada - ${hotel.name}`,
+    subject: text.confirmedSubject(stay.code, hotel.name),
     html: layout(
       hotel,
-      'A sua reserva esta confirmada',
-      `<p>Ola ${escapeHtml(stay.guestName)},</p><p>Temos o prazer de confirmar a sua reserva.</p>${stayTable(stay, hotel.currency)}<p>Ate breve!</p>`,
+      text.confirmedTitle,
+      `<p>${text.hello(escapeHtml(stay.guestName))}</p><p>${text.confirmedText}</p>${stayTable(stay, hotel.currency, lang)}<p>${text.seeYou}</p>`,
+      lang,
     ),
   };
 }
 
-export function depositConfirmedEmail(hotel: Hotel, stay: StaySummary, remaining: { toString(): string }) {
+export function depositConfirmedEmail(hotel: Hotel, stay: StaySummary, remaining: { toString(): string }, lang: MailLang = 'pt') {
+  const text = GUEST_TEXT[lang];
   return {
-    subject: `Reserva ${stay.code} confirmada - sinal recebido - ${hotel.name}`,
+    subject: text.depositSubject(stay.code, hotel.name),
     html: layout(
       hotel,
-      'Sinal recebido: a sua reserva esta confirmada',
-      `<p>Ola ${escapeHtml(stay.guestName)},</p><p>Confirmamos a rececao do sinal e a sua reserva. Segue em anexo o comprovativo.</p>${stayTable(stay, hotel.currency)}<p>O valor restante, <strong>${formatMoney(remaining, hotel.currency)}</strong>, sera cobrado no check-in ou no check-out, juntamente com os consumos.</p><p>Ate breve!</p>`,
+      text.depositTitle,
+      `<p>${text.hello(escapeHtml(stay.guestName))}</p><p>${text.depositText}</p>${stayTable(stay, hotel.currency, lang)}<p>${text.depositRemaining(formatMoney(remaining, hotel.currency, lang))}</p><p>${text.seeYou}</p>`,
+      lang,
     ),
   };
 }
 
-export function invoiceEmail(hotel: Hotel, invoice: { fullNumber: string; customerName: string; grossTotal: { toString(): string }; currency: string }) {
+export function invoiceEmail(
+  hotel: Hotel,
+  invoice: { fullNumber: string; customerName: string; grossTotal: { toString(): string }; currency: string },
+  lang: MailLang = 'pt',
+) {
+  const text = GUEST_TEXT[lang];
   return {
     subject: `${invoice.fullNumber} - ${hotel.name}`,
     html: layout(
       hotel,
-      `Documento ${invoice.fullNumber}`,
-      `<p>Ola ${escapeHtml(invoice.customerName)},</p><p>Segue em anexo o documento <strong>${escapeHtml(invoice.fullNumber)}</strong>, no valor de ${formatMoney(invoice.grossTotal, invoice.currency)}.</p><p>Obrigado pela preferencia.</p>`,
+      text.invoiceTitle(invoice.fullNumber),
+      `<p>${text.hello(escapeHtml(invoice.customerName))}</p><p>${text.invoiceText(escapeHtml(invoice.fullNumber), formatMoney(invoice.grossTotal, invoice.currency, lang))}</p><p>${text.thanks}</p>`,
+      lang,
     ),
   };
 }

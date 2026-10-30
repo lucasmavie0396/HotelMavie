@@ -7,7 +7,7 @@ import { addDays, assertStayRange, parseDate, todayUtc } from '../common/dates';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { toMoney } from '../common/money';
 import { MailService } from '../mail/mail.service';
-import { bookingConfirmedEmail } from '../mail/templates';
+import { bookingConfirmedEmail, mailLang } from '../mail/templates';
 import { PrismaService } from '../prisma/prisma.service';
 import { CompanionDto, companionData } from './dto/companion.dto';
 import { CreateReservationDto } from './dto/create-reservation.dto';
@@ -43,6 +43,7 @@ export interface BookingInput {
   source: ReservationSource;
   pricePerNight?: number;
   notes?: string;
+  locale?: string;
   createdById?: number;
   deposit?: { percent: Prisma.Decimal; reference?: string; paymentTypeId?: number | null };
   companions?: CompanionDto[];
@@ -182,6 +183,7 @@ export class ReservationsService {
           pricePerNight,
           totalAmount,
           notes: input.notes,
+          locale: input.locale,
           createdById: input.createdById,
           ...deposit,
           ...(input.companions?.length ? { companions: { create: input.companions.map(companionData) } } : {}),
@@ -282,7 +284,7 @@ export class ReservationsService {
         adults: reservation.adults,
         children: reservation.children,
         totalAmount: reservation.totalAmount,
-      });
+      }, mailLang(reservation.locale));
       this.mail.queue({
         hotelId: hotel.id,
         kind: 'BOOKING_CONFIRMED',

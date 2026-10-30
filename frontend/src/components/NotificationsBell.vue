@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { locale } from '@/i18n';
 import { api } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
 
@@ -15,8 +17,10 @@ const COLORS: Record<Notice['kind'], string> = {
   danger: 'bg-rose-600',
 };
 
+const { t } = useI18n();
 const hotels = useHotelsStore();
 const notices = ref<Notice[]>([]);
+watch(locale, () => load());
 const open = ref(false);
 let timer: ReturnType<typeof setInterval> | undefined;
 
@@ -39,8 +43,8 @@ defineExpose({ load });
 
 <template>
   <div class="relative">
-    <button class="btn-secondary relative px-3" type="button" aria-label="Alertas" @click="open = !open; load()">
-      Alertas
+    <button class="btn-secondary relative px-3" type="button" :aria-label="t('alerts.button')" @click="open = !open; load()">
+      {{ t('alerts.button') }}
       <span
         v-if="notices.length"
         class="absolute -top-1.5 -right-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-600 px-1 text-xs text-white"
@@ -59,7 +63,7 @@ defineExpose({ load });
         <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full" :class="COLORS[notice.kind]" />
         {{ notice.text }}
       </RouterLink>
-      <p v-if="!notices.length" class="px-2 py-2 text-sm text-slate-500">Sem alertas</p>
+      <p v-if="!notices.length" class="px-2 py-2 text-sm text-slate-500">{{ t('alerts.none') }}</p>
     </div>
   </div>
 </template>

@@ -1,4 +1,5 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import { locale, t } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
 
 type RetriableConfig = InternalAxiosRequestConfig & { _retry?: boolean };
@@ -8,6 +9,7 @@ export const api = axios.create({ baseURL: '/api' });
 let refreshing: Promise<'ok' | 'expired' | 'unavailable'> | null = null;
 
 api.interceptors.request.use((config) => {
+  config.headers['X-Lang'] = locale.value;
   const auth = useAuthStore();
   if (auth.accessToken) {
     config.headers.Authorization = `Bearer ${auth.accessToken}`;
@@ -53,18 +55,14 @@ export function openInvoicePdf(id: number, kind: 'invoices' | 'receipts' = 'invo
 }
 
 export async function emailInvoice(id: number, fullNumber: string) {
-  const to = window.prompt(`Enviar ${fullNumber} para (vazio = email do cliente):`, '');
+  const to = window.prompt(t('common.emailPrompt', { number: fullNumber }), '');
   if (to === null) {
     return null;
   }
   const { data } = await api.post<{ status: 'SENT' | 'LOGGED' | 'FAILED'; recipient: string }>(`/invoices/${id}/email`, {
     to: to.trim() || undefined,
   });
-  window.alert(
-    data.status === 'SENT'
-      ? `Enviado para ${data.recipient}`
-      : `Registado para ${data.recipient}, mas nao enviado: o servidor de email (SMTP) nao esta configurado.`,
-  );
+  window.alert(data.status === 'SENT' ? t('common.emailSent', { to: data.recipient }) : t('common.emailLogged', { to: data.recipient }));
   return data;
 }
 
@@ -74,10 +72,10 @@ export function errorMessage(error: unknown) {
     if (Array.isArray(message)) {
       return message.join(', ');
     }
-    return message ?? 'Erro de comunicacao com o servidor';
+    return message ?? t('common.networkError');
   }
   if (error instanceof Error && error.message) {
     return error.message;
   }
-  return 'Erro inesperado';
+  return t('common.unexpectedError');
 }

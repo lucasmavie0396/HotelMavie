@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsDateString, IsEmail, IsInt, IsOptional, IsString, Length, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsDateString, IsEmail, IsIn, IsInt, IsOptional, IsString, Length, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { CompanionDto } from '../../reservations/dto/companion.dto';
 
 export class PublicAvailabilityQueryDto {
@@ -110,4 +110,8 @@ export class PublicBookingDto {
   @IsOptional()
   @IsInt()
   depositPaymentTypeId?: number;
+
+  @IsOptional()
+  @IsIn(['pt', 'en'])
+  locale?: 'pt' | 'en';
 }

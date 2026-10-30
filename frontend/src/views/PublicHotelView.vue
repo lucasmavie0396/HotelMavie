@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
+import { locale } from '@/i18n';
 import { api, errorMessage } from '@/services/api';
 import { setPageIdentity } from '@/services/favicon';
 import { fileUrl } from '@/services/files';
@@ -19,7 +22,8 @@ interface BookingResult {
 }
 
 const CARD_ACCENTS = ['from-indigo-500 to-violet-500', 'from-amber-400 to-orange-500', 'from-emerald-400 to-teal-500', 'from-pink-500 to-rose-500', 'from-sky-400 to-blue-500'];
-const STEPS = ['Datas', 'Quarto', 'Os seus dados', 'Pedido enviado'];
+const { t } = useI18n();
+const STEPS = computed(() => [0, 1, 2, 3].map((index) => t(`site.steps.${index}`)));
 
 const route = useRoute();
 const slug = computed(() => encodeURIComponent(String(route.params.slug)));
@@ -91,6 +95,10 @@ const lowestPrice = computed(() => Math.min(...(hotel.value?.roomTypes.map((room
 const place = computed(() => [hotel.value?.address, hotel.value?.city].filter(Boolean).join(', '));
 const mapsUrl = computed(() => (place.value ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${hotel.value?.name} ${place.value}`)}` : ''));
 const rooms = computed(() => results.value ?? hotel.value?.roomTypes ?? []);
+const english = computed(() => locale.value === 'en');
+const description = computed(() => (english.value && hotel.value?.publicDescriptionEn) || hotel.value?.publicDescription || '');
+const instructions = computed(() => (english.value && hotel.value?.paymentInstructionsEn) || hotel.value?.paymentInstructions || '');
+const roomDescription = (room: PublicRoomType) => (english.value && room.descriptionEn) || room.description;
 
 watch(
   slug,
@@ -192,6 +200,7 @@ async function book() {
         })),
         depositPaymentTypeId: needsDeposit.value && guest.depositPaymentTypeId ? guest.depositPaymentTypeId : undefined,
         depositReference: needsDeposit.value ? guest.depositReference.trim() : undefined,
+        locale: locale.value,
       })
     ).data;
     await nextTick();
@@ -216,13 +225,14 @@ async function book() {
             <span class="truncate font-semibold">{{ hotel.name }}</span>
           </button>
           <div class="ml-auto hidden items-center gap-5 text-sm text-slate-600 sm:flex">
-            <button type="button" class="hover:text-indigo-700" @click="scrollToId('quartos')">Quartos</button>
-            <button type="button" class="hover:text-indigo-700" @click="scrollToId('como-reservar')">Como reservar</button>
-            <button type="button" class="hover:text-indigo-700" @click="scrollToId('contactos')">Contactos</button>
+            <button type="button" class="hover:text-indigo-700" @click="scrollToId('quartos')">{{ t('site.nav.rooms') }}</button>
+            <button type="button" class="hover:text-indigo-700" @click="scrollToId('como-reservar')">{{ t('site.nav.howTo') }}</button>
+            <button type="button" class="hover:text-indigo-700" @click="scrollToId('contactos')">{{ t('site.nav.contacts') }}</button>
           </div>
           <button type="button" class="ml-auto rounded-full bg-gradient-to-r from-amber-400 to-orange-500 px-4 py-1.5 text-sm font-semibold text-white shadow hover:brightness-105 sm:ml-0" @click="scrollToId('reservar')">
-            Reservar
+            {{ t('site.nav.book') }}
           </button>
+          <LanguageSwitcher />
         </div>
       </nav>
 
@@ -238,10 +248,10 @@ async function book() {
               {{ place }}
             </p>
             <h1 class="text-3xl font-bold tracking-tight drop-shadow sm:text-4xl">{{ hotel.name }}</h1>
-            <p v-if="hotel.publicDescription" class="mt-2 text-sm leading-relaxed text-white/85 line-clamp-2 sm:text-base">{{ hotel.publicDescription }}</p>
+            <p v-if="description" class="mt-2 text-sm leading-relaxed text-white/85 line-clamp-2 sm:text-base">{{ description }}</p>
           </div>
           <p v-if="hotel.roomTypes.length" class="shrink-0 rounded-xl bg-white/15 px-4 py-2 text-sm text-white/90 backdrop-blur">
-            Quartos desde <span class="block text-2xl leading-tight font-bold text-amber-300">{{ money(lowestPrice) }}<span class="text-sm font-normal text-white/80"> / noite</span></span>
+            {{ t('site.roomsFrom') }} <span class="block text-2xl leading-tight font-bold text-amber-300">{{ money(lowestPrice) }}<span class="text-sm font-normal text-white/80"> {{ t('site.perNight') }}</span></span>
           </p>
         </div>
       </header>
@@ -249,15 +259,15 @@ async function book() {
       <main class="mx-auto -mt-16 max-w-6xl space-y-16 px-4 pb-16">
         <div class="relative z-10 space-y-6">
         <section id="como-reservar" class="scroll-mt-20" aria-labelledby="como-reservar-titulo">
-          <h2 id="como-reservar-titulo" class="sr-only">Como reservar</h2>
+          <h2 id="como-reservar-titulo" class="sr-only">{{ t('site.nav.howTo') }}</h2>
           <ol class="grid gap-3 md:grid-cols-3">
             <li
               v-for="(item, index) in [
-                { title: 'Escolha datas e quarto', text: 'Veja a disponibilidade e o preco total da estadia.', color: 'from-indigo-500 to-violet-500' },
+                { title: t('site.how.chooseTitle'), text: t('site.how.chooseText'), color: 'from-indigo-500 to-violet-500' },
                 needsDeposit
-                  ? { title: `Pague o sinal de ${hotel.depositPercent}%`, text: 'Siga as instrucoes de pagamento e indique a referencia.', color: 'from-amber-400 to-orange-500' }
-                  : { title: 'Envie o pedido', text: 'Basta o nome e o email. Nao paga nada agora.', color: 'from-amber-400 to-orange-500' },
-                { title: 'Receba a confirmacao', text: needsDeposit ? 'Enviamos o comprovativo por email. O restante paga no hotel.' : 'Confirmamos a reserva por email.', color: 'from-emerald-400 to-teal-500' },
+                  ? { title: t('site.how.depositTitle', { percent: hotel.depositPercent }), text: t('site.how.depositText'), color: 'from-amber-400 to-orange-500' }
+                  : { title: t('site.how.sendTitle'), text: t('site.how.sendText'), color: 'from-amber-400 to-orange-500' },
+                { title: t('site.how.confirmTitle'), text: needsDeposit ? t('site.how.confirmDeposit') : t('site.how.confirmPlain'), color: 'from-emerald-400 to-teal-500' },
               ]"
               :key="item.title"
               class="flex items-start gap-3 rounded-2xl bg-white p-4 shadow-lg ring-1 shadow-indigo-900/10 ring-slate-100"
@@ -290,50 +300,46 @@ async function book() {
             <div class="flex items-center gap-3">
               <span class="flex size-11 items-center justify-center rounded-full bg-emerald-500 text-xl text-white shadow">✓</span>
               <div>
-                <h2 class="text-xl font-semibold text-emerald-900">Pedido de reserva recebido</h2>
-                <p class="text-sm text-emerald-800">Codigo <span class="font-mono font-bold">{{ booking.code }}</span></p>
+                <h2 class="text-xl font-semibold text-emerald-900">{{ t('site.done.title') }}</h2>
+                <p class="text-sm text-emerald-800">{{ t('site.done.code') }} <span class="font-mono font-bold">{{ booking.code }}</span></p>
               </div>
             </div>
             <dl class="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[auto_1fr]">
-              <dt class="text-slate-500">Quarto</dt>
+              <dt class="text-slate-500">{{ t('site.done.room') }}</dt>
               <dd>{{ booking.roomType }}</dd>
-              <dt class="text-slate-500">Datas</dt>
-              <dd>{{ formatDate(booking.checkIn) }} a {{ formatDate(booking.checkOut) }}</dd>
-              <dt class="text-slate-500">Total</dt>
+              <dt class="text-slate-500">{{ t('site.done.dates') }}</dt>
+              <dd>{{ t('site.done.datesValue', { from: formatDate(booking.checkIn), to: formatDate(booking.checkOut) }) }}</dd>
+              <dt class="text-slate-500">{{ t('site.done.total') }}</dt>
               <dd class="font-semibold">{{ formatMoney(booking.totalAmount, booking.currency) }}</dd>
               <template v-if="booking.depositAmount">
-                <dt class="text-slate-500">Sinal</dt>
-                <dd>{{ formatMoney(booking.depositAmount, booking.currency) }} · referencia {{ booking.depositReference }}</dd>
-                <dt class="text-slate-500">Restante</dt>
-                <dd>{{ formatMoney(Number(booking.totalAmount) - Number(booking.depositAmount), booking.currency) }} no check-in ou check-out</dd>
+                <dt class="text-slate-500">{{ t('site.done.deposit') }}</dt>
+                <dd>{{ t('site.done.depositValue', { amount: formatMoney(booking.depositAmount, booking.currency), reference: booking.depositReference }) }}</dd>
+                <dt class="text-slate-500">{{ t('site.done.remaining') }}</dt>
+                <dd>{{ t('site.done.remainingValue', { amount: formatMoney(Number(booking.totalAmount) - Number(booking.depositAmount), booking.currency) }) }}</dd>
               </template>
             </dl>
             <p class="text-sm text-slate-700">
-              {{
-                booking.depositAmount
-                  ? 'Vamos verificar o pagamento do sinal e enviar-lhe por email o comprovativo e a confirmacao da reserva.'
-                  : 'Vamos confirmar a reserva por email.'
-              }}
-              Guarde o codigo para qualquer contacto.
+              {{ booking.depositAmount ? t('site.done.depositNext') : t('site.done.plainNext') }}
+              {{ t('site.done.keepCode') }}
             </p>
-            <button type="button" class="text-sm font-medium text-emerald-800 hover:underline" @click="newSearch">Fazer outra reserva</button>
+            <button type="button" class="text-sm font-medium text-emerald-800 hover:underline" @click="newSearch">{{ t('site.done.another') }}</button>
           </div>
 
           <form v-else class="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_0.7fr_0.7fr_auto]" @submit.prevent="findAvailability">
             <label class="text-sm font-medium text-slate-600">
-              Entrada
+              {{ t('site.search.checkIn') }}
               <input v-model="search.checkIn" class="input mt-1" type="date" :min="todayIso()" required @change="onCheckInChange" />
             </label>
             <label class="text-sm font-medium text-slate-600">
-              Saida
+              {{ t('site.search.checkOut') }}
               <input v-model="search.checkOut" class="input mt-1" type="date" :min="addDays(search.checkIn, 1)" required />
             </label>
             <label class="text-sm font-medium text-slate-600">
-              Adultos
+              {{ t('site.search.adults') }}
               <input v-model.number="search.adults" class="input mt-1" type="number" min="1" max="20" required />
             </label>
             <label class="text-sm font-medium text-slate-600">
-              Criancas
+              {{ t('site.search.children') }}
               <input v-model.number="search.children" class="input mt-1" type="number" min="0" max="20" />
             </label>
             <button
@@ -341,7 +347,7 @@ async function book() {
               type="submit"
               :disabled="loading"
             >
-              {{ loading ? 'A procurar...' : `Ver disponibilidade${nights ? ` · ${nights} ${nights === 1 ? 'noite' : 'noites'}` : ''}` }}
+              {{ loading ? t('site.search.searching') : `${t('site.search.submit')}${nights ? ` · ${t('site.search.nights', nights)}` : ''}` }}
             </button>
           </form>
           <p v-if="error" class="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{{ error }}</p>
@@ -351,16 +357,16 @@ async function book() {
         <section v-if="!booking" id="quartos" ref="roomsSection" class="scroll-mt-20 space-y-6">
           <div class="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p class="text-sm font-semibold tracking-widest text-orange-500 uppercase">{{ results ? 'Disponiveis para as suas datas' : 'Os nossos quartos' }}</p>
+              <p class="text-sm font-semibold tracking-widest text-orange-500 uppercase">{{ results ? t('site.rooms.available') : t('site.rooms.ours') }}</p>
               <h2 class="text-3xl font-bold text-slate-900">
-                {{ results ? `${formatDate(search.checkIn)} a ${formatDate(search.checkOut)}` : 'Escolha o seu espaco' }}
+                {{ results ? t('site.rooms.range', { from: formatDate(search.checkIn), to: formatDate(search.checkOut) }) : t('site.rooms.choose') }}
               </h2>
             </div>
-            <button v-if="results" type="button" class="text-sm font-medium text-indigo-700 hover:underline" @click="newSearch">Mudar datas</button>
+            <button v-if="results" type="button" class="text-sm font-medium text-indigo-700 hover:underline" @click="newSearch">{{ t('site.rooms.changeDates') }}</button>
           </div>
 
           <p v-if="results && !results.length" class="rounded-xl bg-amber-50 p-6 text-center text-amber-900 ring-1 ring-amber-200">
-            Sem disponibilidade para estas datas. Experimente outras datas ou contacte-nos.
+            {{ t('site.rooms.none') }}
           </p>
 
           <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
@@ -382,15 +388,15 @@ async function book() {
                 <div v-else class="flex h-full items-center justify-center bg-gradient-to-br text-white" :class="CARD_ACCENTS[index % CARD_ACCENTS.length]">
                   <svg viewBox="0 0 24 24" class="size-10 opacity-80" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 18v-6a2 2 0 012-2h14a2 2 0 012 2v6M3 18h18M3 18v2M21 18v2M6 10V7a2 2 0 012-2h8a2 2 0 012 2v3" /></svg>
                 </div>
-                <span class="absolute top-1.5 left-1.5 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-slate-800 shadow" :title="`Ate ${room.capacity} pessoas`">
+                <span class="absolute top-1.5 left-1.5 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-slate-800 shadow" :title="t('site.rooms.upTo', { n: room.capacity })">
                   &#128100; {{ room.capacity }}
                 </span>
                 <span v-if="results" class="absolute top-1.5 right-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold text-white shadow" :class="room.available <= 2 ? 'bg-rose-500' : 'bg-emerald-500'">
-                  {{ room.available <= 2 ? `So ${room.available}` : `${room.available} livres` }}
+                  {{ room.available <= 2 ? t('site.rooms.only', { n: room.available }) : t('site.rooms.free', { n: room.available }) }}
                 </span>
                 <template v-if="room.images.length > 1">
-                  <button class="absolute top-1/2 left-1 -translate-y-1/2 rounded-full bg-white/85 px-1.5 text-base opacity-0 shadow transition group-hover:opacity-100" type="button" aria-label="Foto anterior" @click="stepPhoto(room, -1)">‹</button>
-                  <button class="absolute top-1/2 right-1 -translate-y-1/2 rounded-full bg-white/85 px-1.5 text-base opacity-0 shadow transition group-hover:opacity-100" type="button" aria-label="Foto seguinte" @click="stepPhoto(room, 1)">›</button>
+                  <button class="absolute top-1/2 left-1 -translate-y-1/2 rounded-full bg-white/85 px-1.5 text-base opacity-0 shadow transition group-hover:opacity-100" type="button" :aria-label="t('site.rooms.prevPhoto')" @click="stepPhoto(room, -1)">‹</button>
+                  <button class="absolute top-1/2 right-1 -translate-y-1/2 rounded-full bg-white/85 px-1.5 text-base opacity-0 shadow transition group-hover:opacity-100" type="button" :aria-label="t('site.rooms.nextPhoto')" @click="stepPhoto(room, 1)">›</button>
                   <div class="absolute bottom-1.5 left-1/2 flex -translate-x-1/2 gap-1">
                     <span v-for="(_, dot) in room.images" :key="dot" class="size-1 rounded-full" :class="dot === (photo[room.type] ?? 0) ? 'bg-white' : 'bg-white/50'" />
                   </div>
@@ -398,16 +404,16 @@ async function book() {
               </div>
               <div class="flex flex-1 flex-col gap-1 p-2.5">
                 <h3 class="truncate text-sm font-semibold text-slate-900" :title="room.type">{{ room.type }}</h3>
-                <p v-if="room.description" class="line-clamp-2 text-xs leading-snug text-slate-500" :title="room.description">{{ room.description }}</p>
+                <p v-if="roomDescription(room)" class="line-clamp-2 text-xs leading-snug text-slate-500" :title="roomDescription(room) ?? ''">{{ roomDescription(room) }}</p>
                 <div class="mt-auto pt-1.5">
                   <template v-if="results">
                     <p class="text-base leading-tight font-bold text-indigo-700">{{ money(room.total ?? room.pricePerNight) }}</p>
                     <p class="truncate text-[11px] text-slate-500">
-                      {{ room.nights }} {{ room.nights === 1 ? 'noite' : 'noites' }}<template v-if="needsDeposit && room.deposit"> · sinal {{ money(room.deposit) }}</template>
+                      {{ t('site.search.nights', room.nights ?? 0) }}<template v-if="needsDeposit && room.deposit"> · {{ t('site.rooms.deposit', { amount: money(room.deposit) }) }}</template>
                     </p>
                   </template>
                   <p v-else class="text-base leading-tight font-bold text-indigo-700">
-                    {{ money(room.pricePerNight) }}<span class="text-[11px] font-normal text-slate-500"> /noite</span>
+                    {{ money(room.pricePerNight) }}<span class="text-[11px] font-normal text-slate-500"> {{ t('site.perNightShort') }}</span>
                   </p>
                   <button
                     v-if="results"
@@ -416,10 +422,10 @@ async function book() {
                     :class="chosen?.type === room.type ? 'bg-emerald-500 text-white' : 'bg-gradient-to-r from-amber-400 to-orange-500 text-white hover:brightness-105'"
                     @click="choose(room)"
                   >
-                    {{ chosen?.type === room.type ? 'Escolhido ✓' : 'Escolher' }}
+                    {{ chosen?.type === room.type ? t('site.rooms.chosen') : t('site.rooms.pick') }}
                   </button>
                   <button v-else type="button" class="mt-1.5 w-full rounded-lg bg-indigo-50 px-2 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100" @click="scrollToId('reservar')">
-                    Ver datas
+                    {{ t('site.rooms.seeDates') }}
                   </button>
                 </div>
               </div>
@@ -430,103 +436,103 @@ async function book() {
         <section v-if="chosen && !booking" ref="bookingForm" class="scroll-mt-20">
           <form class="grid gap-4 rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-100 lg:grid-cols-[1fr_340px]" @submit.prevent="book">
             <div class="grid content-start gap-3 sm:grid-cols-2">
-              <h2 class="text-2xl font-bold text-slate-900 sm:col-span-2">Os seus dados</h2>
-              <input v-model="guest.firstName" class="input" placeholder="Nome" autocomplete="given-name" required />
-              <input v-model="guest.lastName" class="input" placeholder="Apelido" autocomplete="family-name" required />
-              <input v-model="guest.email" class="input" type="email" placeholder="Email" autocomplete="email" required />
-              <input v-model="guest.phone" class="input" placeholder="Telefone" autocomplete="tel" />
+              <h2 class="text-2xl font-bold text-slate-900 sm:col-span-2">{{ t('site.form.title') }}</h2>
+              <input v-model="guest.firstName" class="input" :placeholder="t('site.form.firstName')" autocomplete="given-name" required />
+              <input v-model="guest.lastName" class="input" :placeholder="t('site.form.lastName')" autocomplete="family-name" required />
+              <input v-model="guest.email" class="input" type="email" :placeholder="t('site.form.email')" autocomplete="email" required />
+              <input v-model="guest.phone" class="input" :placeholder="t('site.form.phone')" autocomplete="tel" />
               <label class="text-xs font-medium text-slate-600">
-                Data de nascimento
+                {{ t('site.form.birthDate') }}
                 <input v-model="guest.birthDate" class="input mt-1" type="date" :max="todayIso()" autocomplete="bday" />
               </label>
               <label class="text-xs font-medium text-slate-600">
-                Nacionalidade
-                <input v-model="guest.nationality" class="input mt-1" placeholder="Ex.: Mocambicana" maxlength="60" autocomplete="country-name" />
+                {{ t('site.form.nationality') }}
+                <input v-model="guest.nationality" class="input mt-1" :placeholder="t('site.form.nationalityExample')" maxlength="60" autocomplete="country-name" />
               </label>
               <label class="text-xs font-medium text-slate-600">
-                Documento de identificacao
+                {{ t('site.form.document') }}
                 <select v-model="guest.documentType" class="input mt-1" required>
                   <option v-for="type in DOCUMENT_TYPES" :key="type" :value="type">{{ type }}</option>
                 </select>
               </label>
               <label class="text-xs font-medium text-slate-600">
-                Numero do documento
-                <input v-model="guest.documentNumber" class="input mt-1" placeholder="Ex.: 110100123456A" minlength="3" maxlength="50" required />
+                {{ t('site.form.documentNumber') }}
+                <input v-model="guest.documentNumber" class="input mt-1" :placeholder="t('site.form.documentExample')" minlength="3" maxlength="50" required />
               </label>
-              <input v-model="guest.taxId" class="input" placeholder="NIF (opcional, para a fatura)" maxlength="30" />
-              <input v-model="guest.address" class="input" placeholder="Morada" maxlength="255" autocomplete="street-address" />
+              <input v-model="guest.taxId" class="input" :placeholder="t('site.form.taxId')" maxlength="30" />
+              <input v-model="guest.address" class="input" :placeholder="t('site.form.address')" maxlength="255" autocomplete="street-address" />
 
               <section v-if="maxCompanions > 0" class="space-y-3 rounded-xl bg-slate-50 p-4 ring-1 ring-slate-100 sm:col-span-2">
                 <div class="flex flex-wrap items-center justify-between gap-2">
                   <h3 class="font-semibold text-slate-800">
-                    Acompanhantes <span class="text-sm font-normal text-slate-500">({{ companions.length }} de {{ maxCompanions }}, opcional)</span>
+                    {{ t('site.form.companions') }} <span class="text-sm font-normal text-slate-500">{{ t('site.form.companionsCount', { count: companions.length, max: maxCompanions }) }}</span>
                   </h3>
                   <button v-if="companions.length < maxCompanions" type="button" class="rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100" @click="addCompanion">
-                    + Adicionar acompanhante
+                    {{ t('site.form.addCompanion') }}
                   </button>
                 </div>
-                <p v-if="!companions.length" class="text-xs text-slate-500">Pode indicar ja os dados de quem vem consigo; se preferir, entrega-os no check-in.</p>
+                <p v-if="!companions.length" class="text-xs text-slate-500">{{ t('site.form.companionsHint') }}</p>
                 <div v-for="(companion, index) in companions" :key="index" class="grid gap-2 rounded-lg bg-white p-3 ring-1 ring-slate-200 sm:grid-cols-4">
                   <div class="flex items-center justify-between sm:col-span-4">
-                    <span class="text-xs font-semibold text-slate-600">Acompanhante {{ index + 1 }}</span>
+                    <span class="text-xs font-semibold text-slate-600">{{ t('site.form.companion', { n: index + 1 }) }}</span>
                     <span class="flex items-center gap-3">
                       <label class="flex items-center gap-1.5 text-xs text-slate-600" :class="!companion.isChild && childCompanions >= search.children ? 'opacity-40' : ''">
                         <input v-model="companion.isChild" type="checkbox" :disabled="!companion.isChild && childCompanions >= search.children" />
-                        Crianca
+                        {{ t('site.form.child') }}
                       </label>
-                      <button type="button" class="text-xs text-rose-600 hover:underline" @click="companions.splice(index, 1)">Remover</button>
+                      <button type="button" class="text-xs text-rose-600 hover:underline" @click="companions.splice(index, 1)">{{ t('site.form.remove') }}</button>
                     </span>
                   </div>
-                  <input v-model="companion.firstName" class="input" placeholder="Nome" maxlength="100" required />
-                  <input v-model="companion.lastName" class="input" placeholder="Apelido" maxlength="100" required />
-                  <input v-model="companion.birthDate" class="input" type="date" :max="todayIso()" aria-label="Data de nascimento" title="Data de nascimento" />
-                  <input v-model="companion.nationality" class="input" placeholder="Nacionalidade" maxlength="60" />
-                  <select v-model="companion.documentType" class="input sm:col-span-2" aria-label="Tipo de documento">
+                  <input v-model="companion.firstName" class="input" :placeholder="t('site.form.firstName')" maxlength="100" required />
+                  <input v-model="companion.lastName" class="input" :placeholder="t('site.form.lastName')" maxlength="100" required />
+                  <input v-model="companion.birthDate" class="input" type="date" :max="todayIso()" :aria-label="t('site.form.birthDate')" :title="t('site.form.birthDate')" />
+                  <input v-model="companion.nationality" class="input" :placeholder="t('site.form.nationality')" maxlength="60" />
+                  <select v-model="companion.documentType" class="input sm:col-span-2" :aria-label="t('site.form.documentType')">
                     <option v-for="type in DOCUMENT_TYPES" :key="type" :value="type">{{ type }}</option>
                   </select>
-                  <input v-model="companion.documentNumber" class="input sm:col-span-2" :placeholder="companion.isChild ? 'N.o do documento (se tiver)' : 'N.o do documento'" maxlength="50" />
+                  <input v-model="companion.documentNumber" class="input sm:col-span-2" :placeholder="companion.isChild ? t('site.form.documentIfAny') : t('site.form.documentNo')" maxlength="50" />
                 </div>
               </section>
 
-              <textarea v-model="guest.notes" class="input sm:col-span-2" rows="2" placeholder="Pedidos especiais (hora de chegada, cama extra...)" />
-              <p class="text-[11px] text-slate-500 sm:col-span-2">Os dados pessoais servem apenas para o registo da estadia, como exige a lei, e para a fatura.</p>
+              <textarea v-model="guest.notes" class="input sm:col-span-2" rows="2" :placeholder="t('site.form.notes')" />
+              <p class="text-[11px] text-slate-500 sm:col-span-2">{{ t('site.form.privacy') }}</p>
 
               <section v-if="needsDeposit" class="space-y-3 rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 p-4 ring-1 ring-amber-200 sm:col-span-2">
-                <h3 class="font-semibold text-orange-900">Pagamento do sinal ({{ hotel.depositPercent }}%)</h3>
-                <p v-if="hotel.paymentInstructions" class="rounded-lg bg-white p-3 text-sm whitespace-pre-line text-slate-700 shadow-sm">{{ hotel.paymentInstructions }}</p>
-                <p v-else class="text-sm text-slate-600">Contacte o hotel para obter os dados de pagamento.</p>
+                <h3 class="font-semibold text-orange-900">{{ t('site.form.depositTitle', { percent: hotel.depositPercent }) }}</h3>
+                <p v-if="instructions" class="rounded-lg bg-white p-3 text-sm whitespace-pre-line text-slate-700 shadow-sm">{{ instructions }}</p>
+                <p v-else class="text-sm text-slate-600">{{ t('site.form.noInstructions') }}</p>
                 <div class="grid gap-3 sm:grid-cols-2">
                   <label v-if="hotel.paymentTypes.length" class="text-sm font-medium text-slate-700">
-                    Pagou por
+                    {{ t('site.form.paidBy') }}
                     <select v-model.number="guest.depositPaymentTypeId" class="input mt-1">
                       <option v-for="type in hotel.paymentTypes" :key="type.id" :value="type.id">{{ type.name }}</option>
                     </select>
                   </label>
                   <label class="text-sm font-medium text-slate-700">
-                    Referencia do pagamento
-                    <input v-model="guest.depositReference" class="input mt-1" maxlength="100" placeholder="Codigo da transacao" required />
+                    {{ t('site.form.reference') }}
+                    <input v-model="guest.depositReference" class="input mt-1" maxlength="100" :placeholder="t('site.form.referencePlaceholder')" required />
                   </label>
                 </div>
-                <p class="text-xs text-orange-900/70">A reserva fica confirmada depois de verificarmos o pagamento do sinal.</p>
+                <p class="text-xs text-orange-900/70">{{ t('site.form.depositNote') }}</p>
               </section>
             </div>
 
             <aside class="space-y-3 self-start rounded-xl bg-gradient-to-br from-indigo-600 to-violet-700 p-5 text-white shadow-lg">
-              <p class="text-xs font-semibold tracking-widest text-indigo-200 uppercase">Resumo</p>
+              <p class="text-xs font-semibold tracking-widest text-indigo-200 uppercase">{{ t('site.summary.title') }}</p>
               <h3 class="text-xl font-semibold">{{ chosen.type }}</h3>
               <img v-if="chosen.images.length" :src="fileUrl(chosen.images[0])" :alt="chosen.type" class="aspect-video w-full rounded-lg object-cover" />
               <dl class="space-y-1 text-sm">
-                <div class="flex justify-between"><dt class="text-indigo-200">Entrada</dt><dd>{{ formatDate(search.checkIn) }}</dd></div>
-                <div class="flex justify-between"><dt class="text-indigo-200">Saida</dt><dd>{{ formatDate(search.checkOut) }}</dd></div>
-                <div class="flex justify-between"><dt class="text-indigo-200">Hospedes</dt><dd>{{ search.adults + search.children }}</dd></div>
-                <div class="flex justify-between border-t border-white/20 pt-2 text-base font-semibold"><dt>Total</dt><dd>{{ money(chosen.total ?? 0) }}</dd></div>
+                <div class="flex justify-between"><dt class="text-indigo-200">{{ t('site.summary.checkIn') }}</dt><dd>{{ formatDate(search.checkIn) }}</dd></div>
+                <div class="flex justify-between"><dt class="text-indigo-200">{{ t('site.summary.checkOut') }}</dt><dd>{{ formatDate(search.checkOut) }}</dd></div>
+                <div class="flex justify-between"><dt class="text-indigo-200">{{ t('site.summary.guests') }}</dt><dd>{{ search.adults + search.children }}</dd></div>
+                <div class="flex justify-between border-t border-white/20 pt-2 text-base font-semibold"><dt>{{ t('site.summary.total') }}</dt><dd>{{ money(chosen.total ?? 0) }}</dd></div>
                 <template v-if="needsDeposit">
-                  <div class="flex justify-between text-amber-300"><dt>Sinal agora</dt><dd class="font-semibold">{{ money(chosen.deposit ?? 0) }}</dd></div>
-                  <div class="flex justify-between"><dt class="text-indigo-200">Restante no hotel</dt><dd>{{ money(remaining) }}</dd></div>
+                  <div class="flex justify-between text-amber-300"><dt>{{ t('site.summary.depositNow') }}</dt><dd class="font-semibold">{{ money(chosen.deposit ?? 0) }}</dd></div>
+                  <div class="flex justify-between"><dt class="text-indigo-200">{{ t('site.summary.remaining') }}</dt><dd>{{ money(remaining) }}</dd></div>
                 </template>
               </dl>
               <button class="w-full rounded-lg bg-gradient-to-r from-amber-400 to-orange-500 px-4 py-3 font-semibold text-white shadow hover:brightness-105 disabled:opacity-60" type="submit" :disabled="loading">
-                {{ loading ? 'A enviar...' : needsDeposit ? 'Enviar pedido com sinal' : 'Pedir reserva' }}
+                {{ loading ? t('site.summary.sending') : needsDeposit ? t('site.summary.sendWithDeposit') : t('site.summary.request') }}
               </button>
             </aside>
           </form>
@@ -539,19 +545,19 @@ async function book() {
           <div class="space-y-3">
             <img v-if="hotel.logoFile" :src="fileUrl(hotel.logoFile)" :alt="hotel.name" class="max-h-14 max-w-40 rounded-lg bg-white p-1.5 object-contain" />
             <p class="text-xl font-semibold text-white">{{ hotel.name }}</p>
-            <p v-if="hotel.publicDescription" class="text-sm text-slate-400 line-clamp-4">{{ hotel.publicDescription }}</p>
+            <p v-if="description" class="text-sm text-slate-400 line-clamp-4">{{ description }}</p>
           </div>
           <div class="space-y-2 text-sm">
-            <p class="font-semibold tracking-widest text-amber-300 uppercase">Contactos</p>
-            <a v-if="hotel.phone" :href="`tel:${hotel.phone.replace(/\s/g, '')}`" class="block hover:text-white">Telefone: {{ hotel.phone }}</a>
-            <a v-if="hotel.email" :href="`mailto:${hotel.email}`" class="block hover:text-white">Email: {{ hotel.email }}</a>
-            <a v-if="mapsUrl" :href="mapsUrl" target="_blank" rel="noopener" class="block hover:text-white">{{ place }} · ver no mapa</a>
+            <p class="font-semibold tracking-widest text-amber-300 uppercase">{{ t('site.footer.contacts') }}</p>
+            <a v-if="hotel.phone" :href="`tel:${hotel.phone.replace(/\s/g, '')}`" class="block hover:text-white">{{ t('site.footer.phone', { value: hotel.phone }) }}</a>
+            <a v-if="hotel.email" :href="`mailto:${hotel.email}`" class="block hover:text-white">{{ t('site.footer.email', { value: hotel.email }) }}</a>
+            <a v-if="mapsUrl" :href="mapsUrl" target="_blank" rel="noopener" class="block hover:text-white">{{ t('site.footer.map', { place }) }}</a>
           </div>
           <div class="space-y-3 text-sm">
-            <p class="font-semibold tracking-widest text-amber-300 uppercase">Reserve ja</p>
-            <p class="text-slate-400">Reserva direta, sem intermediarios.</p>
+            <p class="font-semibold tracking-widest text-amber-300 uppercase">{{ t('site.footer.bookNow') }}</p>
+            <p class="text-slate-400">{{ t('site.footer.direct') }}</p>
             <button type="button" class="rounded-lg bg-gradient-to-r from-amber-400 to-orange-500 px-5 py-2 font-semibold text-white shadow hover:brightness-105" @click="scrollToId('reservar')">
-              Ver disponibilidade
+              {{ t('site.footer.availability') }}
             </button>
           </div>
         </div>
@@ -561,10 +567,10 @@ async function book() {
       <div v-if="viewer" class="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4" @click="viewer = null">
         <img :src="fileUrl(viewer.images[viewer.index])" alt="" class="max-h-full max-w-full rounded-lg object-contain shadow-2xl" />
         <template v-if="viewer.images.length > 1">
-          <button class="absolute top-1/2 left-4 -translate-y-1/2 rounded-full bg-white/85 px-3 py-1 text-2xl" type="button" aria-label="Foto anterior" @click.stop="viewer.index = (viewer.index - 1 + viewer.images.length) % viewer.images.length">‹</button>
-          <button class="absolute top-1/2 right-4 -translate-y-1/2 rounded-full bg-white/85 px-3 py-1 text-2xl" type="button" aria-label="Foto seguinte" @click.stop="viewer.index = (viewer.index + 1) % viewer.images.length">›</button>
+          <button class="absolute top-1/2 left-4 -translate-y-1/2 rounded-full bg-white/85 px-3 py-1 text-2xl" type="button" :aria-label="t('site.rooms.prevPhoto')" @click.stop="viewer.index = (viewer.index - 1 + viewer.images.length) % viewer.images.length">‹</button>
+          <button class="absolute top-1/2 right-4 -translate-y-1/2 rounded-full bg-white/85 px-3 py-1 text-2xl" type="button" :aria-label="t('site.rooms.nextPhoto')" @click.stop="viewer.index = (viewer.index + 1) % viewer.images.length">›</button>
         </template>
-        <button class="absolute top-4 right-4 rounded bg-white/85 px-3 py-1 text-sm" type="button" @click="viewer = null">Fechar</button>
+        <button class="absolute top-4 right-4 rounded bg-white/85 px-3 py-1 text-sm" type="button" @click="viewer = null">{{ t('common.close') }}</button>
       </div>
     </template>
   </div>
