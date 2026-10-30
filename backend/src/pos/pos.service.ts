@@ -122,6 +122,47 @@ export class CloseOrderDto {
   customerTaxId?: string;
 }
 
+export class MoveLineDto {
+  @IsInt()
+  itemId: number;
+
+  @IsNumber({ maxDecimalPlaces: 3 })
+  @Min(0.001)
+  quantity: number;
+}
+
+export class MoveItemsDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @ValidateNested({ each: true })
+  @Type(() => MoveLineDto)
+  items: MoveLineDto[];
+
+  @IsOptional()
+  @IsInt()
+  toOrderId?: number;
+
+  @IsOptional()
+  @IsInt()
+  toTableId?: number;
+}
+
+export class KdsQueryDto extends HotelQueryDto {
+  @IsEnum(PrepStation)
+  station: PrepStation;
+}
+
+export class KdsReadyDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsInt({ each: true })
+  itemIds: number[];
+
+  @IsOptional()
+  @IsIn([true, false])
+  undo?: boolean;
+}
+
 export class OrderQueryDto extends HotelQueryDto {
   @IsOptional()
   @IsEnum(OrderStatus)
@@ -190,7 +231,7 @@ export class PosService {
       if (table.outlet !== data.outlet) {
         throw new BadRequestException('Esta mesa pertence a outro ponto de venda');
       }
-      const existing = await tx.order.findFirst({ where: { tableId, status: OrderStatus.OPEN }, include: orderInclude });
+      const existing = await tx.order.findFirst({ where: { tableId, status: OrderStatus.OPEN }, include: orderInclude, orderBy: { openedAt: 'asc' } });
       if (existing) {
         return existing;
       }
@@ -356,6 +397,129 @@ export class PosService {
       station: item.product.category?.prepStation ?? (order.outlet === Outlet.BAR ? PrepStation.BAR : PrepStation.KITCHEN),
       printerId: item.product.category?.printerId ?? null,
     };
+  }
+
+  async moveItems(orderId: number, dto: MoveItemsDto, user: JwtPayload) {
+    const source = await this.openOrder(orderId, user);
+    if (dto.toOrderId && dto.toTableId) {
+      throw new BadRequestException('Escolhe so a conta ou a mesa de destino');
+    }
+    const ids = dto.items.map((line) => line.itemId);
+    if (new Set(ids).size !== ids.length) {
+      throw new BadRequestException('Cada linha so pode aparecer uma vez');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      let targetId = dto.toOrderId ?? null;
+      if (dto.toTableId) {
+        const [table] = await tx.$queryRaw<{ id: number; hotelId: number; outlet: Outlet; number: number; name: string | null; active: number | boolean }[]>`
+          SELECT id, hotelId, outlet, number, name, active FROM dining_tables WHERE id = ${dto.toTableId} FOR UPDATE`;
+        if (!table || table.hotelId !== source.hotelId || !table.active) {
+          throw new BadRequestException('Mesa de destino invalida');
+        }
+        if (table.id === source.tableId) {
+          throw new BadRequestException('Escolhe outra mesa');
+        }
+        const existing = await tx.order.findFirst({ where: { tableId: table.id, status: OrderStatus.OPEN }, orderBy: { openedAt: 'asc' } });
+        targetId =
+          existing?.id ??
+          (await tx.order.create({ data: { hotelId: source.hotelId, outlet: table.outlet, tableId: table.id, tableLabel: tableLabel(table), openedById: user.sub } })).id;
+      } else if (!targetId) {
+        const count = source.tableId ? await tx.order.count({ where: { tableId: source.tableId, status: OrderStatus.OPEN } }) : 1;
+        const base = source.tableLabel ?? `Pedido #${source.id}`;
+        targetId = (
+          await tx.order.create({
+            data: { hotelId: source.hotelId, outlet: source.outlet, tableId: source.tableId, tableLabel: `${base.replace(/ \(conta \d+\)$/, '')} (conta ${count + 1})`.slice(0, 30), openedById: user.sub },
+          })
+        ).id;
+      }
+      if (targetId === orderId) {
+        throw new BadRequestException('A conta de destino tem de ser outra');
+      }
+      const locked = await tx.$queryRaw<{ id: number; hotelId: number; status: OrderStatus }[]>`
+        SELECT id, hotelId, status FROM orders WHERE id IN (${Prisma.join([orderId, targetId])}) ORDER BY id FOR UPDATE`;
+      if (locked.length !== 2 || locked.some((order) => order.status !== OrderStatus.OPEN || order.hotelId !== source.hotelId)) {
+        throw new ConflictException('As duas contas tem de estar abertas e ser do mesmo hotel');
+      }
+      const lines = await tx.orderItem.findMany({ where: { id: { in: ids }, orderId } });
+      for (const request of dto.items) {
+        const line = lines.find((item) => item.id === request.itemId);
+        if (!line || line.voidedAt) {
+          throw new BadRequestException('Linha invalida ou anulada');
+        }
+        const quantity = new Prisma.Decimal(request.quantity);
+        if (quantity.greaterThan(line.quantity)) {
+          throw new BadRequestException(`So ha ${line.quantity.toString()} de ${line.description}`);
+        }
+        if (quantity.equals(line.quantity)) {
+          await tx.orderItem.update({ where: { id: line.id }, data: { orderId: targetId } });
+          continue;
+        }
+        const rest = line.quantity.sub(quantity);
+        await tx.orderItem.update({ where: { id: line.id }, data: { quantity: rest, total: toMoney(rest.mul(line.unitPrice)) } });
+        const { id: _id, orderId: _from, createdAt: _created, ...copy } = line;
+        await tx.orderItem.create({ data: { ...copy, orderId: targetId, quantity, total: toMoney(quantity.mul(line.unitPrice)) } });
+      }
+      const remaining = await tx.orderItem.count({ where: { orderId, voidedAt: null } });
+      if (!remaining) {
+        await tx.order.update({ where: { id: orderId }, data: { status: OrderStatus.CANCELLED, closedAt: new Date(), notes: `Artigos transferidos para o pedido #${targetId}` } });
+      }
+      const [from, to] = [await this.recalculate(tx, orderId), await this.recalculate(tx, targetId)];
+      return { from, to };
+    });
+  }
+
+  async kds(query: KdsQueryDto, user: JwtPayload) {
+    const hotelId = resolveHotelScope(user, query.hotelId);
+    const since = new Date(Date.now() - 12 * 3600 * 1000);
+    const orders = await this.prisma.order.findMany({
+      where: {
+        hotelId,
+        OR: [{ status: OrderStatus.OPEN }, { status: OrderStatus.CLOSED, closedAt: { gte: since } }],
+        items: { some: { sentAt: { not: null }, OR: [{ readyAt: null }, { readyAt: { gte: new Date(Date.now() - 30 * 60 * 1000) } }] } },
+      },
+      include: orderInclude,
+      orderBy: { openedAt: 'asc' },
+    });
+    const cards = new Map<string, { key: string; orderId: number; table: string; outlet: Outlet; waiter: string | null; sentAt: Date; readyAt: Date | null; items: unknown[] }>();
+    for (const order of orders) {
+      for (const item of order.items) {
+        if (!item.sentAt || this.targetOf(order, item).station !== query.station) continue;
+        const key = `${order.id}:${item.sentAt.getTime()}`;
+        const card = cards.get(key) ?? {
+          key,
+          orderId: order.id,
+          table: order.tableLabel ?? `Pedido #${order.id}`,
+          outlet: order.outlet,
+          waiter: order.openedBy?.name ?? null,
+          sentAt: item.sentAt,
+          readyAt: null,
+          items: [],
+        };
+        card.items.push({ id: item.id, quantity: item.quantity, description: item.description, notes: item.notes, voided: Boolean(item.voidedAt), readyAt: item.readyAt });
+        cards.set(key, card);
+      }
+    }
+    const all = [...cards.values()].map((card) => {
+      const items = card.items as { readyAt: Date | null; voided: boolean }[];
+      const pending = items.filter((item) => !item.readyAt && !item.voided);
+      return { ...card, readyAt: pending.length ? null : items.reduce<Date | null>((max, item) => (item.readyAt && (!max || item.readyAt > max) ? item.readyAt : max), null) };
+    });
+    return {
+      pending: all.filter((card) => !card.readyAt).sort((a, b) => a.sentAt.getTime() - b.sentAt.getTime()),
+      done: all
+        .filter((card) => card.readyAt)
+        .sort((a, b) => b.readyAt!.getTime() - a.readyAt!.getTime())
+        .slice(0, 12),
+    };
+  }
+
+  async markReady(dto: KdsReadyDto, user: JwtPayload) {
+    const items = await this.prisma.orderItem.findMany({ where: { id: { in: dto.itemIds } }, select: { id: true, sentAt: true, order: { select: { hotelId: true } } } });
+    if (items.length !== dto.itemIds.length || items.some((item) => !canAccessHotel(user, item.order.hotelId) || !item.sentAt)) {
+      throw new NotFoundException('Linhas nao encontradas');
+    }
+    const { count } = await this.prisma.orderItem.updateMany({ where: { id: { in: dto.itemIds } }, data: { readyAt: dto.undo ? null : new Date() } });
+    return { updated: count };
   }
 
   async cancel(orderId: number, user: JwtPayload) {

@@ -22,6 +22,7 @@ const links = computed(() =>
     'guests',
     'rooms',
     'pos',
+    'kitchen',
     'invoices',
     'accounts',
     'cash',

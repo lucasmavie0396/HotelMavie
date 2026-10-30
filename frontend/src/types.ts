@@ -254,7 +254,7 @@ export interface DiningTable {
   seats: number;
   active: boolean;
   label: string;
-  openOrder: { id: number; total: string; openedAt: string; items: number; pending: number } | null;
+  openOrder: { id: number; total: string; openedAt: string; items: number; pending: number; checks: number } | null;
 }
 export type PrepStation = 'KITCHEN' | 'BAR' | 'NONE';
 
@@ -397,10 +397,22 @@ export interface OrderItem {
   total: string;
   notes: string | null;
   sentAt: string | null;
+  readyAt: string | null;
   voidedAt: string | null;
   voidReason: string | null;
   voidedBy: { name: string } | null;
   product: { category: { prepStation: PrepStation } | null };
+}
+
+export interface KdsCard {
+  key: string;
+  orderId: number;
+  table: string;
+  outlet: Outlet;
+  waiter: string | null;
+  sentAt: string;
+  readyAt: string | null;
+  items: { id: number; quantity: string; description: string; notes: string | null; voided: boolean; readyAt: string | null }[];
 }
 
 export interface Order {

@@ -42,6 +42,12 @@ export const SECTIONS: Record<string, Section> = {
     gradient: 'from-rose-500 via-pink-500 to-fuchsia-600',
     dot: 'bg-gradient-to-br from-rose-400 to-pink-500',
   },
+  kitchen: {
+    label: 'Ecra cozinha/bar',
+    icon: 'M2 4h20v12H2zM8 20h8M12 16v4M6 8h5M6 11h8',
+    gradient: 'from-orange-500 via-rose-500 to-pink-600',
+    dot: 'bg-gradient-to-br from-orange-400 to-rose-500',
+  },
   invoices: {
     label: 'Faturacao',
     icon: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8',

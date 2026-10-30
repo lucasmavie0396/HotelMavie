@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { closePdf, pdfPreview } from '@/services/print';
+import { closePdf, pdfPreview, showPdfAt } from '@/services/print';
 
 const frame = ref<HTMLIFrameElement | null>(null);
 const narrow = computed(() => pdfPreview.paper !== 'A4');
@@ -16,7 +16,10 @@ function print() {
 }
 
 function onKey(event: KeyboardEvent) {
-  if (event.key === 'Escape' && pdfPreview.url) closePdf();
+  if (!pdfPreview.url) return;
+  if (event.key === 'Escape') closePdf();
+  if (event.key === 'ArrowRight') showPdfAt(pdfPreview.index + 1);
+  if (event.key === 'ArrowLeft') showPdfAt(pdfPreview.index - 1);
 }
 
 onMounted(() => window.addEventListener('keydown', onKey));
@@ -39,6 +42,19 @@ onBeforeUnmount(() => {
         <div class="min-w-0">
           <p class="truncate font-semibold">{{ pdfPreview.title }}</p>
           <p class="text-xs text-slate-500">{{ narrow ? `Talao ${pdfPreview.paper === 'MM58' ? '58' : '80'} mm` : 'Folha A4' }} · pre-visualizacao</p>
+        </div>
+        <div v-if="pdfPreview.queue.length > 1" class="flex items-center gap-1 text-sm">
+          <button class="btn-secondary px-2" type="button" :disabled="pdfPreview.index === 0" aria-label="Documento anterior" @click="showPdfAt(pdfPreview.index - 1)">&lsaquo;</button>
+          <span class="px-1 whitespace-nowrap text-slate-600">{{ pdfPreview.index + 1 }} de {{ pdfPreview.queue.length }}</span>
+          <button
+            class="btn-secondary px-2"
+            type="button"
+            :disabled="pdfPreview.index === pdfPreview.queue.length - 1"
+            aria-label="Documento seguinte"
+            @click="showPdfAt(pdfPreview.index + 1)"
+          >
+            &rsaquo;
+          </button>
         </div>
         <div class="flex gap-2">
           <button class="btn" type="button" @click="print">Imprimir</button>

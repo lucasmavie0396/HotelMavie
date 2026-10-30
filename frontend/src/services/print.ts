@@ -2,16 +2,32 @@ import { reactive } from 'vue';
 import { api } from '@/services/api';
 import type { PaperWidth } from '@/types';
 
-export const pdfPreview = reactive({ url: '', title: '', paper: 'MM80' as PaperWidth });
+interface PdfEntry {
+  url: string;
+  title: string;
+  paper: PaperWidth;
+}
+
+export const pdfPreview = reactive({ url: '', title: '', paper: 'MM80' as PaperWidth, queue: [] as PdfEntry[], index: 0 });
+
+function select(index: number) {
+  const entry = pdfPreview.queue[index];
+  if (!entry) return;
+  Object.assign(pdfPreview, { index, url: entry.url, title: entry.title, paper: entry.paper });
+}
 
 export function showPdf(blob: Blob, title: string, paper: PaperWidth) {
-  closePdf();
-  Object.assign(pdfPreview, { url: URL.createObjectURL(blob), title, paper });
+  pdfPreview.queue.push({ url: URL.createObjectURL(blob), title, paper });
+  if (pdfPreview.queue.length === 1) select(0);
+}
+
+export function showPdfAt(index: number) {
+  select(index);
 }
 
 export function closePdf() {
-  if (pdfPreview.url) URL.revokeObjectURL(pdfPreview.url);
-  pdfPreview.url = '';
+  for (const entry of pdfPreview.queue) URL.revokeObjectURL(entry.url);
+  Object.assign(pdfPreview, { url: '', queue: [], index: 0 });
 }
 
 export async function previewPdfFrom(path: string, params: Record<string, unknown>, title: string, paper: PaperWidth) {

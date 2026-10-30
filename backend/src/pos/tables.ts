@@ -6,6 +6,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
+import { sumMoney } from '../common/money';
 import { PrismaService } from '../prisma/prisma.service';
 
 export const MAX_TABLES_PER_OUTLET = 200;
@@ -82,11 +83,19 @@ export class TablesController {
     });
     return tables.map(({ orders, ...table }) => {
       const order = orders[0];
+      const items = orders.flatMap((open) => open.items);
       return {
         ...table,
         label: tableLabel(table),
         openOrder: order
-          ? { id: order.id, total: order.total, openedAt: order.openedAt, items: order.items.length, pending: order.items.filter((item) => !item.sentAt).length }
+          ? {
+              id: order.id,
+              total: sumMoney(orders.map((open) => open.total)),
+              openedAt: order.openedAt,
+              items: items.length,
+              pending: items.filter((item) => !item.sentAt).length,
+              checks: orders.length,
+            }
           : null,
       };
     });

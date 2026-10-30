@@ -41,6 +41,7 @@ const router = createRouter({
         { path: 'contas-correntes', name: 'accounts', component: () => import('@/views/AccountsView.vue') },
         { path: 'caixa', name: 'cash', component: () => import('@/views/CashView.vue') },
         { path: 'pos', name: 'pos', component: () => import('@/views/PosView.vue') },
+        { path: 'cozinha', name: 'kitchen', component: () => import('@/views/KitchenView.vue') },
         { path: 'produtos', name: 'products', component: () => import('@/views/ProductsView.vue') },
         { path: 'stocks', name: 'stock', component: () => import('@/views/StockView.vue') },
         { path: 'rh', name: 'hr', component: () => import('@/views/HrView.vue') },

@@ -4,7 +4,7 @@ import { IsString, Length } from 'class-validator';
 import type { Response } from 'express';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { CloseOrderDto, OpenOrderDto, OrderItemDto, OrderQueryDto, PosService } from './pos.service';
+import { CloseOrderDto, KdsQueryDto, KdsReadyDto, MoveItemsDto, OpenOrderDto, OrderItemDto, OrderQueryDto, PosService } from './pos.service';
 
 class VoidItemDto {
   @IsString()
@@ -16,6 +16,22 @@ function sendPdf(res: Response, buffer: Buffer, name: string) {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${name}.pdf"`);
   res.send(buffer);
+}
+
+@Controller('kds')
+export class KdsController {
+  constructor(private readonly pos: PosService) {}
+
+  @Get()
+  list(@Query() query: KdsQueryDto, @CurrentUser() user: JwtPayload) {
+    return this.pos.kds(query, user);
+  }
+
+  @Post('ready')
+  @HttpCode(HttpStatus.OK)
+  ready(@Body() dto: KdsReadyDto, @CurrentUser() user: JwtPayload) {
+    return this.pos.markReady(dto, user);
+  }
 }
 
 @Controller('orders')
@@ -92,6 +108,12 @@ export class PosController {
   @Get(':id/prebill')
   async prebill(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload, @Res() res: Response) {
     sendPdf(res, await this.pos.prebill(id, user), `consulta-${id}`);
+  }
+
+  @Post(':id/move-items')
+  @HttpCode(HttpStatus.OK)
+  moveItems(@Param('id', ParseIntPipe) id: number, @Body() dto: MoveItemsDto, @CurrentUser() user: JwtPayload) {
+    return this.pos.moveItems(id, dto, user);
   }
 
   @Post(':id/close')

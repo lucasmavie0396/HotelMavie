@@ -36,6 +36,14 @@ const activeTables = computed(() => tables.value.filter((table) => table.active 
 const looseOrders = computed(() => orders.value.filter((order) => !order.tableId));
 const categoryFilter = ref<number | 0>(0);
 const closing = ref(false);
+const people = ref(2);
+const moving = reactive({ active: false, target: 'split', quantities: {} as Record<number, number> });
+const tableChecks = computed(() => (current.value?.tableId ? orders.value.filter((order) => order.tableId === current.value!.tableId) : []));
+const moveTargets = computed(() => [
+  ...activeTables.value.filter((table) => table.id !== current.value?.tableId && table.active).map((table) => ({ value: `table:${table.id}`, label: `${table.label}${table.openOrder ? ' (ocupada)' : ''}` })),
+  ...orders.value.filter((order) => order.id !== current.value?.id && !order.tableId).map((order) => ({ value: `order:${order.id}`, label: order.tableLabel ?? `Pedido #${order.id}` })),
+]);
+const movingCount = computed(() => Object.values(moving.quantities).filter((quantity) => quantity > 0).length);
 
 const close = reactive({
   mode: 'PAY' as 'PAY' | 'ROOM',
@@ -128,6 +136,7 @@ const openOrder = () =>
 
 function openTable(table: DiningTable) {
   closing.value = false;
+  moving.active = false;
   const existing = table.openOrder && orders.value.find((order) => order.id === table.openOrder!.id);
   if (existing) {
     current.value = existing;
@@ -197,6 +206,46 @@ function startClose() {
   });
   closing.value = true;
 }
+
+function splitByPeople() {
+  const count = Math.max(2, Math.min(50, Math.floor(people.value || 2)));
+  const cents = Math.round(Number(current.value!.total) * 100);
+  const share = Math.floor(cents / count);
+  const template = close.payments[0] ?? { paymentTypeId: 0, cashSessionId: 0, reference: '' };
+  close.payments = Array.from({ length: count }, (_, index) => ({
+    paymentTypeId: template.paymentTypeId,
+    cashSessionId: template.cashSessionId,
+    reference: '',
+    amount: (index === count - 1 ? cents - share * (count - 1) : share) / 100,
+  }));
+}
+
+function startMove() {
+  closing.value = false;
+  moving.active = true;
+  moving.target = 'split';
+  moving.quantities = {};
+}
+
+function toggleMoveLine(item: OrderItem) {
+  moving.quantities[item.id] = moving.quantities[item.id] ? 0 : Number(item.quantity);
+}
+
+const confirmMove = () =>
+  run(async () => {
+    const order = current.value!;
+    const items = Object.entries(moving.quantities)
+      .filter(([, quantity]) => quantity > 0)
+      .map(([itemId, quantity]) => ({ itemId: Number(itemId), quantity }));
+    const [kind, id] = moving.target.split(':');
+    const { data } = await api.post<{ from: Order; to: Order }>(`/orders/${order.id}/move-items`, {
+      items,
+      toTableId: kind === 'table' ? Number(id) : undefined,
+      toOrderId: kind === 'order' ? Number(id) : undefined,
+    });
+    moving.active = false;
+    return data.from.status === 'OPEN' ? data.from : data.to;
+  }, 'Artigos transferidos');
 
 function addPaymentLine() {
   close.payments.push({ paymentTypeId: 0, amount: Math.max(Number(current.value!.total) - paidTotal.value, 0), cashSessionId: 0, reference: '' });
@@ -350,16 +399,50 @@ onMounted(load);
               <h2 class="font-semibold">{{ current.tableLabel ?? `Pedido #${current.id}` }}</h2>
               <button class="text-xs text-rose-600 hover:underline" type="button" @click="cancelOrder">Anular pedido</button>
             </div>
+            <div v-if="tableChecks.length > 1" class="flex flex-wrap gap-1 text-xs">
+              <button
+                v-for="(check, index) in tableChecks"
+                :key="check.id"
+                type="button"
+                class="rounded-full px-2 py-0.5"
+                :class="check.id === current.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700'"
+                @click="current = check; closing = false; moving.active = false"
+              >
+                Conta {{ index + 1 }} · {{ money(check.total) }}
+              </button>
+            </div>
             <ul class="divide-y divide-slate-100 text-sm">
               <li v-for="item in current.items" :key="item.id" class="py-1.5" :class="item.voidedAt ? 'text-slate-400' : ''">
                 <div class="flex items-center justify-between gap-2">
                   <span :class="item.voidedAt ? 'line-through' : ''">
+                    <input
+                      v-if="moving.active && !item.voidedAt"
+                      class="mr-1 align-middle"
+                      type="checkbox"
+                      :checked="(moving.quantities[item.id] ?? 0) > 0"
+                      :aria-label="`Mover ${item.description}`"
+                      @change="toggleMoveLine(item)"
+                    />
                     {{ Number(item.quantity) }}x {{ item.description }}
-                    <span v-if="!item.voidedAt" class="ml-1 rounded px-1 text-[10px]" :class="item.sentAt ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'">
-                      {{ item.sentAt ? (station(item) === 'BAR' ? 'bar' : station(item) === 'NONE' ? 'servido' : 'cozinha') : 'por enviar' }}
+                    <span
+                      v-if="!item.voidedAt"
+                      class="ml-1 rounded px-1 text-[10px]"
+                      :class="item.readyAt ? 'bg-sky-100 text-sky-800' : item.sentAt ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
+                    >
+                      {{ item.readyAt ? 'pronto' : item.sentAt ? (station(item) === 'BAR' ? 'bar' : station(item) === 'NONE' ? 'servido' : 'cozinha') : 'por enviar' }}
                     </span>
                   </span>
-                  <span class="flex items-center gap-2 whitespace-nowrap">
+                  <input
+                    v-if="moving.active && (moving.quantities[item.id] ?? 0) > 0 && Number(item.quantity) > 1"
+                    v-model.number="moving.quantities[item.id]"
+                    class="input w-20 py-0.5"
+                    type="number"
+                    min="0.001"
+                    :max="Number(item.quantity)"
+                    step="1"
+                    aria-label="Quantidade a mover"
+                  />
+                  <span v-else class="flex items-center gap-2 whitespace-nowrap">
                     {{ item.voidedAt ? 'anulado' : money(item.total) }}
                     <template v-if="!item.voidedAt">
                       <button v-if="!item.sentAt" class="text-xs text-indigo-600" type="button" :disabled="busy" @click="addNote(item)">nota</button>
@@ -376,12 +459,25 @@ onMounted(load);
               Total <span>{{ money(current.total) }}</span>
             </p>
 
-            <div v-if="!closing" class="grid grid-cols-2 gap-2">
+            <div v-if="moving.active" class="space-y-2 rounded-md bg-slate-50 p-3 text-sm">
+              <p class="text-xs text-slate-500">Escolhe os artigos (e a quantidade) e para onde vao.</p>
+              <select v-model="moving.target" class="input">
+                <option value="split">Nova conta nesta {{ current.tableId ? 'mesa' : 'venda' }} (dividir)</option>
+                <option v-for="target in moveTargets" :key="target.value" :value="target.value">Transferir para {{ target.label }}</option>
+              </select>
+              <div class="flex justify-end gap-2">
+                <button class="btn-secondary" type="button" @click="moving.active = false">Voltar</button>
+                <button class="btn" type="button" :disabled="busy || !movingCount" @click="confirmMove">Mover {{ movingCount }} linha(s)</button>
+              </div>
+            </div>
+
+            <div v-else-if="!closing" class="grid grid-cols-2 gap-2">
               <button class="btn col-span-2" type="button" :disabled="busy || !pendingCount" @click="sendOrder">
                 Enviar pedido{{ pendingCount ? ` (${pendingCount})` : '' }}
               </button>
               <button class="btn-secondary" type="button" :disabled="!activeItems" @click="prebill">Pre-conta</button>
               <button class="btn" type="button" :disabled="!activeItems" @click="startClose">Fechar conta</button>
+              <button class="btn-secondary col-span-2" type="button" :disabled="!activeItems" @click="startMove">Dividir / transferir artigos</button>
               <div v-if="current.items.some((i) => i.sentAt)" class="col-span-2 flex gap-3 text-xs">
                 Reimprimir:
                 <button class="text-indigo-600 hover:underline" type="button" @click="reprint('KITCHEN')">cozinha</button>
@@ -409,7 +505,16 @@ onMounted(load);
                     :registers="registers"
                   />
                 </div>
-                <button class="text-xs text-indigo-600 hover:underline" type="button" @click="addPaymentLine">+ dividir pagamento</button>
+                <div class="flex flex-wrap items-center gap-2 text-xs">
+                  <button class="text-indigo-600 hover:underline" type="button" @click="addPaymentLine">+ dividir pagamento</button>
+                  <span class="text-slate-400">|</span>
+                  <label class="flex items-center gap-1">
+                    Dividir por
+                    <input v-model.number="people" class="input w-14 py-0.5" type="number" min="2" max="50" aria-label="Numero de pessoas" />
+                    pessoas
+                  </label>
+                  <button class="text-indigo-600 hover:underline" type="button" @click="splitByPeople">aplicar</button>
+                </div>
                 <p :class="Math.abs(paidTotal - Number(current.total)) < 0.005 ? 'text-emerald-700' : 'text-rose-600'">
                   Pago {{ money(paidTotal) }} de {{ money(current.total) }}
                 </p>
