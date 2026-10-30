@@ -302,65 +302,62 @@ async function book() {
             Sem disponibilidade para estas datas. Experimente outras datas ou contacte-nos.
           </p>
 
-          <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
             <article
               v-for="(room, index) in rooms"
               :key="room.type"
-              class="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-md ring-1 ring-slate-100 transition hover:-translate-y-1 hover:shadow-xl"
-              :class="chosen?.type === room.type ? 'ring-4 ring-indigo-500' : ''"
+              class="group flex flex-col overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-100 transition hover:-translate-y-0.5 hover:shadow-lg"
+              :class="chosen?.type === room.type ? 'ring-[3px] ring-indigo-500' : ''"
             >
               <div class="relative aspect-[4/3] overflow-hidden">
                 <img
                   v-if="room.images.length"
                   :src="fileUrl(currentPhoto(room))"
                   :alt="room.type"
+                  loading="lazy"
                   class="h-full w-full cursor-zoom-in object-cover transition duration-500 group-hover:scale-105"
                   @click="viewer = { images: room.images, index: photo[room.type] ?? 0 }"
                 />
                 <div v-else class="flex h-full items-center justify-center bg-gradient-to-br text-white" :class="CARD_ACCENTS[index % CARD_ACCENTS.length]">
-                  <svg viewBox="0 0 24 24" class="size-16 opacity-80" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 18v-6a2 2 0 012-2h14a2 2 0 012 2v6M3 18h18M3 18v2M21 18v2M6 10V7a2 2 0 012-2h8a2 2 0 012 2v3" /></svg>
+                  <svg viewBox="0 0 24 24" class="size-10 opacity-80" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 18v-6a2 2 0 012-2h14a2 2 0 012 2v6M3 18h18M3 18v2M21 18v2M6 10V7a2 2 0 012-2h8a2 2 0 012 2v3" /></svg>
                 </div>
-                <span class="absolute top-3 left-3 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-slate-800 shadow">
-                  Ate {{ room.capacity }} {{ room.capacity === 1 ? 'pessoa' : 'pessoas' }}
+                <span class="absolute top-1.5 left-1.5 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-slate-800 shadow" :title="`Ate ${room.capacity} pessoas`">
+                  &#128100; {{ room.capacity }}
                 </span>
-                <span v-if="results" class="absolute top-3 right-3 rounded-full px-3 py-1 text-xs font-semibold text-white shadow" :class="room.available <= 2 ? 'bg-rose-500' : 'bg-emerald-500'">
-                  {{ room.available <= 2 ? `So ${room.available} disponive${room.available === 1 ? 'l' : 'is'}` : `${room.available} disponiveis` }}
+                <span v-if="results" class="absolute top-1.5 right-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold text-white shadow" :class="room.available <= 2 ? 'bg-rose-500' : 'bg-emerald-500'">
+                  {{ room.available <= 2 ? `So ${room.available}` : `${room.available} livres` }}
                 </span>
                 <template v-if="room.images.length > 1">
-                  <button class="absolute top-1/2 left-2 -translate-y-1/2 rounded-full bg-white/85 px-2.5 py-1 text-lg opacity-0 shadow transition group-hover:opacity-100" type="button" aria-label="Foto anterior" @click="stepPhoto(room, -1)">‹</button>
-                  <button class="absolute top-1/2 right-2 -translate-y-1/2 rounded-full bg-white/85 px-2.5 py-1 text-lg opacity-0 shadow transition group-hover:opacity-100" type="button" aria-label="Foto seguinte" @click="stepPhoto(room, 1)">›</button>
-                  <div class="absolute bottom-3 left-1/2 flex -translate-x-1/2 gap-1.5">
-                    <span v-for="(_, dot) in room.images" :key="dot" class="size-1.5 rounded-full" :class="dot === (photo[room.type] ?? 0) ? 'bg-white' : 'bg-white/50'" />
+                  <button class="absolute top-1/2 left-1 -translate-y-1/2 rounded-full bg-white/85 px-1.5 text-base opacity-0 shadow transition group-hover:opacity-100" type="button" aria-label="Foto anterior" @click="stepPhoto(room, -1)">‹</button>
+                  <button class="absolute top-1/2 right-1 -translate-y-1/2 rounded-full bg-white/85 px-1.5 text-base opacity-0 shadow transition group-hover:opacity-100" type="button" aria-label="Foto seguinte" @click="stepPhoto(room, 1)">›</button>
+                  <div class="absolute bottom-1.5 left-1/2 flex -translate-x-1/2 gap-1">
+                    <span v-for="(_, dot) in room.images" :key="dot" class="size-1 rounded-full" :class="dot === (photo[room.type] ?? 0) ? 'bg-white' : 'bg-white/50'" />
                   </div>
                 </template>
               </div>
-              <div class="flex flex-1 flex-col gap-3 p-5">
-                <h3 class="text-xl font-semibold text-slate-900">{{ room.type }}</h3>
-                <p v-if="room.description" class="text-sm leading-relaxed whitespace-pre-line text-slate-600">{{ room.description }}</p>
-                <div class="mt-auto flex items-end justify-between gap-3 border-t border-slate-100 pt-4">
-                  <div>
-                    <template v-if="results">
-                      <p class="text-2xl font-bold text-indigo-700">{{ money(room.total ?? room.pricePerNight) }}</p>
-                      <p class="text-xs text-slate-500">
-                        {{ room.nights }} {{ room.nights === 1 ? 'noite' : 'noites' }}
-                        <template v-if="needsDeposit && room.deposit"> · sinal {{ money(room.deposit) }}</template>
-                      </p>
-                    </template>
-                    <template v-else>
-                      <p class="text-xs text-slate-500">desde</p>
-                      <p class="text-2xl font-bold text-indigo-700">{{ money(room.pricePerNight) }}<span class="text-sm font-normal text-slate-500"> / noite</span></p>
-                    </template>
-                  </div>
+              <div class="flex flex-1 flex-col gap-1 p-2.5">
+                <h3 class="truncate text-sm font-semibold text-slate-900" :title="room.type">{{ room.type }}</h3>
+                <p v-if="room.description" class="line-clamp-2 text-xs leading-snug text-slate-500" :title="room.description">{{ room.description }}</p>
+                <div class="mt-auto pt-1.5">
+                  <template v-if="results">
+                    <p class="text-base leading-tight font-bold text-indigo-700">{{ money(room.total ?? room.pricePerNight) }}</p>
+                    <p class="truncate text-[11px] text-slate-500">
+                      {{ room.nights }} {{ room.nights === 1 ? 'noite' : 'noites' }}<template v-if="needsDeposit && room.deposit"> · sinal {{ money(room.deposit) }}</template>
+                    </p>
+                  </template>
+                  <p v-else class="text-base leading-tight font-bold text-indigo-700">
+                    {{ money(room.pricePerNight) }}<span class="text-[11px] font-normal text-slate-500"> /noite</span>
+                  </p>
                   <button
                     v-if="results"
                     type="button"
-                    class="rounded-lg px-4 py-2 text-sm font-semibold shadow"
+                    class="mt-1.5 w-full rounded-lg px-2 py-1.5 text-xs font-semibold shadow-sm"
                     :class="chosen?.type === room.type ? 'bg-emerald-500 text-white' : 'bg-gradient-to-r from-amber-400 to-orange-500 text-white hover:brightness-105'"
                     @click="choose(room)"
                   >
                     {{ chosen?.type === room.type ? 'Escolhido ✓' : 'Escolher' }}
                   </button>
-                  <button v-else type="button" class="rounded-lg bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100" @click="scrollToId('reservar')">
+                  <button v-else type="button" class="mt-1.5 w-full rounded-lg bg-indigo-50 px-2 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100" @click="scrollToId('reservar')">
                     Ver datas
                   </button>
                 </div>
