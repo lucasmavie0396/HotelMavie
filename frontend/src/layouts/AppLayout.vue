@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import NotificationsBell from '@/components/NotificationsBell.vue';
+import PdfPreviewDialog from '@/components/PdfPreviewDialog.vue';
 import { useAuthStore } from '@/stores/auth';
 import { setPageIdentity } from '@/services/favicon';
 import { fileUrl } from '@/services/files';
@@ -120,5 +121,6 @@ async function logout() {
         <p v-else class="text-sm text-slate-500">A carregar...</p>
       </main>
     </div>
+    <PdfPreviewDialog />
   </div>
 </template>

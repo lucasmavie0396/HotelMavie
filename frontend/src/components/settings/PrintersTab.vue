@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue';
 import { api, errorMessage } from '@/services/api';
-import { agentUrl, DEFAULT_AGENT_URL, listLocalPrinters, printDocument, setAgentUrl, type LocalPrinter } from '@/services/print';
+import { agentUrl, DEFAULT_AGENT_URL, listLocalPrinters, previewPdfFrom, printDocument, setAgentUrl, type LocalPrinter } from '@/services/print';
 import { useHotelsStore } from '@/stores/hotels';
-import type { PaperWidth, Printer, PrinterConnection, PrinterPurpose } from '@/types';
+import type { PaperWidth, Printer, PrinterConnection, PrinterOutput, PrinterPurpose } from '@/types';
 
 const PURPOSES: Record<PrinterPurpose, string> = {
   RECEIPT: 'Pagamentos, faturas e contas',
@@ -12,6 +12,7 @@ const PURPOSES: Record<PrinterPurpose, string> = {
   OTHER: 'Outra (ex.: pastelaria, copa)',
 };
 const PAPERS: Record<PaperWidth, string> = { MM58: 'Talao 58 mm', MM80: 'Talao 80 mm', A4: 'Folha A4' };
+const OUTPUTS: Record<PrinterOutput, string> = { DIRECT: 'Imprimir direto', PDF: 'Mostrar PDF' };
 const CONNECTIONS: Record<PrinterConnection, string> = {
   LOCAL: 'Instalada neste computador',
   NETWORK: 'Rede ESC/POS (IP)',
@@ -37,6 +38,7 @@ function empty() {
     port: 9100,
     localName: '',
     paperWidth: 'MM80' as PaperWidth,
+    output: 'DIRECT' as PrinterOutput,
     copies: 1,
     isDefault: false,
     active: true,
@@ -111,6 +113,7 @@ const save = () =>
       port: form.port,
       localName: form.connection === 'LOCAL' ? form.localName : null,
       paperWidth: form.paperWidth,
+      output: form.output,
       copies: form.copies,
       isDefault: form.isDefault,
       active: form.active,
@@ -121,6 +124,10 @@ const save = () =>
   }, 'Impressora guardada');
 
 const test = (printer: Printer) => run(() => printDocument({ document: 'TEST', printerId: printer.id }));
+const preview = (printer: Printer) =>
+  run(() =>
+    previewPdfFrom('/print/pdf', { document: 'TEST', printerId: printer.id, paper: printer.paperWidth }, `Pagina de teste · ${printer.name}`, printer.paperWidth),
+  );
 
 function connectionLabel(printer: Printer) {
   if (printer.connection === 'NETWORK') return `${printer.host}:${printer.port}`;
@@ -144,6 +151,10 @@ onMounted(() => {
       </p>
       <p><strong>Rede (ESC/POS):</strong> o servidor envia diretamente para impressoras termicas com IP (porta 9100).</p>
       <p><strong>Navegador:</strong> abre sempre a janela de impressao do computador.</p>
+      <p>
+        <strong>Saida:</strong> em <em>Imprimir direto</em> o documento sai na impressora; em <em>Mostrar PDF</em> abre no ecra com o
+        tamanho do papel (80 mm, 58 mm ou A4) para analisar o design, e pode ser impresso ou descarregado a partir dai.
+      </p>
       <p>Cada categoria de produtos pode ter a sua impressora (em Produtos); sem isso, usa a impressora principal da cozinha ou do bar.</p>
     </div>
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
@@ -189,6 +200,12 @@ onMounted(() => {
           <option v-for="(label, paper) in PAPERS" :key="paper" :value="paper">{{ label }}</option>
         </select>
       </label>
+      <label class="text-sm">
+        Saida
+        <select v-model="form.output" class="input">
+          <option v-for="(label, value) in OUTPUTS" :key="value" :value="value">{{ label }}</option>
+        </select>
+      </label>
       <label class="text-sm">Copias<input v-model.number="form.copies" class="input" type="number" min="1" max="5" /></label>
       <label class="flex items-center gap-2 text-sm"><input v-model="form.isDefault" type="checkbox" />Principal para esta finalidade</label>
       <label class="flex items-center gap-2 text-sm"><input v-model="form.active" type="checkbox" />Ativa</label>
@@ -217,10 +234,14 @@ onMounted(() => {
               <span class="block text-xs text-slate-500">{{ CONNECTIONS[printer.connection] }}</span>
               {{ connectionLabel(printer) }}
             </td>
-            <td class="px-4 py-3">{{ PAPERS[printer.paperWidth] }}</td>
+            <td class="px-4 py-3">
+              {{ PAPERS[printer.paperWidth] }}
+              <span v-if="printer.output === 'PDF'" class="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800">PDF</span>
+            </td>
             <td class="px-4 py-3">{{ printer.copies }}</td>
             <td class="space-x-3 px-4 py-3 text-right text-xs whitespace-nowrap">
               <button class="text-indigo-600 hover:underline" type="button" :disabled="busy || !printer.active" @click="test(printer)">Testar</button>
+              <button class="text-indigo-600 hover:underline" type="button" :disabled="busy" @click="preview(printer)">Ver PDF</button>
               <button class="text-indigo-600 hover:underline" type="button" @click="edit(printer)">Editar</button>
             </td>
           </tr>

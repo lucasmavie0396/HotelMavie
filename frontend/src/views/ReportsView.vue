@@ -4,7 +4,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import ReportPreview from '@/components/ReportPreview.vue';
 import { api, errorMessage, openPdf } from '@/services/api';
-import { printDocument, printPdfFrom } from '@/services/print';
+import { previewPdfFrom, printDocument, printPdfFrom } from '@/services/print';
 import { useHotelsStore } from '@/stores/hotels';
 import type { ReportDefinition, ReportDocument, Warehouse } from '@/types';
 import { addDays, todayIso } from '@/utils/format';
@@ -71,6 +71,10 @@ const view = () =>
 
 const openA4 = () => run(() => openPdf(`/reports/view/${selectedKey.value}/pdf`, { ...query(), paper: 'A4' }));
 const printA4 = () => run(() => printPdfFrom(`/reports/view/${selectedKey.value}/pdf`, { ...query(), paper: 'A4' }));
+const preview80 = () =>
+  run(() =>
+    previewPdfFrom('/print/pdf', { document: 'REPORT', report: selectedKey.value, ...query(), paper: 'MM80' }, `${selected.value?.title ?? 'Relatorio'} · 80 mm`, 'MM80'),
+  );
 const print80 = () =>
   run(async () => {
     notice.value = await printDocument({ document: 'REPORT', report: selectedKey.value, ...query() });
@@ -191,7 +195,8 @@ onMounted(() =>
           <div class="ml-auto flex flex-wrap gap-2">
             <button class="btn-secondary" type="button" :disabled="busy" @click="printA4">Imprimir A4</button>
             <button class="btn-secondary" type="button" :disabled="busy" @click="print80">Imprimir 80 mm</button>
-            <button class="btn-secondary" type="button" :disabled="busy" @click="openA4">PDF</button>
+            <button class="btn-secondary" type="button" :disabled="busy" @click="openA4">PDF A4</button>
+            <button class="btn-secondary" type="button" :disabled="busy" @click="preview80">PDF 80 mm</button>
             <button class="btn-secondary" type="button" :disabled="!report" @click="exportCsv">CSV</button>
           </div>
         </form>

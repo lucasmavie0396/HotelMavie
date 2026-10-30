@@ -940,6 +940,11 @@ enum PrinterConnection {
   LOCAL
 }
 
+enum PrinterOutput {
+  DIRECT
+  PDF
+}
+
 enum PaperWidth {
   MM58
   MM80
@@ -957,6 +962,7 @@ model Printer {
   port       Int               @default(9100)
   localName  String?           @db.VarChar(200)
   paperWidth PaperWidth        @default(MM80)
+  output     PrinterOutput     @default(DIRECT)
   copies     Int               @default(1)
   isDefault  Boolean           @default(false)
   active     Boolean           @default(true)

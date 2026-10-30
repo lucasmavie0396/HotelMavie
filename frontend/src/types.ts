@@ -488,6 +488,7 @@ export interface ReportDocument {
   }[];
 }
 export type PrinterConnection = 'BROWSER' | 'NETWORK' | 'LOCAL';
+export type PrinterOutput = 'DIRECT' | 'PDF';
 
 export interface Printer {
   id: number;
@@ -498,6 +499,7 @@ export interface Printer {
   port: number;
   localName: string | null;
   paperWidth: PaperWidth;
+  output: PrinterOutput;
   copies: number;
   isDefault: boolean;
   active: boolean;

@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE `printers` ADD COLUMN `output` ENUM('DIRECT', 'PDF') NOT NULL DEFAULT 'DIRECT';
+

@@ -124,6 +124,27 @@ describe('Impressoras e tipos de pagamento', () => {
     expect(width(a4.body)).toBe('595.28');
   });
 
+  it('impressora com saida em PDF nao imprime e devolve o papel para pre-visualizar', async () => {
+    const { hotel } = await createHotel(ctx.prisma);
+    const device = await fakePrinter();
+    try {
+      const printer = await addPrinter({ hotelId: hotel.id, name: 'Talao', purpose: 'RECEIPT', connection: 'NETWORK', host: '127.0.0.1', port: device.port, output: 'PDF' }).expect(201);
+      expect(printer.body.output).toBe('PDF');
+      const result = await ctx.http().post(`/api/printers/${printer.body.id}/test`).set(auth).expect(200);
+      expect(result.body).toMatchObject({ status: 'pdf', paper: 'MM80', printer: { name: 'Talao' } });
+      expect(device.jobs).toHaveLength(0);
+      const pdf = await ctx.http().get(`/api/print/pdf?document=TEST&printerId=${printer.body.id}&paper=MM80`).set(auth).responseType('blob').expect(200);
+      expect(width(pdf.body)).toBe('226.77');
+
+      await ctx.http().patch(`/api/printers/${printer.body.id}`).set(auth).send({ output: 'OUTRA' }).expect(400);
+      await ctx.http().patch(`/api/printers/${printer.body.id}`).set(auth).send({ output: 'DIRECT' }).expect(200);
+      const direct = await ctx.http().post(`/api/printers/${printer.body.id}/test`).set(auth).expect(200);
+      expect(direct.body.status).toBe('printed');
+    } finally {
+      await device.close();
+    }
+  });
+
   it('tipos de pagamento personalizados definem o meio, a referencia e o codigo SAF-T', async () => {
     const { hotel, rooms } = await createHotel(ctx.prisma);
     await ctx.prisma.hotel.update({ where: { id: hotel.id }, data: { taxId: '500100200', address: 'Rua 1', city: 'Maputo', postalCode: '1100-001' } });

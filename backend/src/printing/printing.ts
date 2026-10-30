@@ -16,7 +16,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { OmitType, PartialType } from '@nestjs/mapped-types';
-import { PaperWidth, PrepStation, Printer, PrinterConnection, PrinterPurpose, UserRole } from '@prisma/client';
+import { PaperWidth, PrepStation, Printer, PrinterConnection, PrinterOutput, PrinterPurpose, UserRole } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsEnum, IsIn, IsInt, IsISO8601, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 import type { Response } from 'express';
@@ -84,6 +84,10 @@ export class PrinterDto {
   @IsOptional()
   @IsEnum(PaperWidth)
   paperWidth?: PaperWidth;
+
+  @IsOptional()
+  @IsEnum(PrinterOutput)
+  output?: PrinterOutput;
 
   @IsOptional()
   @IsInt()
@@ -221,6 +225,14 @@ export class PrintService {
   async print(dto: PrintDto, user: JwtPayload) {
     const built = await this.build(dto, user);
     const printer = await this.choosePrinter(built.hotelId, built.purpose, dto.document === 'TEST' ? built.printerId : built.printerId ?? dto.printerId);
+    if (printer?.output === PrinterOutput.PDF) {
+      return {
+        status: 'pdf' as const,
+        paper: printer.paperWidth,
+        copies: printer.copies,
+        printer: { id: printer.id, name: printer.name },
+      };
+    }
     if (printer?.connection === PrinterConnection.NETWORK && printer.host) {
       const paper = printer.paperWidth === PaperWidth.A4 ? PaperWidth.MM80 : printer.paperWidth;
       const bytes = this.tickets.escpos(built.ticket, paper);

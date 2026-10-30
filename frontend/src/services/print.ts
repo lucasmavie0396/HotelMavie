@@ -1,7 +1,37 @@
+import { reactive } from 'vue';
 import { api } from '@/services/api';
 import type { PaperWidth } from '@/types';
 
+export const pdfPreview = reactive({ url: '', title: '', paper: 'MM80' as PaperWidth });
+
+export function showPdf(blob: Blob, title: string, paper: PaperWidth) {
+  closePdf();
+  Object.assign(pdfPreview, { url: URL.createObjectURL(blob), title, paper });
+}
+
+export function closePdf() {
+  if (pdfPreview.url) URL.revokeObjectURL(pdfPreview.url);
+  pdfPreview.url = '';
+}
+
+export async function previewPdfFrom(path: string, params: Record<string, unknown>, title: string, paper: PaperWidth) {
+  const { data } = await api.get<Blob>(path, { params, responseType: 'blob' });
+  showPdf(data, title, paper);
+}
+
 export type PrintDocument = 'ORDER' | 'VOID' | 'PREBILL' | 'STATEMENT' | 'INVOICE' | 'RECEIPT' | 'PAYMENT' | 'TEST' | 'REPORT';
+
+const DOCUMENT_TITLES: Record<PrintDocument, string> = {
+  ORDER: 'Pedido',
+  VOID: 'Anulacao',
+  PREBILL: 'Consulta de mesa',
+  STATEMENT: 'Conta',
+  INVOICE: 'Fatura',
+  RECEIPT: 'Recibo',
+  PAYMENT: 'Pagamento',
+  TEST: 'Pagina de teste',
+  REPORT: 'Relatorio',
+};
 
 export interface PrintRequest {
   document: PrintDocument;
@@ -24,6 +54,7 @@ export interface PrintRequest {
 
 type PrintResult =
   | { status: 'printed'; printer: { id: number; name: string } }
+  | { status: 'pdf'; paper: PaperWidth; copies: number; printer: { id: number; name: string } }
   | { status: 'local'; printer: { id: number; name: string; localName: string }; copies: number; data: string }
   | { status: 'browser'; paper: PaperWidth; copies: number; printer: { id: number; name: string } | null };
 
@@ -114,6 +145,10 @@ export async function printDocument(request: PrintRequest) {
   }
   const params = Object.fromEntries(Object.entries({ ...request, paper: data.paper }).map(([key, value]) => [key, value === null ? 'null' : value]));
   const { data: pdf } = await api.get<Blob>('/print/pdf', { params, responseType: 'blob' });
+  if (data.status === 'pdf') {
+    showPdf(pdf, `${DOCUMENT_TITLES[request.document]} · ${data.printer.name}`, data.paper);
+    return `PDF aberto (${data.printer.name})`;
+  }
   await printPdf(pdf);
   return data.printer ? `Enviado para impressao (${data.printer.name})` : 'Enviado para impressao';
 }
