@@ -49,6 +49,11 @@ export class ReportParamsDto extends HotelQueryDto {
   @Type(() => Number)
   @IsInt()
   warehouseId?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  sessionId?: number;
 }
 
 const MANAGERS: UserRole[] = [UserRole.ADMIN, UserRole.MANAGER];
@@ -70,6 +75,7 @@ export const REPORTS: ReportDefinition[] = [
   { key: 'inventory', title: 'Diferencas de inventario', description: 'Acertos dos inventarios lancados no periodo, por produto, com o valor das faltas e sobras.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
   { key: 'waste', title: 'Quebras e devolucoes', description: 'Quebras por motivo e por produto e devolucoes a fornecedores, ao custo medio.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
   { key: 'expiry', title: 'Validades', description: 'Lotes em stock com a data de validade, assinalando os expirados e os que expiram em 30 dias.', group: 'Restauracao e stocks', params: 'stock', roles: MANAGERS },
+  { key: 'cash-close', title: 'Fecho de caixa', description: 'Documento de fecho de uma sessao de caixa: movimentos, vendas, formas de pagamento e produtos por categoria.', group: 'Financeiro', params: 'session', roles: EVERYONE, hidden: true },
 ];
 
 const CHARGE_LABELS: Record<ChargeType, string> = { ACCOMMODATION: 'Alojamento', RESTAURANT: 'Restaurante', BAR: 'Bar', EXTRA: 'Extras' };
@@ -110,7 +116,7 @@ export class ReportBuilderService {
   constructor(private readonly prisma: PrismaService) {}
 
   catalog(user: JwtPayload) {
-    return REPORTS.filter((report) => report.roles.includes(user.role));
+    return REPORTS.filter((report) => !report.hidden && report.roles.includes(user.role));
   }
 
   async build(key: string, params: ReportParamsDto, user: JwtPayload): Promise<Report> {
@@ -121,7 +127,17 @@ export class ReportBuilderService {
     if (!definition.roles.includes(user.role)) {
       throw new ForbiddenException('Sem permissao para este relatorio');
     }
-    const hotelId = resolveHotelScope(user, params.hotelId);
+    let hotelId = resolveHotelScope(user, params.hotelId);
+    if (definition.params === 'session') {
+      if (!params.sessionId) {
+        throw new BadRequestException('Falta a sessao de caixa');
+      }
+      const session = await this.prisma.cashSession.findUnique({ where: { id: params.sessionId }, select: { register: { select: { hotelId: true } } } });
+      if (!session || !canAccessHotel(user, session.register.hotelId)) {
+        throw new NotFoundException('Sessao de caixa nao encontrada');
+      }
+      hotelId = session.register.hotelId;
+    }
     if (!hotelId) {
       throw new BadRequestException('Escolhe o hotel');
     }
@@ -147,6 +163,10 @@ export class ReportBuilderService {
       const date = parseDate(params.date ?? iso(todayUtc()));
       period = `Dia ${day(date)}`;
       sections = key === 'daily' ? await this.daily(date, context) : await this.guests(date, context);
+    } else if (definition.params === 'session') {
+      const result = await this.cashClose(params.sessionId!, context);
+      period = result.period;
+      sections = result.sections;
     } else if (definition.params === 'stock') {
       const result = key === 'expiry' ? await this.expiry(params.warehouseId, context) : await this.stock(params.warehouseId, context);
       period = `${key === 'expiry' ? 'Lotes' : 'Existencias'} em ${Ticket.when(new Date())} · ${result.warehouse}`;
@@ -1299,7 +1319,238 @@ export class ReportBuilderService {
     };
   }
 
-  private groupPayments(payments: { amount: Prisma.Decimal; method: PaymentMethod; paymentType?: { name: string } | null }[]) {
+  private async cashClose(sessionId: number, { hotel, money }: Context) {
+    const session = await this.prisma.cashSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        register: true,
+        openedBy: { select: { name: true } },
+        closedBy: { select: { name: true } },
+        movements: { include: { createdBy: { select: { name: true } } }, orderBy: { createdAt: 'asc' } },
+      },
+    });
+    if (!session || session.register.hotelId !== hotel.id) {
+      throw new NotFoundException('Sessao de caixa nao encontrada');
+    }
+    const end = session.closedAt ?? new Date();
+    const window = { gte: session.openedAt, lte: end };
+    const operator = session.openedById ?? -1;
+    const [payments, invoices, roomCharges] = await Promise.all([
+      this.prisma.payment.findMany({
+        where: {
+          hotelId: hotel.id,
+          OR: [{ cashSessionId: session.id }, { cashSessionId: null, createdById: operator, createdAt: window }],
+        },
+        include: {
+          paymentType: { select: { name: true } },
+          invoice: { select: { fullNumber: true } },
+          receipt: { select: { fullNumber: true } },
+          reservation: { select: { code: true } },
+          order: { select: { outlet: true, tableLabel: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.invoice.findMany({
+        where: { hotelId: hotel.id, createdById: operator, issuedAt: window, type: { in: [InvoiceType.INVOICE, InvoiceType.INVOICE_RECEIPT, InvoiceType.CREDIT_NOTE] } },
+        include: { lines: true },
+        orderBy: { issuedAt: 'asc' },
+      }),
+      this.prisma.charge.findMany({
+        where: { hotelId: hotel.id, createdById: operator, createdAt: window, orderId: { not: null }, reservationId: { not: null } },
+        select: { total: true },
+      }),
+    ]);
+
+    const cashPayments = payments.filter((payment) => payment.cashSessionId === session.id);
+    const received = sumMoney(cashPayments.map((payment) => payment.amount));
+    const inflows = sumMoney(session.movements.filter((movement) => movement.type === CashMovementType.IN).map((movement) => movement.amount));
+    const outflows = sumMoney(session.movements.filter((movement) => movement.type === CashMovementType.OUT).map((movement) => movement.amount));
+    const expected = session.expectedAmount ?? toMoney(session.openingAmount).add(received).add(inflows).sub(outflows);
+
+    const sign = (type: InvoiceType) => (type === InvoiceType.CREDIT_NOTE ? -1 : 1);
+    const docTypes = [InvoiceType.INVOICE_RECEIPT, InvoiceType.INVOICE, InvoiceType.CREDIT_NOTE].map((type) => {
+      const list = invoices.filter((invoice) => invoice.type === type);
+      return {
+        type,
+        count: list.length,
+        net: sumMoney(list.map((invoice) => invoice.netTotal)),
+        tax: sumMoney(list.map((invoice) => invoice.taxTotal)),
+        gross: sumMoney(list.map((invoice) => invoice.grossTotal)),
+      };
+    });
+    const signed = (key: 'net' | 'tax' | 'gross') => sumMoney(docTypes.map((row) => (row.type === InvoiceType.CREDIT_NOTE ? row[key].neg() : row[key])));
+    const billed = sumMoney(docTypes.filter((row) => row.type !== InvoiceType.CREDIT_NOTE).map((row) => row.gross));
+    const credited = docTypes.find((row) => row.type === InvoiceType.CREDIT_NOTE)!.gross;
+
+    const productIds = [
+      ...new Set(
+        invoices.flatMap((invoice) => invoice.lines.map((line) => /^P(\d+)$/.exec(line.productCode)?.[1])).filter((id): id is string => Boolean(id)).map(Number),
+      ),
+    ];
+    const products = new Map(
+      (
+        await this.prisma.product.findMany({
+          where: { id: { in: productIds } },
+          select: { id: true, name: true, unit: true, category: { select: { name: true, sortOrder: true } } },
+        })
+      ).map((product) => [product.id, product]),
+    );
+    const SERVICE_CATEGORIES: Record<string, string> = { ALOJ: 'Alojamento', ACCOMMODATION: 'Alojamento', EXTRA: 'Extras e servicos', RESTAURANT: 'Restaurante', BAR: 'Bar' };
+    const items = new Map<string, { category: string; order: number; name: string; quantity: Prisma.Decimal; total: Prisma.Decimal }>();
+    for (const invoice of invoices) {
+      for (const line of invoice.lines) {
+        const product = products.get(Number(/^P(\d+)$/.exec(line.productCode)?.[1]));
+        const category = product ? (product.category?.name ?? 'Sem categoria') : (SERVICE_CATEGORIES[line.productCode] ?? 'Outros');
+        const order = product ? (product.category?.sortOrder ?? 9999) : -1;
+        const name = product ? product.name : line.productCode === 'ALOJ' || line.productCode === 'ACCOMMODATION' ? 'Alojamento (noites)' : line.description;
+        const key = product ? `P${product.id}` : `${category}|${name}`;
+        const current = items.get(key) ?? { category, order, name, quantity: new Prisma.Decimal(0), total: new Prisma.Decimal(0) };
+        items.set(key, {
+          ...current,
+          quantity: current.quantity.add(toMoney(line.quantity).mul(sign(invoice.type))),
+          total: current.total.add(toMoney(line.grossAmount).mul(sign(invoice.type))),
+        });
+      }
+    }
+    type SoldItem = { name: string; quantity: Prisma.Decimal; total: Prisma.Decimal };
+    const categories = new Map<string, { name: string; order: number; quantity: Prisma.Decimal; total: Prisma.Decimal; items: SoldItem[] }>();
+    for (const item of items.values()) {
+      const current = categories.get(item.category) ?? { name: item.category, order: item.order, quantity: new Prisma.Decimal(0), total: new Prisma.Decimal(0), items: [] };
+      current.items.push(item);
+      categories.set(item.category, { ...current, quantity: current.quantity.add(item.quantity), total: current.total.add(item.total) });
+    }
+    const sortedCategories = [...categories.values()].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+
+    const paymentDocument = (payment: (typeof payments)[number]) =>
+      payment.receipt?.fullNumber ?? payment.invoice?.fullNumber ?? (payment.reservation ? `Reserva ${payment.reservation.code}` : '-');
+    const paymentDetail = (payment: (typeof payments)[number]) => {
+      const origin = payment.order ? `${OUTLET_LABELS[payment.order.outlet]}${payment.order.tableLabel ? ` ${payment.order.tableLabel}` : ''}` : payment.receipt ? 'Recibo de conta corrente' : payment.reservation ? 'Conta do hospede' : '';
+      return [paymentLabel(payment), origin, payment.reference].filter(Boolean).join(' · ');
+    };
+    const timeline = [
+      ...payments.map((payment) => ({
+        at: payment.createdAt,
+        row: [Ticket.when(payment.createdAt), payment.amount.isNegative() ? 'Estorno' : 'Recebimento', paymentDocument(payment), paymentDetail(payment), money(payment.amount)],
+      })),
+      ...session.movements.map((movement) => ({
+        at: movement.createdAt,
+        row: [
+          Ticket.when(movement.createdAt),
+          movement.type === CashMovementType.IN ? 'Entrada de caixa' : 'Saida de caixa',
+          '-',
+          `${movement.description}${movement.createdBy ? ` · ${movement.createdBy.name}` : ''}`,
+          money(movement.type === CashMovementType.IN ? movement.amount : movement.amount.neg()),
+        ],
+      })),
+    ].sort((a, b) => a.at.getTime() - b.at.getTime());
+    const paymentGroups = this.groupPayments(payments);
+
+    const sections: ReportSection[] = [
+      {
+        title: 'Caixa',
+        kpis: [
+          { label: 'Caixa', value: session.register.name },
+          { label: 'Operador', value: session.openedBy?.name ?? '-' },
+          { label: 'Abertura', value: Ticket.when(session.openedAt) },
+          { label: 'Fecho', value: session.closedAt ? `${Ticket.when(session.closedAt)}${session.closedBy ? ` · ${session.closedBy.name}` : ''}` : 'Caixa ainda aberta' },
+          { label: 'Fundo inicial', value: money(session.openingAmount) },
+          { label: 'Recebido em numerario', value: money(received) },
+          { label: 'Entradas de caixa', value: money(inflows) },
+          { label: 'Saidas de caixa', value: money(outflows.neg()) },
+          { label: 'Esperado em caixa', value: money(expected) },
+          { label: 'Contado', value: session.countedAmount ? money(session.countedAmount) : '-' },
+          { label: 'Diferenca', value: session.difference ? money(session.difference) : '-' },
+        ],
+        note: session.notes ? `Notas do fecho: ${session.notes}` : undefined,
+      },
+      {
+        title: 'Resumo de vendas',
+        kpis: [
+          { label: 'Documentos emitidos', value: String(invoices.length) },
+          { label: 'Faturado (FT + FR)', value: money(billed) },
+          { label: 'Notas de credito', value: money(credited.neg()) },
+          { label: 'Total de vendas', value: money(signed('gross')) },
+          { label: 'Base tributavel', value: money(signed('net')) },
+          { label: 'IVA', value: money(signed('tax')) },
+          { label: 'Consumos lancados em quartos', value: money(sumMoney(roomCharges.map((charge) => charge.total))) },
+        ],
+        table: {
+          columns: [
+            { label: 'Documento', weight: 2 },
+            { label: 'Quantidade', align: 'right', weight: 0.8 },
+            { label: 'Base', align: 'right' },
+            { label: 'IVA', align: 'right' },
+            { label: 'Total', align: 'right' },
+          ],
+          rows: docTypes
+            .filter((row) => row.count)
+            .map((row) => [DOC_LABELS[row.type], String(row.count), money(row.net.mul(sign(row.type))), money(row.tax.mul(sign(row.type))), money(row.gross.mul(sign(row.type)))]),
+          totals: ['Total', String(invoices.length), money(signed('net')), money(signed('tax')), money(signed('gross'))],
+          empty: 'Sem documentos emitidos nesta sessao',
+        },
+        note: 'Consumos lancados em quartos ficam na conta do hospede e sao faturados no check-out.',
+      },
+      {
+        title: 'Formas de pagamento',
+        table: {
+          columns: [
+            { label: 'Forma de pagamento', weight: 2 },
+            { label: 'Movimentos', align: 'right', weight: 0.8 },
+            { label: 'Valor', align: 'right' },
+          ],
+          rows: paymentGroups.map((group) => [group.name, String(group.count), money(group.total)]),
+          totals: ['Total recebido', String(payments.length), money(sumMoney(payments.map((payment) => payment.amount)))],
+          empty: 'Sem recebimentos nesta sessao',
+        },
+      },
+      {
+        title: 'Vendas por categoria',
+        table: {
+          columns: [
+            { label: 'Categoria', weight: 2 },
+            { label: 'Quantidade', align: 'right', weight: 0.8 },
+            { label: 'Valor', align: 'right' },
+          ],
+          rows: sortedCategories.map((category) => [category.name, qty(category.quantity), money(category.total)]),
+          totals: ['Total', '', money(sumMoney(sortedCategories.map((category) => category.total)))],
+          empty: 'Sem produtos ou servicos vendidos',
+        },
+      },
+      ...sortedCategories.map((category) => ({
+        title: `Produtos e servicos: ${category.name}`,
+        table: {
+          columns: [
+            { label: 'Produto / servico', weight: 2.4 },
+            { label: 'Quantidade', align: 'right' as const, weight: 0.8 },
+            { label: 'Valor', align: 'right' as const },
+          ],
+          rows: category.items.sort((a, b) => b.total.comparedTo(a.total)).map((item) => [item.name, qty(item.quantity), money(item.total)]),
+          totals: [`Total ${category.name}`, qty(category.quantity), money(category.total)],
+        },
+      })),
+      {
+        title: 'Movimentos financeiros',
+        table: {
+          columns: [
+            { label: 'Hora', weight: 1.1 },
+            { label: 'Tipo', weight: 1 },
+            { label: 'Documento', weight: 1.1 },
+            { label: 'Detalhe', weight: 2.4 },
+            { label: 'Valor', align: 'right', weight: 1 },
+          ],
+          rows: timeline.map((entry) => entry.row),
+          totals: ['Saldo dos movimentos', '', '', '', money(sumMoney(payments.map((payment) => payment.amount)).add(inflows).sub(outflows))],
+          empty: 'Sem movimentos nesta sessao',
+        },
+      },
+    ];
+    return {
+      period: `${session.register.name} · ${Ticket.when(session.openedAt)} a ${session.closedAt ? Ticket.when(session.closedAt) : 'agora (aberta)'}`,
+      sections,
+    };
+  }
+
+  private groupPayments(payments:{ amount: Prisma.Decimal; method: PaymentMethod; paymentType?: { name: string } | null }[]) {
     const groups = new Map<string, { name: string; count: number; total: Prisma.Decimal }>();
     for (const payment of payments) {
       const name = paymentLabel(payment);

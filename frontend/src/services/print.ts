@@ -57,6 +57,7 @@ export interface PrintRequest {
   to?: string;
   date?: string;
   warehouseId?: number;
+  sessionId?: number;
 }
 
 type PrintResult =

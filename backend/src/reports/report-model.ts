@@ -1,6 +1,6 @@
 import { Hotel, UserRole } from '@prisma/client';
 
-export type ReportParams = 'period' | 'date' | 'stock' | 'none';
+export type ReportParams = 'period' | 'date' | 'stock' | 'session' | 'none';
 
 export interface ReportDefinition {
   key: string;
@@ -9,6 +9,7 @@ export interface ReportDefinition {
   group: string;
   params: ReportParams;
   roles: UserRole[];
+  hidden?: boolean;
 }
 
 export interface ReportKpi {

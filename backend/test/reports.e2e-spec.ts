@@ -38,10 +38,11 @@ describe('Relatorios', () => {
   it('gera os 12 relatorios em JSON, A4 e 80 mm com os dados do periodo', async () => {
     const { hotel, manager } = await setup();
     const catalog = await ctx.http().get('/api/reports/catalog').set(manager).expect(200);
-    expect(catalog.body.map((report: { key: string }) => report.key)).toEqual(REPORTS.map((report) => report.key));
+    const listed = REPORTS.filter((report) => !report.hidden);
+    expect(catalog.body.map((report: { key: string }) => report.key)).toEqual(listed.map((report) => report.key));
 
     const params = { hotelId: hotel.id, from: day(-1), to: day(1), date: day(0) };
-    for (const { key } of REPORTS) {
+    for (const { key } of listed) {
       const view = await ctx.http().get(`/api/reports/view/${key}`).query(params).set(manager).expect(200);
       expect(view.body).toMatchObject({ key, hotel: { name: hotel.name } });
       expect(view.body.sections.length).toBeGreaterThan(0);

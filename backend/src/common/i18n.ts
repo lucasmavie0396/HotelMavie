@@ -160,6 +160,7 @@ const EXACT: Record<string, string> = {
   'Serie de recibos indisponivel, tenta novamente': 'Receipt series unavailable, try again',
   'Serie nao encontrada': 'Series not found',
   'Sessao de caixa nao encontrada': 'Cash session not found',
+  'Falta a sessao de caixa': 'Missing cash session',
   'Sessao expirada': 'Session expired',
   'Sessao renovada noutro separador': 'Session renewed in another tab',
   'So e possivel alterar compras em rascunho': 'Only draft purchases can be changed',

@@ -45,6 +45,11 @@ export const financeViews = {
       closing: 'Fecho',
       expectedShort: 'Esperado',
       confirmClose: 'Fechar a caixa? Depois de fechada nao aceita mais movimentos.',
+      document: 'Documento de fecho',
+      documentHint: 'Movimentos, resumo de vendas, formas de pagamento e produtos vendidos por categoria.',
+      documentPartial: 'A caixa ainda esta aberta: o documento mostra os valores ate agora.',
+      viewA4: 'Ver A4',
+      view80: 'Ver 80 mm',
     },
     accounts: {
       subtitle: 'Faturas a pagar e recibos',
@@ -124,6 +129,11 @@ export const financeViews = {
       closing: 'Closing',
       expectedShort: 'Expected',
       confirmClose: 'Close the register? Once closed it accepts no more movements.',
+      document: 'Closing report',
+      documentHint: 'Movements, sales summary, payment methods and products sold by category.',
+      documentPartial: 'The register is still open: the report shows the figures so far.',
+      viewA4: 'View A4',
+      view80: 'View 80 mm',
     },
     accounts: {
       subtitle: 'Invoices to collect and receipts',

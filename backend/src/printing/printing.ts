@@ -128,6 +128,7 @@ export class PrintDto {
   @IsOptional() @IsISO8601() to?: string;
   @IsOptional() @IsISO8601() date?: string;
   @IsOptional() @Type(() => Number) @IsInt() warehouseId?: number;
+  @IsOptional() @Type(() => Number) @IsInt() sessionId?: number;
 }
 
 interface Built {
@@ -262,7 +263,7 @@ export class PrintService {
 
   buildReport(dto: PrintDto, user: JwtPayload) {
     if (!dto.report) throw new BadRequestException('Falta report');
-    return this.reports.build(dto.report, { hotelId: dto.hotelId, from: dto.from, to: dto.to, date: dto.date, warehouseId: dto.warehouseId }, user);
+    return this.reports.build(dto.report, { hotelId: dto.hotelId, from: dto.from, to: dto.to, date: dto.date, warehouseId: dto.warehouseId, sessionId: dto.sessionId }, user);
   }
 
   async pdf(dto: PrintDto, user: JwtPayload) {

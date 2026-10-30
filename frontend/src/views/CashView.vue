@@ -3,9 +3,10 @@ import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { api, errorMessage } from '@/services/api';
+import { previewPdfFrom, printDocument, printPdfFrom } from '@/services/print';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
-import type { CashRegister, CashSession, CashSessionDetail } from '@/types';
+import type { CashRegister, CashSession, CashSessionDetail, PaperWidth } from '@/types';
 import { formatDateTime, formatMoney, PAYMENT_METHOD_LABELS } from '@/utils/format';
 
 const { t } = useI18n();
@@ -15,6 +16,7 @@ const registers = ref<CashRegister[]>([]);
 const detail = ref<CashSessionDetail | null>(null);
 const history = ref<CashSession[]>([]);
 const error = ref('');
+const notice = ref('');
 const busy = ref(false);
 
 const newRegister = ref('');
@@ -37,6 +39,7 @@ async function load() {
 async function run(action: () => Promise<unknown>) {
   busy.value = true;
   error.value = '';
+  notice.value = '';
   try {
     await action();
     await load();
@@ -85,6 +88,22 @@ const closeSession = () =>
     }
     await api.post(`/cash-sessions/${detail.value!.id}/close`, closing);
     await showSession(detail.value!.id);
+    await previewCloseDocument(detail.value!.id);
+  });
+
+const closeDocument = (sessionId: number) => ({ document: 'REPORT' as const, report: 'cash-close', sessionId, hotelId: hotels.selectedId });
+
+async function previewCloseDocument(sessionId: number, papers: PaperWidth[] = ['A4', 'MM80']) {
+  for (const paper of papers) {
+    await previewPdfFrom('/print/pdf', { ...closeDocument(sessionId), paper }, `${t('cash.document')} · ${paper === 'A4' ? 'A4' : '80 mm'}`, paper);
+  }
+}
+
+const previewClose = (paper: PaperWidth) => run(() => previewCloseDocument(detail.value!.id, [paper]));
+const printCloseA4 = () => run(() => printPdfFrom('/print/pdf', { ...closeDocument(detail.value!.id), paper: 'A4' }));
+const printClose80 = () =>
+  run(async () => {
+    notice.value = await printDocument(closeDocument(detail.value!.id));
   });
 
 onMounted(load);
@@ -95,6 +114,7 @@ onMounted(load);
     <PageHeader section="cash" :subtitle="t('cash.subtitle')" />
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
+    <p v-if="notice" class="text-sm text-emerald-700">{{ notice }}</p>
 
     <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       <div v-for="register in registers" :key="register.id" class="card space-y-3">
@@ -178,6 +198,17 @@ onMounted(load);
           </tr>
         </tbody>
       </table>
+
+      <div class="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 p-3 text-sm ring-1 ring-slate-100">
+        <div class="mr-auto">
+          <p class="font-semibold">{{ t('cash.document') }}</p>
+          <p class="text-xs text-slate-500">{{ detail.closedAt ? t('cash.documentHint') : t('cash.documentPartial') }}</p>
+        </div>
+        <button class="btn-secondary" type="button" :disabled="busy" @click="previewClose('A4')">{{ t('cash.viewA4') }}</button>
+        <button class="btn-secondary" type="button" :disabled="busy" @click="previewClose('MM80')">{{ t('cash.view80') }}</button>
+        <button class="btn-secondary" type="button" :disabled="busy" @click="printCloseA4">{{ t('reports.printA4') }}</button>
+        <button class="btn" type="button" :disabled="busy" @click="printClose80">{{ t('reports.print80') }}</button>
+      </div>
 
       <template v-if="!detail.closedAt">
         <form class="grid gap-3 sm:grid-cols-4" @submit.prevent="addMovement">

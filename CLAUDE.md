@@ -112,7 +112,7 @@ docker compose exec backend npm run db:seed
 | Reserva online | `public/` (disponibilidade por tipo, pedido PENDING) | `/h/:slug` |
 | Conta do hóspede | `billing/folio.service.ts` (alojamento lançado no check-in, check-out bloqueado com saldo) | Detalhe da reserva |
 | Faturação | `billing/invoices.service.ts` (séries FT/FR/NC por ano, numeração sem falhas, hash encadeado, nota de crédito), PDF com pdfkit | Faturação |
-| Caixa | `billing/cash.service.ts` (sessões, movimentos, fecho com diferença) | Caixa |
+| Caixa | `billing/cash.service.ts` (sessões, movimentos, fecho com diferença); documento de fecho = relatório oculto `cash-close` (`sessionId`), com o que o operador da sessão registou entre a abertura e o fecho | Caixa |
 | IVA | `tax-rates/` (por hotel; 0% exige motivo de isenção) | Configuração |
 | Restaurante/bar | `pos/` (pedidos, pagar com fatura-recibo ou lançar no quarto) | Restaurante / Bar |
 | Catálogo e stocks | `catalog/`, `stock/` (armazém principal usado nas vendas, custo médio, inventário, quebras, transferências) | Produtos, Stocks |
