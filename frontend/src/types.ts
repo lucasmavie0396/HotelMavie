@@ -266,6 +266,15 @@ export interface Product {
   trackStock: boolean;
   minStock: string;
   active: boolean;
+  imageFile: string | null;
+}
+
+export interface ImageSearchResult {
+  title: string;
+  url: string;
+  source: string | null;
+  license: string | null;
+  author: string | null;
 }
 
 export interface Warehouse {

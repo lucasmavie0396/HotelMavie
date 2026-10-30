@@ -4,6 +4,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import RoomAccountPanel from '@/components/RoomAccountPanel.vue';
 import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
 import { api, errorMessage } from '@/services/api';
+import { fileUrl } from '@/services/files';
 import { printDocument } from '@/services/print';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
@@ -327,12 +328,18 @@ onMounted(load);
               v-for="product in visibleProducts"
               :key="product.id"
               type="button"
-              class="rounded-md border border-slate-200 p-3 text-left text-sm hover:border-indigo-400 disabled:opacity-40"
+              class="overflow-hidden rounded-xl border border-slate-200 bg-white text-left text-sm shadow-sm transition hover:border-indigo-400 hover:shadow-md disabled:opacity-40"
               :disabled="!current || busy"
               @click="addItem(product)"
             >
-              <span class="block font-medium">{{ product.name }}</span>
-              <span class="text-slate-500">{{ money(product.price) }}</span>
+              <img v-if="product.imageFile" :src="fileUrl(product.imageFile)" alt="" class="aspect-[4/3] w-full object-cover" loading="lazy" />
+              <span v-else class="flex aspect-[4/3] w-full items-center justify-center bg-gradient-to-br from-rose-100 to-pink-100 text-2xl font-bold text-rose-400">
+                {{ product.name.slice(0, 2).toUpperCase() }}
+              </span>
+              <span class="block p-2">
+                <span class="block truncate font-medium" :title="product.name">{{ product.name }}</span>
+                <span class="text-slate-500">{{ money(product.price) }}</span>
+              </span>
             </button>
           </div>
         </div>

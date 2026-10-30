@@ -1,8 +1,9 @@
 import { OmitType, PartialType } from '@nestjs/mapped-types';
 import { Outlet, PrepStation } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUrl, MaxLength, Min, MinLength } from 'class-validator';
 import { HotelQueryDto } from '../common/hotel-query.dto';
+import { MAX_IMAGE_BYTES } from '../uploads/uploads';
 
 export class CreateCategoryDto {
   @IsOptional()
@@ -88,6 +89,25 @@ export class CreateProductDto {
 }
 
 export class UpdateProductDto extends PartialType(OmitType(CreateProductDto, ['hotelId'] as const)) {}
+
+export class ProductImageDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 100)
+  data?: string;
+
+  @IsOptional()
+  @IsUrl({ protocols: ['https'], require_protocol: true }, { message: 'O endereco da imagem tem de comecar por https://' })
+  @MaxLength(2000)
+  url?: string;
+}
+
+export class ImageSearchQueryDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  q: string;
+}
 
 export class ProductQueryDto extends HotelQueryDto {
   @IsOptional()

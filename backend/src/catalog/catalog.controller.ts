@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, NotFoundException, Param, ParseIntPipe, Patch, Post, Put, Query } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Body, Controller, Delete, Get, NotFoundException, Param, ParseIntPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -6,7 +6,19 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateCategoryDto, CreateProductDto, ProductQueryDto, UpdateCategoryDto, UpdateProductDto } from './catalog.dto';
+import { UploadsService } from '../uploads/uploads';
+import { CreateCategoryDto, CreateProductDto, ImageSearchQueryDto, ProductImageDto, ProductQueryDto, UpdateCategoryDto, UpdateProductDto } from './catalog.dto';
+
+interface WikimediaPage {
+  title: string;
+  index?: number;
+  imageinfo?: {
+    thumburl?: string;
+    mime?: string;
+    descriptionurl?: string;
+    extmetadata?: { LicenseShortName?: { value?: string }; Artist?: { value?: string } };
+  }[];
+}
 import { RecipeDto, RecipesService } from './recipes.service';
 
 @Controller()
@@ -14,6 +26,7 @@ export class CatalogController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly recipes: RecipesService,
+    private readonly uploads: UploadsService,
   ) {}
 
   @Get('product-categories')
@@ -57,6 +70,67 @@ export class CatalogController {
       include: { category: { select: { id: true, name: true, outlet: true } } },
       orderBy: [{ active: 'desc' }, { name: 'asc' }],
     });
+  }
+
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Get('products/image-search')
+  async imageSearch(@Query() query: ImageSearchQueryDto) {
+    const params = new URLSearchParams({
+      action: 'query',
+      format: 'json',
+      generator: 'search',
+      gsrnamespace: '6',
+      gsrlimit: '24',
+      gsrsearch: `${query.q.trim()} filetype:bitmap`,
+      prop: 'imageinfo',
+      iiprop: 'url|mime|extmetadata',
+      iiurlwidth: '600',
+    });
+    let data: { query?: { pages?: Record<string, WikimediaPage> } };
+    try {
+      const response = await fetch(`https://commons.wikimedia.org/w/api.php?${params}`, {
+        headers: { 'User-Agent': 'MAVIE-HGest/1.0 (gestao hoteleira)' },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!response.ok) throw new Error(String(response.status));
+      data = (await response.json()) as typeof data;
+    } catch {
+      throw new BadGatewayException('A pesquisa de imagens nao esta disponivel agora. Tenta mais tarde ou cola o link de uma imagem.');
+    }
+    const plain = (value?: string) => (value ?? '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    return Object.values(data.query?.pages ?? {})
+      .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+      .map((page) => ({ page, info: page.imageinfo?.[0] }))
+      .filter(({ info }) => info?.thumburl && ['image/jpeg', 'image/png', 'image/webp'].includes(info.mime ?? ''))
+      .map(({ page, info }) => ({
+        title: page.title.replace(/^File:/, '').replace(/\.[a-z0-9]+$/i, ''),
+        url: info!.thumburl!,
+        source: info!.descriptionurl ?? null,
+        license: plain(info!.extmetadata?.LicenseShortName?.value) || null,
+        author: plain(info!.extmetadata?.Artist?.value).slice(0, 80) || null,
+      }));
+  }
+
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Post('products/:id/image')
+  async setImage(@Param('id', ParseIntPipe) id: number, @Body() dto: ProductImageDto, @CurrentUser() user: JwtPayload) {
+    const product = await this.findProduct(id, user);
+    if (!dto.data === !dto.url) {
+      throw new BadRequestException('Envia a imagem ou o endereco da imagem');
+    }
+    const imageFile = dto.data ? await this.uploads.saveImage(dto.data) : await this.uploads.saveRemote(dto.url!);
+    const updated = await this.prisma.product.update({ where: { id }, data: { imageFile }, include: { category: { select: { id: true, name: true, outlet: true } } } });
+    await this.uploads.remove(product.imageFile);
+    return updated;
+  }
+
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Delete('products/:id/image')
+  async removeImage(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    const product = await this.findProduct(id, user);
+    const updated = await this.prisma.product.update({ where: { id }, data: { imageFile: null }, include: { category: { select: { id: true, name: true, outlet: true } } } });
+    await this.uploads.remove(product.imageFile);
+    return updated;
   }
 
   @Get('products/next-sku')
@@ -108,6 +182,14 @@ export class CatalogController {
   @Put('products/:id/recipe')
   setRecipe(@Param('id', ParseIntPipe) id: number, @Body() dto: RecipeDto, @CurrentUser() user: JwtPayload) {
     return this.recipes.set(id, dto, user);
+  }
+
+  private async findProduct(id: number, user: JwtPayload) {
+    const product = await this.prisma.product.findUnique({ where: { id } });
+    if (!product || !canAccessHotel(user, product.hotelId)) {
+      throw new NotFoundException('Produto nao encontrado');
+    }
+    return product;
   }
 
   private async nextSku(hotelId: number) {

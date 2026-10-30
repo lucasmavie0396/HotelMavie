@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
+import ProductImagePicker from '@/components/ProductImagePicker.vue';
 import RecipeEditor from '@/components/RecipeEditor.vue';
 import { api, errorMessage } from '@/services/api';
+import { fileUrl } from '@/services/files';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
 import type { Outlet, PrepStation, Printer, Product, ProductCategory, TaxRate } from '@/types';
@@ -88,16 +90,32 @@ function reset() {
   Object.assign(form, emptyProduct());
 }
 
-const saveProduct = () =>
-  run(async () => {
+const notice = ref('');
+const editingProduct = computed(() => products.value.find((product) => product.id === editingId.value) ?? null);
+
+async function saveProduct() {
+  let createdId: number | null = null;
+  notice.value = '';
+  await run(async () => {
     const payload = { ...form, sku: form.sku || null, categoryId: form.categoryId || null, taxRateId: form.taxRateId || null };
     if (editingId.value) {
       await api.patch(`/products/${editingId.value}`, payload);
+      reset();
     } else {
-      await api.post('/products', { ...payload, hotelId: hotels.selectedId });
+      createdId = (await api.post<Product>('/products', { ...payload, hotelId: hotels.selectedId })).data.id;
     }
-    reset();
   });
+  const created = products.value.find((product) => product.id === createdId);
+  if (created) {
+    edit(created);
+    notice.value = `Produto criado com o codigo ${created.sku}. Pode agora juntar-lhe uma foto.`;
+  }
+}
+
+function imageUpdated(updated: Product) {
+  const index = products.value.findIndex((product) => product.id === updated.id);
+  if (index >= 0) products.value[index] = { ...products.value[index], imageFile: updated.imageFile };
+}
 
 const editingCategoryId = ref<number | null>(null);
 const nextSku = ref('');
@@ -143,10 +161,13 @@ onMounted(load);
     </PageHeader>
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
+    <p v-if="notice" class="text-sm text-emerald-700">{{ notice }}</p>
 
     <div v-if="canManage" class="grid gap-6 lg:grid-cols-3">
       <form class="card grid gap-3 sm:grid-cols-2 lg:col-span-2" @submit.prevent="saveProduct">
         <h2 class="font-semibold sm:col-span-2">{{ editingId ? 'Editar produto' : 'Novo produto' }}</h2>
+        <ProductImagePicker v-if="editingProduct" :key="editingProduct.id" class="sm:col-span-2" :product="editingProduct" @updated="imageUpdated" />
+        <p v-else class="text-xs text-slate-500 sm:col-span-2">Depois de criar o produto pode juntar-lhe uma foto (do computador ou procurada na internet).</p>
         <input v-model="form.name" class="input" placeholder="Nome" required />
         <div class="flex gap-2">
           <input
@@ -235,8 +256,14 @@ onMounted(load);
         <tbody>
           <tr v-for="product in filtered" :key="product.id" class="border-b border-slate-100" :class="product.active ? '' : 'text-slate-400'">
             <td class="px-4 py-3 font-medium">
-              {{ product.name }} <span class="text-xs text-slate-500">{{ product.sku }}</span>
-              <span v-if="!product.sellable" class="ml-1 rounded bg-slate-100 px-1 text-xs">so stock</span>
+              <span class="flex items-center gap-3">
+                <img v-if="product.imageFile" :src="fileUrl(product.imageFile)" alt="" class="size-10 shrink-0 rounded-lg object-cover ring-1 ring-slate-200" />
+                <span v-else class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-400">{{ product.name.slice(0, 2).toUpperCase() }}</span>
+                <span>
+                  {{ product.name }} <span class="text-xs text-slate-500">{{ product.sku }}</span>
+                  <span v-if="!product.sellable" class="ml-1 rounded bg-slate-100 px-1 text-xs">so stock</span>
+                </span>
+              </span>
             </td>
             <td class="px-4 py-3">{{ product.category?.name ?? '-' }}</td>
             <td class="px-4 py-3 text-right">{{ formatMoney(product.price, hotels.currency) }}</td>
