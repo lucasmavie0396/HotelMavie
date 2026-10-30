@@ -25,6 +25,7 @@ model Hotel {
   name                   String            @db.VarChar(150)
   publicSlug             String?           @unique @db.VarChar(100)
   publicEnabled          Boolean           @default(false)
+  customDomain           String?           @unique @db.VarChar(253)
   email                  String?           @db.VarChar(150)
   phone                  String?           @db.VarChar(30)
   address                String?           @db.VarChar(255)

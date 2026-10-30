@@ -78,7 +78,27 @@ const router = createRouter({
   ],
 });
 
-router.beforeEach((to) => {
+let domainSlug: Promise<string | null> | null = null;
+
+function hotelForThisDomain() {
+  const host = window.location.hostname;
+  if (!host.includes('.') || /^[\d.]+$/.test(host) || host.startsWith('[')) return Promise.resolve(null);
+  domainSlug ??= fetch(`/api/public/domain?host=${encodeURIComponent(host)}`)
+    .then((response) => (response.ok ? response.json() : { slug: null }))
+    .then((data: { slug: string | null }) => data.slug)
+    .catch(() => null);
+  return domainSlug;
+}
+
+router.beforeEach(async (to) => {
+  const slug = await hotelForThisDomain();
+  if (slug) {
+    if (to.name !== 'public-hotel' || to.params.slug !== slug) {
+      return { name: 'public-hotel', params: { slug }, replace: true };
+    }
+    return true;
+  }
+
   const auth = useAuthStore();
 
   if (to.meta.requiresAuth && !auth.isAuthenticated) {

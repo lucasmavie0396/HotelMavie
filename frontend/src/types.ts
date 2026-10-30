@@ -19,6 +19,7 @@ export interface Hotel {
   name: string;
   publicSlug: string | null;
   publicEnabled: boolean;
+  customDomain: string | null;
   email: string | null;
   phone: string | null;
   address: string | null;

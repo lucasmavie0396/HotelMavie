@@ -72,6 +72,7 @@ if ($firstInstall) {
     "TRUST_PROXY=$trust",
     "CORS_ORIGIN=$PublicUrl",
     "FRONTEND_DIR=$(Join-Path $Frontend 'dist')",
+    'SITE_DNS_TARGET=',
     '',
     "JWT_SECRET=$jwt",
     'JWT_EXPIRES_IN_SECONDS=900',

@@ -17,6 +17,12 @@ export class HotelsController {
     return this.hotelsService.findAll(user);
   }
 
+  @Roles(UserRole.ADMIN)
+  @Get(':id/domain-check')
+  domainCheck(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.hotelsService.domainCheck(id, user);
+  }
+
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
     return this.hotelsService.findOne(id, user);

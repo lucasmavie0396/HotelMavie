@@ -119,6 +119,16 @@ Usa esta secção se o sistema for acessível pela internet, por exemplo para o 
 
 Com `-AtrasDoIIS` o Node só escuta em 127.0.0.1 e só confia no `X-Forwarded-For` do IIS local. Sem IIS fica `TRUST_PROXY=0`, para que ninguém consiga contornar o limite de tentativas de login falsificando o IP.
 
+### Domínio próprio de cada hotel
+
+Cada hotel pode ter o seu domínio (em **Hotéis → Editar → Domínio próprio**, por exemplo `www.hotelmavie.co.mz`). Quem abrir esse endereço vê diretamente o site desse hotel, servido por este mesmo servidor. O sistema aceita o domínio com e sem `www`.
+
+1. No `backend\.env`, define `SITE_DNS_TARGET` com o IP público deste servidor (ex.: `41.220.10.5`) ou com o nome do sistema (ex.: `hgest.exemplo.co.mz`), e reinicia. Sem este valor, o sistema usa o endereço de `CORS_ORIGIN`.
+2. Em **Hotéis**, abre o hotel e carrega em **Verificar DNS**: aparecem os registos a criar no fornecedor do domínio, normalmente `A` para o domínio sem `www` e `A` ou `CNAME` para o `www`. Depois de criados, volta a verificar; a propagação pode levar algumas horas.
+3. No IIS, adiciona ao site do MAVIE-HGest os *bindings* do domínio (com e sem `www`) e emite o certificado com o win-acme, como na secção anterior. O mesmo `web.config` serve todos os domínios.
+
+Sem IIS (Node exposto diretamente na porta 8080) os domínios próprios não funcionam bem, porque os visitantes esperam as portas 80/443 e HTTPS.
+
 ## 7. Atualizar para uma nova versão
 
 ```powershell

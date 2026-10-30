@@ -1,3 +1,5 @@
+import { Transform } from 'class-transformer';
+import { normalizeDomain } from '../domains';
 import { IsBoolean, IsEmail, IsInt, IsISO4217CurrencyCode, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
 
 export class CreateHotelDto {
@@ -13,6 +15,15 @@ export class CreateHotelDto {
   @IsOptional()
   @IsBoolean()
   publicEnabled?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }) => normalizeDomain(value))
+  @IsString()
+  @MaxLength(253)
+  @Matches(/^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/, {
+    message: 'Dominio invalido: escreve so o endereco, por exemplo www.hotelmavie.co.mz',
+  })
+  customDomain?: string | null;
 
   @IsOptional()
   @IsEmail()
