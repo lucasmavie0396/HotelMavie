@@ -63,6 +63,7 @@ model Hotel {
   emailLogs              EmailLog[]
   receipts               Receipt[]
   purchases              Purchase[]
+  stockDocuments         StockDocument[]
   employees              Employee[]
   shifts                 Shift[]
   timeEntries            TimeEntry[]
@@ -96,6 +97,7 @@ model User {
   orders            Order[]
   stockMovements    StockMovement[]
   purchases         Purchase[]
+  stockDocuments    StockDocument[]
   employee          Employee?
   timeEntriesEdited TimeEntry[]     @relation("TimeEntryEditedBy")
   voidedOrderItems  OrderItem[]     @relation("OrderItemVoidedBy")
@@ -510,6 +512,18 @@ enum PurchaseStatus {
   CANCELLED
 }
 
+enum StockDocumentType {
+  INVENTORY
+  WASTE
+  TRANSFER
+}
+
+enum StockDocumentStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+}
+
 model ProductCategory {
   id          Int         @id @default(autoincrement())
   hotelId     Int
@@ -550,6 +564,7 @@ model Product {
   stockLevels    StockLevel[]
   stockMovements StockMovement[]
   purchaseItems  PurchaseItem[]
+  stockDocItems  StockDocumentItem[]
   recipeItems    RecipeItem[]     @relation("RecipeDish")
   usedIn         RecipeItem[]     @relation("RecipeIngredient")
 
@@ -661,6 +676,8 @@ model Warehouse {
   stockLevels    StockLevel[]
   stockMovements StockMovement[]
   purchases      Purchase[]
+  stockDocuments StockDocument[] @relation("StockDocumentFrom")
+  transfersIn    StockDocument[] @relation("StockDocumentTo")
 
   @@unique([hotelId, name])
   @@map("warehouses")
@@ -694,6 +711,8 @@ model StockMovement {
   order       Order?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
   purchaseId  Int?
   purchase    Purchase?         @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
+  documentId  Int?
+  document    StockDocument?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
   createdById Int?
   createdBy   User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime          @default(now())
@@ -737,6 +756,42 @@ model PurchaseItem {
 
   @@index([purchaseId])
   @@map("purchase_items")
+}
+
+model StockDocument {
+  id             Int                 @id @default(autoincrement())
+  hotelId        Int
+  hotel          Hotel               @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  type           StockDocumentType
+  status         StockDocumentStatus @default(DRAFT)
+  warehouseId    Int
+  warehouse      Warehouse           @relation("StockDocumentFrom", fields: [warehouseId], references: [id], onDelete: Restrict)
+  toWarehouseId  Int?
+  toWarehouse    Warehouse?          @relation("StockDocumentTo", fields: [toWarehouseId], references: [id], onDelete: Restrict)
+  reason         String?             @db.VarChar(200)
+  createdById    Int?
+  createdBy      User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime            @default(now())
+  postedAt       DateTime?
+  items          StockDocumentItem[]
+  stockMovements StockMovement[]
+
+  @@index([hotelId, type, status])
+  @@index([warehouseId])
+  @@map("stock_documents")
+}
+
+model StockDocumentItem {
+  id               Int           @id @default(autoincrement())
+  documentId       Int
+  document         StockDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  productId        Int
+  product          Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity         Decimal       @db.Decimal(12, 3)
+  previousQuantity Decimal?      @db.Decimal(12, 3)
+
+  @@index([documentId])
+  @@map("stock_document_items")
 }
 
 model UserSession {

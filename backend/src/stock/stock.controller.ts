@@ -1,14 +1,50 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { HotelQueryDto } from '../common/hotel-query.dto';
+import { StockDocumentDto, StockDocumentQueryDto, StockDocumentsService } from './stock-documents.service';
 import { AdjustStockDto, CreateWarehouseDto, MovementQueryDto, StockService, TransferDto, WasteDto } from './stock.service';
 
 @Controller()
 export class StockController {
-  constructor(private readonly stock: StockService) {}
+  constructor(
+    private readonly stock: StockService,
+    private readonly documents: StockDocumentsService,
+  ) {}
+
+  @Get('stock-documents')
+  findDocuments(@Query() query: StockDocumentQueryDto, @CurrentUser() user: JwtPayload) {
+    return this.documents.findAll(query, user);
+  }
+
+  @Get('stock-documents/:id')
+  findDocument(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.documents.findOne(id, user);
+  }
+
+  @Post('stock-documents')
+  createDocument(@Body() dto: StockDocumentDto, @CurrentUser() user: JwtPayload) {
+    return this.documents.create(dto, user);
+  }
+
+  @Patch('stock-documents/:id')
+  updateDocument(@Param('id', ParseIntPipe) id: number, @Body() dto: StockDocumentDto, @CurrentUser() user: JwtPayload) {
+    return this.documents.update(id, dto, user);
+  }
+
+  @Post('stock-documents/:id/post')
+  @HttpCode(HttpStatus.OK)
+  postDocument(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.documents.post(id, user);
+  }
+
+  @Post('stock-documents/:id/cancel')
+  @HttpCode(HttpStatus.OK)
+  cancelDocument(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.documents.cancel(id, user);
+  }
 
   @Get('warehouses')
   warehouses(@Query() query: HotelQueryDto, @CurrentUser() user: JwtPayload) {

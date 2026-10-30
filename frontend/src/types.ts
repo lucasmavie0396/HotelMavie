@@ -314,6 +314,23 @@ export interface StockMovement {
   product: { name: string; unit: string };
   warehouse: { name: string };
   createdBy: { name: string } | null;
+  document: { id: number; type: StockDocumentType } | null;
+  purchase: { id: number; supplierRef: string | null } | null;
+}
+
+export type StockDocumentType = 'INVENTORY' | 'WASTE' | 'TRANSFER';
+
+export interface StockDocument {
+  id: number;
+  type: StockDocumentType;
+  status: 'DRAFT' | 'POSTED' | 'CANCELLED';
+  reason: string | null;
+  createdAt: string;
+  postedAt: string | null;
+  warehouse: { id: number; name: string };
+  toWarehouse: { id: number; name: string } | null;
+  createdBy: { name: string } | null;
+  items: { id: number; productId: number; quantity: string; previousQuantity: string | null; product: { name: string; unit: string } }[];
 }
 
 export interface Supplier {

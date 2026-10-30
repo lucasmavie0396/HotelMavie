@@ -85,6 +85,7 @@ export interface MoveInput {
   reason?: string;
   orderId?: number;
   purchaseId?: number;
+  documentId?: number;
   createdById?: number;
 }
 
@@ -139,8 +140,10 @@ export class StockService {
         product: { select: { name: true, unit: true } },
         warehouse: { select: { name: true } },
         createdBy: { select: { name: true } },
+        document: { select: { id: true, type: true } },
+        purchase: { select: { id: true, supplierRef: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: 300,
     });
   }
@@ -237,6 +240,7 @@ export class StockService {
         reason: input.reason,
         orderId: input.orderId,
         purchaseId: input.purchaseId,
+        documentId: input.documentId,
         createdById: input.createdById,
       },
     });

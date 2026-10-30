@@ -10,12 +10,13 @@ import { PrintingController, PrintService } from './printing/printing';
 import { ReportsModule } from './reports/reports.module';
 import { PurchasesController } from './purchases/purchases.controller';
 import { PurchasesService } from './purchases/purchases.service';
+import { StockDocumentsService } from './stock/stock-documents.service';
 import { StockController } from './stock/stock.controller';
 import { StockService } from './stock/stock.service';
 
 @Module({
   imports: [BillingModule, ReportsModule],
   controllers: [CatalogController, StockController, PurchasesController, PosController, TablesController, PrintingController],
-  providers: [ImageSearchService, StockService, PurchasesService, PosService, RecipesService, PrintService],
+  providers: [ImageSearchService, StockService, StockDocumentsService, PurchasesService, PosService, RecipesService, PrintService],
 })
 export class OperationsModule {}
