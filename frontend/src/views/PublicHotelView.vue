@@ -2,6 +2,7 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { api, errorMessage } from '@/services/api';
+import { setPageIdentity } from '@/services/favicon';
 import { fileUrl } from '@/services/files';
 import { DOCUMENT_TYPES, type PublicHotel, type PublicRoomType } from '@/types';
 import { addDays, formatDate, formatMoney, todayIso } from '@/utils/format';
@@ -99,7 +100,7 @@ watch(
     try {
       hotel.value = (await api.get<PublicHotel>(`/public/hotels/${slug.value}`)).data;
       guest.depositPaymentTypeId = hotel.value.paymentTypes[0]?.id ?? 0;
-      document.title = hotel.value.name;
+      setPageIdentity(hotel.value.name, hotel.value.logoFile ? fileUrl(hotel.value.logoFile) : null);
     } catch (e) {
       error.value = errorMessage(e);
     }

@@ -3,6 +3,8 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import NotificationsBell from '@/components/NotificationsBell.vue';
 import { useAuthStore } from '@/stores/auth';
+import { setPageIdentity } from '@/services/favicon';
+import { fileUrl } from '@/services/files';
 import { useHotelsStore } from '@/stores/hotels';
 import { SECTIONS } from '@/utils/sections';
 
@@ -36,6 +38,15 @@ const content = ref<HTMLElement | null>(null);
 watch(
   () => route.fullPath,
   () => content.value?.scrollTo({ top: 0 }),
+);
+
+watch(
+  () => [hotels.selected?.name, hotels.selected?.logoFile],
+  () => {
+    const hotel = hotels.selected;
+    setPageIdentity(hotel ? `${hotel.name} · MAVIE-HGest` : 'MAVIE-HGest', hotel?.logoFile ? fileUrl(hotel.logoFile) : null);
+  },
+  { immediate: true },
 );
 
 onMounted(() => hotels.load());

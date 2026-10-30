@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import AppLayout from '@/layouts/AppLayout.vue';
+import { setPageIdentity } from '@/services/favicon';
 import { useAuthStore } from '@/stores/auth';
 import type { UserRole } from '@/types';
 
@@ -110,6 +111,10 @@ router.beforeEach(async (to) => {
   if (to.meta.roles && (!auth.user || !to.meta.roles.includes(auth.user.role))) {
     return { name: 'dashboard' };
   }
+});
+
+router.afterEach((to) => {
+  if (to.name === 'login' || to.name === 'not-found') setPageIdentity('MAVIE-HGest', null);
 });
 
 export default router;
