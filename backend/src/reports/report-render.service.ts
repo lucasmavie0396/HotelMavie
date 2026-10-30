@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Hotel, PaperWidth } from '@prisma/client';
 import PDFDocument from 'pdfkit';
+import { band, drawFooter, drawHeader, drawSmallHeader, sectionTitle } from '../billing/a4-layout';
 import { Ticket, TicketPdfService } from '../billing/ticket-pdf.service';
 import { UploadsService } from '../uploads/uploads';
 import { Report, ReportTable } from './report-model';
@@ -86,11 +87,11 @@ export class ReportRenderService {
 
       const width = doc.page.width - MARGIN * 2;
       const bottom = doc.page.height - 60;
-      let y = this.header(doc, report, logo, width);
+      let y = this.header(doc, report, logo);
 
       const newPage = () => {
         doc.addPage({ size: 'A4', margins: { top: MARGIN, bottom: 0, left: MARGIN, right: MARGIN } });
-        y = this.smallHeader(doc, report, width);
+        y = this.smallHeader(doc, report);
         return y;
       };
       const ensure = (height: number) => {
@@ -99,8 +100,7 @@ export class ReportRenderService {
 
       for (const section of report.sections) {
         ensure(60);
-        doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(10).text(section.title.toUpperCase(), MARGIN, y, { width, lineBreak: false });
-        y += 17;
+        y = sectionTitle(doc, section.title, MARGIN, y, width);
 
         if (section.kpis?.length) {
           const perRow = Math.min(4, section.kpis.length);
@@ -137,56 +137,24 @@ export class ReportRenderService {
       const range = doc.bufferedPageRange();
       for (let index = range.start; index < range.start + range.count; index++) {
         doc.switchToPage(index);
-        const footerY = doc.page.height - 38;
-        doc.moveTo(MARGIN, footerY).lineTo(MARGIN + width, footerY).lineWidth(0.5).stroke('#cbd5e1');
-        doc.fillColor(MUTED).font('Helvetica').fontSize(7.5);
-        doc.text(`${report.hotel.name} · ${report.title} · gerado em ${report.generatedAt} por ${report.generatedBy}`, MARGIN, footerY + 8, { width: width - 80, lineBreak: false, ellipsis: true });
-        doc.text(`Pagina ${index - range.start + 1} de ${range.count}`, MARGIN + width - 80, footerY + 8, { width: 80, align: 'right', lineBreak: false });
+        drawFooter(doc, `${report.hotel.name} · ${report.title} · gerado em ${report.generatedAt} por ${report.generatedBy}`, `Pagina ${index - range.start + 1} de ${range.count}`, MARGIN);
       }
       doc.end();
     });
   }
 
-  private header(doc: PDFKit.PDFDocument, report: Report, logo: Buffer | null, width: number) {
-    const hotel = report.hotel;
-    let textX = MARGIN;
-    if (logo) {
-      try {
-        doc.image(logo, MARGIN, MARGIN - 4, { fit: [110, 58] });
-        textX = MARGIN + 122;
-      } catch {
-        textX = MARGIN;
-      }
-    }
-    const infoWidth = 230;
-    doc.fillColor(INK).font('Helvetica-Bold').fontSize(13).text(hotel.name, textX, MARGIN, { width: infoWidth });
-    doc.font('Helvetica').fontSize(8).fillColor('#334155');
-    if (hotel.legalName && hotel.legalName !== hotel.name) doc.text(hotel.legalName, textX, doc.y, { width: infoWidth });
-    if (hotel.taxId) doc.text(`NIF: ${hotel.taxId}`, textX, doc.y, { width: infoWidth });
-    const place = [hotel.address, [hotel.postalCode, hotel.city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
-    if (place) doc.text(place, textX, doc.y, { width: infoWidth });
-    const contacts = [hotel.phone, hotel.email].filter(Boolean).join(' · ');
-    if (contacts) doc.text(contacts, textX, doc.y, { width: infoWidth });
-    const infoBottom = Math.max(doc.y, logo ? MARGIN + 58 : doc.y);
-
-    const titleWidth = 200;
-    const titleX = MARGIN + width - titleWidth;
-    doc.fillColor(ACCENT).font('Helvetica-Bold').fontSize(15).text(report.title.toUpperCase(), titleX, MARGIN, { width: titleWidth, align: 'right' });
-    doc.fillColor(INK).font('Helvetica').fontSize(9).text(report.period, titleX, doc.y + 2, { width: titleWidth, align: 'right' });
-    doc.fillColor(MUTED).fontSize(7.5).text(`Emitido em ${report.generatedAt}`, titleX, doc.y + 2, { width: titleWidth, align: 'right' });
-    doc.text(`Por ${report.generatedBy}`, titleX, doc.y, { width: titleWidth, align: 'right' });
-
-    const y = Math.max(infoBottom, doc.y) + 12;
-    doc.moveTo(MARGIN, y).lineTo(MARGIN + width, y).lineWidth(1.5).stroke(ACCENT);
-    return y + 16;
+  private header(doc: PDFKit.PDFDocument, report: Report, logo: Buffer | null) {
+    return drawHeader(doc, {
+      hotel: report.hotel,
+      logo,
+      title: report.title,
+      meta: [report.period, `Emitido em ${report.generatedAt}`, `Por ${report.generatedBy}`],
+      margin: MARGIN,
+    });
   }
 
-  private smallHeader(doc: PDFKit.PDFDocument, report: Report, width: number) {
-    doc.fillColor(INK).font('Helvetica-Bold').fontSize(9).text(report.hotel.name, MARGIN, MARGIN, { width: width / 2, lineBreak: false });
-    doc.fillColor(ACCENT).text(`${report.title} · ${report.period}`, MARGIN + width / 2, MARGIN, { width: width / 2, align: 'right', lineBreak: false });
-    const y = MARGIN + 16;
-    doc.moveTo(MARGIN, y).lineTo(MARGIN + width, y).lineWidth(0.8).stroke(ACCENT);
-    return y + 12;
+  private smallHeader(doc: PDFKit.PDFDocument, report: Report) {
+    return drawSmallHeader(doc, report.hotel.name, `${report.title} · ${report.period}`, MARGIN);
   }
 
   private table(doc: PDFKit.PDFDocument, table: ReportTable, start: number, width: number, bottom: number, newPage: () => number) {
@@ -215,7 +183,7 @@ export class ReportRenderService {
     const headerRow = () => {
       const labels = table.columns.map((column) => column.label);
       const height = heightOf(labels, true);
-      doc.rect(MARGIN, y, width, height).fill(ACCENT);
+      band(doc, MARGIN, y, width, height);
       drawCells(labels, y, true, '#ffffff');
       y += height;
     };

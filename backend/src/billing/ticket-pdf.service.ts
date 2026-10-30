@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { Hotel, PaperWidth } from '@prisma/client';
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
+import { UploadsService } from '../uploads/uploads';
+import { band, COLORS, drawFooter, loadLogo } from './a4-layout';
 
 const PAPER: Record<PaperWidth, { width: number; margin: number; right: number; chars: number }> = {
   MM58: { width: 164.41, margin: 6, right: 52, chars: 32 },
@@ -9,6 +11,7 @@ const PAPER: Record<PaperWidth, { width: number; margin: number; right: number; 
   A4: { width: 595.28, margin: 50, right: 110, chars: 90 },
 };
 const A4_HEIGHT = 841.89;
+const A4_COLUMN = 400;
 const TIME_ZONE = process.env.AT_TIMEZONE ?? 'Europe/Lisbon';
 
 type Row =
@@ -30,6 +33,7 @@ export interface TicketLine {
 
 export class Ticket {
   readonly rows: Row[] = [];
+  hotel: Hotel | null = null;
 
   constructor(readonly currency = 'EUR') {}
 
@@ -68,6 +72,7 @@ export class Ticket {
   }
 
   header(hotel: Hotel) {
+    this.hotel = hotel;
     this.text(hotel.name, { bold: true, size: 12, align: 'center' });
     if (hotel.legalName && hotel.legalName !== hotel.name) this.text(hotel.legalName, { align: 'center', size: 8 });
     if (hotel.taxId) this.text(`NIF ${hotel.taxId}`, { align: 'center', size: 8 });
@@ -141,19 +146,28 @@ function wrap(text: string, width: number) {
 
 @Injectable()
 export class TicketPdfService {
+  constructor(private readonly uploads: UploadsService) {}
+
   async render(ticket: Ticket, paper: PaperWidth = PaperWidth.MM80) {
     const spec = PAPER[paper];
+    const a4 = paper === PaperWidth.A4;
+    const logo = a4 && ticket.hotel && !ticket.rows.some((row) => row.kind === 'image') ? await loadLogo(this.uploads, ticket.hotel) : null;
+    const rows: Row[] = logo ? [{ kind: 'image', data: logo, width: 120 }, { kind: 'space', height: 8 }, ...ticket.rows] : ticket.rows;
     const qrImages = new Map<Row, Buffer>();
-    for (const row of ticket.rows) {
+    for (const row of rows) {
       if (row.kind === 'qr') qrImages.set(row, await QRCode.toBuffer(row.data, { errorCorrectionLevel: 'M', margin: 0, width: 300 }));
     }
-    const inner = spec.width - spec.margin * 2;
-    const scale = paper === PaperWidth.A4 ? 1.15 : 1;
+    const inner = a4 ? A4_COLUMN : spec.width - spec.margin * 2;
+    const left = a4 ? (spec.width - inner) / 2 : spec.margin;
+    const top = a4 ? 42 : spec.margin;
+    const bottom = a4 ? 58 : spec.margin;
+    const right = a4 ? 120 : spec.right;
+    const scale = a4 ? 1.15 : 1;
     const probe = new PDFDocument({ size: [spec.width, 1000], margin: spec.margin });
-    const heights = ticket.rows.map((row) => this.rowHeight(probe, row, inner, spec.right, scale));
+    const heights = rows.map((row) => this.rowHeight(probe, row, inner, right, scale));
     probe.end();
     const total = heights.reduce((sum, h) => sum + h, spec.margin * 2) + 4;
-    const pageHeight = paper === PaperWidth.A4 ? A4_HEIGHT : Math.ceil(total);
+    const pageHeight = a4 ? A4_HEIGHT : Math.ceil(total);
 
     return new Promise<Buffer>((resolve, reject) => {
       const doc = new PDFDocument({ size: [spec.width, pageHeight], margin: spec.margin });
@@ -161,19 +175,25 @@ export class TicketPdfService {
       doc.on('data', (chunk: Buffer) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
-      let y = spec.margin;
-      ticket.rows.forEach((row, index) => {
-        if (y + heights[index] > pageHeight - spec.margin) {
+      const decorate = () => {
+        if (!a4) return;
+        band(doc, 0, 0, spec.width, 8);
+        drawFooter(doc, ticket.hotel ? [ticket.hotel.name, ticket.hotel.phone, ticket.hotel.email].filter(Boolean).join(' · ') : '');
+      };
+      decorate();
+      let y = top;
+      rows.forEach((row, index) => {
+        if (y + heights[index] > pageHeight - bottom) {
           doc.addPage({ size: [spec.width, pageHeight], margin: spec.margin });
-          y = spec.margin;
+          decorate();
+          y = top;
         }
-        this.drawRow(doc, row, y, spec.margin, inner, spec.right, scale, qrImages.get(row));
+        this.drawRow(doc, row, y, left, inner, right, scale, a4, qrImages.get(row));
         y += heights[index];
       });
       doc.end();
     });
   }
-
   escpos(ticket: Ticket, paper: PaperWidth = PaperWidth.MM80) {
     const width = paper === PaperWidth.MM58 ? 32 : 48;
     const out: number[] = [0x1b, 0x40];
@@ -255,10 +275,16 @@ export class TicketPdfService {
     }
   }
 
-  private drawRow(doc: PDFKit.PDFDocument, row: Row, y: number, margin: number, inner: number, right: number, scale: number, image?: Buffer) {
+  private drawRow(doc: PDFKit.PDFDocument, row: Row, y: number, margin: number, inner: number, right: number, scale: number, a4: boolean, image?: Buffer) {
+    if (a4 && (row.kind === 'text' || row.kind === 'cols')) {
+      doc.fillColor(row.bold && (row.size ?? 9) >= 10 ? COLORS.accent : row.bold ? COLORS.ink : COLORS.text);
+    } else {
+      doc.fillColor('#000000');
+    }
     switch (row.kind) {
       case 'rule':
-        doc.moveTo(margin, y + 3).lineTo(margin + inner, y + 3).dash(2, { space: 2 }).stroke('#000000').undash();
+        if (a4) doc.moveTo(margin, y + 3).lineTo(margin + inner, y + 3).lineWidth(0.6).stroke(COLORS.line);
+        else doc.moveTo(margin, y + 3).lineTo(margin + inner, y + 3).dash(2, { space: 2 }).stroke('#000000').undash();
         break;
       case 'qr':
         if (image) doc.image(image, margin + (inner - row.size) / 2, y, { width: row.size });

@@ -3,6 +3,7 @@ import { Prisma, ReservationStatus } from '@prisma/client';
 import { IsBoolean, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import PDFDocument from 'pdfkit';
 import { JwtPayload } from '../auth/jwt-payload';
+import { A4, COLORS, Column, drawFooter, drawHeader, infoCard, sectionTitle, tableHeader, tableRow, totalsBox } from '../billing/a4-layout';
 import { FolioService } from '../billing/folio.service';
 import { nightsBetween } from '../common/dates';
 import { canAccessHotel } from '../common/hotel-scope';
@@ -193,58 +194,24 @@ export class DepositService {
     const nights = nightsBetween(reservation.checkIn, reservation.checkOut);
 
     return new Promise<Buffer>((resolve, reject) => {
-      const doc = new PDFDocument({ size: 'A4', margin: 50, info: { Title: `Comprovativo de sinal ${reservation.code}`, Author: hotel.name } });
+      const doc = new PDFDocument({
+        size: 'A4',
+        margins: { top: A4.margin, bottom: 20, left: A4.margin, right: A4.margin },
+        info: { Title: `Comprovativo de sinal ${reservation.code}`, Author: hotel.name },
+      });
       const chunks: Buffer[] = [];
       doc.on('data', (chunk: Buffer) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
-      const left = 50;
-      const width = doc.page.width - 100;
-      const accent = '#4338ca';
+      const left = A4.margin;
+      const width = doc.page.width - A4.margin * 2;
 
-      let textX = left;
-      if (logo) {
-        try {
-          doc.image(logo, left, 45, { fit: [120, 70] });
-          textX = left + 135;
-        } catch {
-          textX = left;
-        }
-      }
-      doc.fillColor('#0f172a').fontSize(15).font('Helvetica-Bold').text(hotel.name, textX, 48, { width: 260 });
-      doc.fontSize(8.5).font('Helvetica').fillColor('#334155');
-      if (hotel.legalName && hotel.legalName !== hotel.name) doc.text(hotel.legalName, textX, doc.y, { width: 260 });
-      if (hotel.taxId) doc.text(`NIF: ${hotel.taxId}`, textX, doc.y, { width: 260 });
-      const place = [hotel.address, [hotel.postalCode, hotel.city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
-      if (place) doc.text(place, textX, doc.y, { width: 260 });
-      const contacts = [hotel.phone, hotel.email].filter(Boolean).join(' · ');
-      if (contacts) doc.text(contacts, textX, doc.y, { width: 260 });
-      const headerBottom = Math.max(doc.y, logo ? 118 : doc.y);
+      const meta = [`N.o SN-${reservation.code}`];
+      if (reservation.depositConfirmedAt) meta.push(`Data: ${reservation.depositConfirmedAt.toLocaleString('pt-PT', { timeZone })}`);
+      meta.push(`Reserva ${STATUS_LABELS[reservation.status].toLowerCase()}`);
+      let y = drawHeader(doc, { hotel, logo, title: 'Comprovativo de sinal', meta });
 
-      doc.fillColor(accent).fontSize(14).font('Helvetica-Bold').text('COMPROVATIVO DE SINAL', left, 48, { width, align: 'right' });
-      doc.fillColor('#0f172a').fontSize(9).font('Helvetica');
-      doc.text(`N.o SN-${reservation.code}`, { width, align: 'right' });
-      if (reservation.depositConfirmedAt) {
-        doc.text(`Data: ${reservation.depositConfirmedAt.toLocaleString('pt-PT', { timeZone })}`, { width, align: 'right' });
-      }
-      doc.text(`Reserva ${STATUS_LABELS[reservation.status].toLowerCase()}`, { width, align: 'right' });
-
-      let y = Math.max(headerBottom, doc.y) + 18;
-      doc.moveTo(left, y).lineTo(left + width, y).lineWidth(1.5).stroke(accent);
-      y += 16;
-
-      const box = (title: string, x: number, top: number, boxWidth: number, rows: [string, string][]) => {
-        doc.fillColor(accent).fontSize(9).font('Helvetica-Bold').text(title.toUpperCase(), x, top, { width: boxWidth });
-        let rowY = top + 16;
-        for (const [label, value] of rows) {
-          doc.fillColor('#64748b').fontSize(8.5).font('Helvetica').text(label, x, rowY, { width: 95 });
-          doc.fillColor('#0f172a').font('Helvetica').text(value, x + 95, rowY, { width: boxWidth - 95 });
-          rowY = Math.max(doc.y, rowY + 12) + 3;
-        }
-        return rowY;
-      };
-
-      const half = (width - 20) / 2;
+      const half = (width - 14) / 2;
       const guestRows: [string, string][] = [['Nome', `${guest.firstName} ${guest.lastName}`]];
       if (guest.email) guestRows.push(['Email', guest.email]);
       if (guest.phone) guestRows.push(['Telefone', guest.phone]);
@@ -258,77 +225,51 @@ export class DepositService {
         ['Noites', String(nights)],
         ['Hospedes', `${reservation.adults} adulto(s)${reservation.children ? `, ${reservation.children} crianca(s)` : ''}`],
       ];
-      y = Math.max(box('Hospede', left, y, half, guestRows), box('Estadia', left + half + 20, y, half, stayRows)) + 14;
+      y = Math.max(infoCard(doc, left, y, half, 'Hospede', guestRows), infoCard(doc, left + half + 14, y, half, 'Estadia', stayRows)) + 18;
 
-      doc.fillColor(accent).fontSize(9).font('Helvetica-Bold').text('VALORES', left, y);
-      y += 16;
-      const columns = [
-        { label: 'Descricao', x: left, w: 260, align: 'left' as const },
-        { label: 'Qtd', x: left + 260, w: 60, align: 'right' as const },
-        { label: 'Preco', x: left + 320, w: 85, align: 'right' as const },
-        { label: 'Total', x: left + 405, w: width - 405, align: 'right' as const },
+      y = sectionTitle(doc, 'Valores', left, y, width);
+      const columns: Column[] = [
+        { label: 'Descricao', width: width - 230 },
+        { label: 'Noites', width: 60, align: 'right' },
+        { label: 'Preco', width: 85, align: 'right' },
+        { label: 'Total', width: 85, align: 'right' },
       ];
-      doc.rect(left, y - 4, width, 18).fill('#eef2ff');
-      doc.fillColor('#0f172a').fontSize(8.5).font('Helvetica-Bold');
-      for (const column of columns) doc.text(column.label, column.x + 4, y, { width: column.w - 8, align: column.align });
-      y += 20;
-      doc.font('Helvetica');
-      const values = [`Alojamento ${reservation.room.type}`, String(nights), money(reservation.pricePerNight), money(total)];
-      columns.forEach((column, index) => doc.text(values[index], column.x + 4, y, { width: column.w - 8, align: column.align }));
-      y += 22;
-      doc.moveTo(left, y).lineTo(left + width, y).lineWidth(0.5).stroke('#cbd5e1');
-      y += 10;
+      y = tableHeader(doc, left, y, columns);
+      y = tableRow(doc, left, y, columns, [`Alojamento ${reservation.room.type}`, String(nights), money(reservation.pricePerNight), money(total)], 0);
+      y += 14;
 
-      const totalsX = left + width - 230;
-      const totalLine = (label: string, value: string, options: { bold?: boolean; color?: string; size?: number } = {}) => {
-        doc.fillColor(options.color ?? '#0f172a').fontSize(options.size ?? 9.5).font(options.bold ? 'Helvetica-Bold' : 'Helvetica');
-        doc.text(label, totalsX, y, { width: 130 });
-        doc.text(value, totalsX + 130, y, { width: 100, align: 'right' });
-        y += (options.size ?? 9.5) + 8;
-      };
-      totalLine('Total da reserva', money(total));
-      totalLine(`Sinal recebido (${percent}%)`, `-${money(deposit)}`, { bold: true, color: '#047857', size: 11 });
-      doc.moveTo(totalsX, y - 3).lineTo(left + width, y - 3).lineWidth(0.5).stroke('#cbd5e1');
-      y += 4;
-      totalLine('Restante a pagar', money(remaining), { bold: true, size: 12 });
-
-      y += 10;
-      doc.fillColor(accent).fontSize(9).font('Helvetica-Bold').text('PAGAMENTO DO SINAL', left, y);
-      y += 16;
       const paymentRows: [string, string][] = [
-        ['Forma de pagamento', reservation.depositPaymentType?.name ?? '-'],
+        ['Forma', reservation.depositPaymentType?.name ?? '-'],
         ['Referencia', reservation.depositReference ?? '-'],
         ['Confirmado por', reservation.depositConfirmedBy?.name ?? '-'],
       ];
-      for (const [label, value] of paymentRows) {
-        doc.fillColor('#64748b').fontSize(8.5).font('Helvetica').text(label, left, y, { width: 120 });
-        doc.fillColor('#0f172a').text(value, left + 120, y, { width: width - 120 });
-        y = Math.max(doc.y, y + 12) + 3;
-      }
+      const paymentBottom = infoCard(doc, left, y, half, 'Pagamento do sinal', paymentRows, 90);
+      const totalsBottom = totalsBox(doc, left + width - 240, y, 240, [
+        { label: 'Total da reserva', value: money(total) },
+        { label: `Sinal recebido (${percent}%)`, value: `-${money(deposit)}`, color: COLORS.good },
+        { label: 'Restante a pagar', value: money(remaining), strong: true },
+      ]);
+      y = Math.max(paymentBottom, totalsBottom) + 18;
 
-      y += 12;
-      doc.roundedRect(left, y, width, 46, 4).fill('#f8fafc');
-      doc.fillColor('#334155').fontSize(8.5).font('Helvetica').text(
-        `O valor restante de ${money(remaining)} sera cobrado no check-in ou no check-out, juntamente com os consumos da estadia. A fatura e emitida no check-out e inclui o valor deste sinal.`,
-        left + 10,
-        y + 9,
-        { width: width - 20 },
-      );
-      y += 58;
+      const message = `O valor restante de ${money(remaining)} sera cobrado no check-in ou no check-out, juntamente com os consumos da estadia. A fatura e emitida no check-out e inclui o valor deste sinal.`;
+      doc.font('Helvetica').fontSize(8.5);
+      const messageHeight = doc.heightOfString(message, { width: width - 24 }) + 18;
+      doc.roundedRect(left, y, width, messageHeight, 8).fill(COLORS.soft);
+      doc.rect(left, y + 6, 3, messageHeight - 12).fill(COLORS.accent);
+      doc.fillColor(COLORS.text).font('Helvetica').fontSize(8.5).text(message, left + 14, y + 9, { width: width - 24 });
+      y += messageHeight + 12;
       if (reservation.notes) {
-        doc.fillColor('#64748b').fontSize(8).text(`Observacoes: ${reservation.notes}`, left, y, { width });
+        doc.fillColor(COLORS.muted).fontSize(8).text(`Observacoes: ${reservation.notes}`, left, y, { width });
         y = doc.y + 8;
       }
       if (hotel.invoiceFooter) {
-        doc.fillColor('#64748b').fontSize(8).text(hotel.invoiceFooter, left, y, { width });
+        doc.fillColor(COLORS.muted).fontSize(8).text(hotel.invoiceFooter, left, y, { width });
       }
 
+      const noticeY = doc.page.height - 52;
       doc.page.margins.bottom = 0;
-      const footerY = doc.page.height - 70;
-      doc.moveTo(left, footerY).lineTo(left + width, footerY).lineWidth(0.5).stroke('#cbd5e1');
-      doc.fillColor('#64748b').fontSize(7.5).font('Helvetica');
-      doc.text('Documento interno, sem valor fiscal. Nao substitui a fatura.', left, footerY + 8, { width, align: 'center', lineBreak: false });
-      doc.text([hotel.name, hotel.phone, hotel.email].filter(Boolean).join(' · '), left, footerY + 20, { width, align: 'center', lineBreak: false });
+      doc.fillColor(COLORS.muted).font('Helvetica-Bold').fontSize(7.5).text('Documento interno, sem valor fiscal. Nao substitui a fatura.', left, noticeY, { width, align: 'center', lineBreak: false });
+      drawFooter(doc, [hotel.name, hotel.phone, hotel.email].filter(Boolean).join(' · '));
       doc.end();
     });
   }
