@@ -9,6 +9,7 @@ param(
 if ((Get-ApiTask) -and -not (Test-Administrator)) {
   throw 'Abre o PowerShell como Administrador para parar e arrancar o servico.'
 }
+if (@(Get-HotelInstances).Count -gt 0) { throw 'Este servidor tem hoteis em instancias separadas: atualiza com hoteis.ps1 -Acao atualizar.' }
 if (-not (Test-Path $EnvFile)) { throw "Nao existe $EnvFile. Corre instalar.ps1 primeiro." }
 
 Write-Host "MAVIE-HGest - atualizacao em $Raiz" -ForegroundColor White

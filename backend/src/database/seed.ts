@@ -18,10 +18,14 @@ async function main() {
     throw new Error('Define SEED_ADMIN_PASSWORD com pelo menos 8 caracteres');
   }
 
+  const name = process.env.SEED_HOTEL_NAME || 'Hotel Mavie';
+  const slug = process.env.SEED_HOTEL_SLUG || 'hotel-mavie';
+  const rooms = process.env.SEED_DEMO_ROOMS === '0' ? [] : ROOMS;
+
   const hotel = await prisma.hotel.upsert({
-    where: { publicSlug: 'hotel-mavie' },
+    where: { publicSlug: slug },
     update: {},
-    create: { name: 'Hotel Mavie', publicSlug: 'hotel-mavie', publicEnabled: true },
+    create: { name, publicSlug: slug, publicEnabled: rooms.length > 0 },
   });
 
   await prisma.user.upsert({
@@ -35,7 +39,7 @@ async function main() {
     },
   });
 
-  for (const room of ROOMS) {
+  for (const room of rooms) {
     await prisma.room.upsert({
       where: { hotelId_number: { hotelId: hotel.id, number: room.number } },
       update: {},
@@ -43,7 +47,7 @@ async function main() {
     });
   }
 
-  console.log(`Seed concluido: hotel "${hotel.name}", admin ${email}, ${ROOMS.length} quartos`);
+  console.log(`Seed concluido: hotel "${hotel.name}", admin ${email}, ${rooms.length} quartos`);
 }
 
 main()

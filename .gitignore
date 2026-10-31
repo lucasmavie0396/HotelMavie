@@ -16,5 +16,6 @@ Thumbs.db
 backend/backups/
 backend/uploads/
 backend/keys/
+/dados/
 frontend/test-results/
 frontend/playwright-report/

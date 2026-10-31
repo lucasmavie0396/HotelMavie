@@ -6,6 +6,8 @@ $Frontend = Join-Path $Raiz 'frontend'
 $EnvFile = Join-Path $Backend '.env'
 $MainJs = Join-Path $Backend 'dist\main.js'
 $NomeTarefa = 'MAVIE-HGest'
+$DadosHoteis = Join-Path $Raiz 'dados\hoteis'
+$ChaveAtPartilhada = Join-Path $Raiz 'dados\keys\at-private.pem'
 
 function Write-Step([string]$Text) {
   Write-Host ''
@@ -91,19 +93,81 @@ function ConvertFrom-DatabaseUrl([string]$Url) {
   return @{ Host = $uri.Host; Port = $port; User = $user; Password = $password; Database = $uri.AbsolutePath.Trim('/') }
 }
 
-function Find-Mysqldump {
-  $command = Get-Command mysqldump.exe -ErrorAction SilentlyContinue
+function Find-MysqlTool([string]$Exe) {
+  $command = Get-Command $Exe -ErrorAction SilentlyContinue
   if ($command) { return $command.Source }
-  $candidates = @('C:\xampp\mysql\bin\mysqldump.exe')
+  $candidates = @("C:\xampp\mysql\bin\$Exe")
   foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
     if ($base) {
-      $candidates += Get-ChildItem -Path (Join-Path $base 'MySQL\*\bin\mysqldump.exe'), (Join-Path $base 'MariaDB*\bin\mysqldump.exe') -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+      $candidates += Get-ChildItem -Path (Join-Path $base "MySQL\*\bin\$Exe"), (Join-Path $base "MariaDB*\bin\$Exe") -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
     }
   }
   foreach ($candidate in $candidates) {
     if ($candidate -and (Test-Path $candidate)) { return $candidate }
   }
   return $null
+}
+
+function Find-Mysqldump {
+  return Find-MysqlTool 'mysqldump.exe'
+}
+
+function New-Secret([string]$Node, [int]$Bytes = 48) {
+  return (& $Node -e "process.stdout.write(require('crypto').randomBytes($Bytes).toString('hex'))")
+}
+
+function New-EnvContent([hashtable]$Values) {
+  $lines = @(
+    'NODE_ENV=production',
+    "DATABASE_URL=`"$($Values.DatabaseUrl)`"",
+    "PORT=$($Values.Port)",
+    "HOST=$($Values.Host)",
+    "TRUST_PROXY=$($Values.Trust)",
+    "CORS_ORIGIN=$($Values.PublicUrl)",
+    "FRONTEND_DIR=$(Join-Path $Frontend 'dist')",
+    'SITE_DNS_TARGET=',
+    '',
+    "JWT_SECRET=$($Values.Jwt)",
+    'JWT_EXPIRES_IN_SECONDS=900',
+    "JWT_REFRESH_SECRET=$($Values.Refresh)",
+    'JWT_REFRESH_EXPIRES_IN_SECONDS=604800',
+    '',
+    "SEED_ADMIN_EMAIL=$($Values.AdminEmail)",
+    '',
+    "MYSQLDUMP_PATH=$($Values.Dump)",
+    "BACKUP_DIR=$($Values.Backups)",
+    "UPLOAD_DIR=$($Values.Uploads)",
+    '',
+    'SMTP_HOST=',
+    'SMTP_PORT=587',
+    'SMTP_SECURE=false',
+    'SMTP_USER=',
+    'SMTP_PASS=',
+    'MAIL_FROM=',
+    '',
+    'GOOGLE_SEARCH_API_KEY=',
+    'GOOGLE_SEARCH_CX=',
+    '',
+    "AT_PRIVATE_KEY_PATH=$($Values.KeyPath)",
+    'AT_KEY_VERSION=1',
+    'AT_CERTIFICATE_NUMBER=0',
+    'AT_PRODUCER_TAX_ID=',
+    "AT_TIMEZONE=$($Values.TimeZone)"
+  )
+  if ($Values.HotelName) { $lines += @('', "MAVIE_HOTEL_NAME=$($Values.HotelName)") }
+  return ($lines -join "`r`n") + "`r`n"
+}
+
+function Initialize-AtKey([string]$Node, [string]$KeyPath) {
+  if ($KeyPath -and -not (Test-Path $KeyPath)) {
+    New-Item -ItemType Directory -Force (Split-Path $KeyPath) | Out-Null
+    Invoke-Native $Node @((Join-Path $Backend 'scripts\generate-at-key.mjs'), $KeyPath) $Backend
+    Write-Note 'Guarda uma copia da chave privada num local seguro: se se perder, os documentos ja emitidos deixam de poder ser verificados.'
+  } elseif ($KeyPath) {
+    Write-Ok "Chave existente mantida: $KeyPath"
+  } else {
+    Write-Note 'AT_PRIVATE_KEY_PATH nao definido no .env: garante que AT_PRIVATE_KEY esta preenchido.'
+  }
 }
 
 function Backup-Database([hashtable]$Env, [string]$Prefix) {
@@ -126,26 +190,32 @@ function Backup-Database([hashtable]$Env, [string]$Prefix) {
   return $file
 }
 
-function Get-ApiProcess {
-  Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.ToLowerInvariant().Contains($MainJs.ToLowerInvariant()) }
+function Get-ApiProcess([string]$EnvPath) {
+  Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" | Where-Object {
+    if (-not $_.CommandLine) { return $false }
+    $line = $_.CommandLine.ToLowerInvariant()
+    if (-not $line.Contains($MainJs.ToLowerInvariant())) { return $false }
+    if ($EnvPath) { return $line.Contains($EnvPath.ToLowerInvariant()) }
+    return -not $line.Contains('--env-file')
+  }
 }
 
-function Get-ApiTask {
-  Get-ScheduledTask -TaskName $NomeTarefa -ErrorAction SilentlyContinue
+function Get-ApiTask([string]$TaskName = $NomeTarefa) {
+  Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 }
 
-function Stop-Api {
-  $task = Get-ApiTask
-  if ($task -and $task.State -eq 'Running') { Stop-ScheduledTask -TaskName $NomeTarefa }
-  foreach ($process in @(Get-ApiProcess)) {
+function Stop-Api([string]$TaskName = $NomeTarefa, [string]$EnvPath) {
+  $task = Get-ApiTask $TaskName
+  if ($task -and $task.State -eq 'Running') { Stop-ScheduledTask -TaskName $TaskName }
+  foreach ($process in @(Get-ApiProcess $EnvPath)) {
     Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
   }
   Start-Sleep -Seconds 1
 }
 
-function Start-Api {
-  if (-not (Get-ApiTask)) { throw "A tarefa $NomeTarefa nao existe. Corre instalar.ps1 primeiro." }
-  Start-ScheduledTask -TaskName $NomeTarefa
+function Start-Api([string]$TaskName = $NomeTarefa) {
+  if (-not (Get-ApiTask $TaskName)) { throw "A tarefa $TaskName nao existe. Corre o instalador primeiro." }
+  Start-ScheduledTask -TaskName $TaskName
 }
 
 function Wait-Health([int]$Port, [int]$Seconds = 90) {
@@ -161,14 +231,32 @@ function Wait-Health([int]$Port, [int]$Seconds = 90) {
   return $false
 }
 
-function Invoke-Build([string]$Node) {
+function Get-Npm([string]$Node) {
   $npm = Join-Path (Split-Path $Node) 'npm.cmd'
   if (-not (Test-Path $npm)) { $npm = 'npm.cmd' }
+  return $npm
+}
+
+function Invoke-Migrate([string]$Node, [string]$DatabaseUrl) {
+  $previous = $env:DATABASE_URL
+  $env:DATABASE_URL = $DatabaseUrl
+  try {
+    Invoke-Native (Get-Npm $Node) @('exec', '--', 'prisma', 'migrate', 'deploy') $Backend
+  } finally {
+    if ($null -eq $previous) { Remove-Item Env:\DATABASE_URL -ErrorAction SilentlyContinue } else { $env:DATABASE_URL = $previous }
+  }
+}
+
+function Invoke-Build([string]$Node, [switch]$SemMigrar) {
+  $npm = Get-Npm $Node
   Write-Step 'Dependencias do backend'
   Invoke-Native $npm @('ci', '--no-audit', '--no-fund') $Backend
-  Write-Step 'Base de dados (prisma generate + migrate deploy)'
+  Write-Step 'Prisma generate'
   Invoke-Native $npm @('exec', '--', 'prisma', 'generate') $Backend
-  Invoke-Native $npm @('exec', '--', 'prisma', 'migrate', 'deploy') $Backend
+  if (-not $SemMigrar) {
+    Write-Step 'Base de dados (migrate deploy)'
+    Invoke-Native $npm @('exec', '--', 'prisma', 'migrate', 'deploy') $Backend
+  }
   Write-Step 'Compilar o backend'
   Invoke-Native $npm @('run', 'build') $Backend
   Write-Step 'Dependencias e compilacao do painel'
@@ -177,11 +265,35 @@ function Invoke-Build([string]$Node) {
   Write-Ok 'Compilacao concluida'
 }
 
-function Register-ApiTask([string]$Node, [string]$LogDir) {
+function Register-ApiTask([string]$Node, [string]$LogDir, [string]$TaskName = $NomeTarefa, [string]$EnvPath = '', [string]$Description = 'MAVIE-HGest: API, painel e site publico') {
   $runner = Join-Path $PSScriptRoot 'executar.cmd'
-  $action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/c `"`"$runner`" `"$LogDir`" `"$Node`"`"" -WorkingDirectory $Backend
+  $arguments = "`"$runner`" `"$LogDir`" `"$Node`""
+  if ($EnvPath) { $arguments += " `"$EnvPath`"" }
+  $action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/c `"$arguments`"" -WorkingDirectory $Backend
   $trigger = New-ScheduledTaskTrigger -AtStartup
   $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
   $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
-  Register-ScheduledTask -TaskName $NomeTarefa -Description 'MAVIE-HGest: API, painel e site publico' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+  Register-ScheduledTask -TaskName $TaskName -Description $Description -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+}
+
+function Get-HotelInstances {
+  if (-not (Test-Path $DadosHoteis)) { return @() }
+  $result = @()
+  foreach ($dir in Get-ChildItem -Path $DadosHoteis -Directory | Sort-Object Name) {
+    $envPath = Join-Path $dir.FullName 'hotel.env'
+    if (-not (Test-Path $envPath)) { continue }
+    $values = Read-EnvFile $envPath
+    $result += [pscustomobject]@{
+      Codigo = $dir.Name
+      Nome = $values['MAVIE_HOTEL_NAME']
+      Dir = $dir.FullName
+      EnvPath = $envPath
+      Env = $values
+      Port = [int]$values['PORT']
+      Url = $values['CORS_ORIGIN']
+      TaskName = "$NomeTarefa-$($dir.Name)"
+      LogFile = Join-Path $dir.FullName 'logs\api.log'
+    }
+  }
+  return $result
 }

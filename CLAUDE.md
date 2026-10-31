@@ -81,6 +81,7 @@ docker compose exec backend npm run db:seed
 ### Backend
 - Produção: sempre `node dist/main.js`. Nunca `tsx` (parte o metadata dos decorators do NestJS).
 - Produção em Windows: `deploy/windows/` (instalar, atualizar, servico, executar.cmd, IIS opcional). Com `FRONTEND_DIR` a API serve também o `frontend/dist` (fallback SPA fora de `/api`). `TRUST_PROXY` (predefinição 1, como os testes esperam; `0` quando exposto sem proxy, `loopback` atrás do IIS) e `HOST` vêm do `.env`.
+- Vários hotéis de donos diferentes: `deploy/windows/hoteis.ps1`, uma instância por hotel com base de dados e utilizador MySQL próprios (`mavie_<codigo>`), `dados/hoteis/<codigo>/hotel.env` passado com `node --env-file` (o ambiente ganha ao `backend/.env`), porta a partir de 3101 e tarefa `MAVIE-HGest-<codigo>`. O código e a chave AT são partilhados; `atualizar` compila uma vez e migra cada base. O seed aceita `SEED_HOTEL_NAME`, `SEED_HOTEL_SLUG` e `SEED_DEMO_ROOMS=0`. `dados/` está no `.gitignore`.
 - Scripts `.ps1` só com ASCII (o PowerShell 5.1 lê ficheiros sem BOM como ANSI).
 
 ### Git

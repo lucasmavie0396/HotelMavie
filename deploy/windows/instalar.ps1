@@ -48,9 +48,6 @@ Write-Ok "Dados em $DataDir"
 $firstInstall = -not (Test-Path $EnvFile)
 Write-Step 'Configuracao (backend\.env)'
 if ($firstInstall) {
-  $secret = { & $node -e "process.stdout.write(require('crypto').randomBytes(48).toString('hex'))" }
-  $jwt = & $secret
-  $refresh = & $secret
   $credentials = [Uri]::EscapeDataString($DbUser)
   if ($DbPassword) { $credentials += ':' + [Uri]::EscapeDataString($DbPassword) }
   $dump = Find-Mysqldump
@@ -64,44 +61,22 @@ if ($firstInstall) {
     $hostLine = '127.0.0.1'
     $trust = 'loopback'
   }
-  $lines = @(
-    'NODE_ENV=production',
-    "DATABASE_URL=`"mysql://$credentials@${DbHost}:$DbPort/$DbName`"",
-    "PORT=$Port",
-    "HOST=$hostLine",
-    "TRUST_PROXY=$trust",
-    "CORS_ORIGIN=$PublicUrl",
-    "FRONTEND_DIR=$(Join-Path $Frontend 'dist')",
-    'SITE_DNS_TARGET=',
-    '',
-    "JWT_SECRET=$jwt",
-    'JWT_EXPIRES_IN_SECONDS=900',
-    "JWT_REFRESH_SECRET=$refresh",
-    'JWT_REFRESH_EXPIRES_IN_SECONDS=604800',
-    '',
-    "SEED_ADMIN_EMAIL=$AdminEmail",
-    '',
-    "MYSQLDUMP_PATH=$dump",
-    "BACKUP_DIR=$($paths.Backups)",
-    "UPLOAD_DIR=$($paths.Uploads)",
-    '',
-    'SMTP_HOST=',
-    'SMTP_PORT=587',
-    'SMTP_SECURE=false',
-    'SMTP_USER=',
-    'SMTP_PASS=',
-    'MAIL_FROM=',
-    '',
-    'GOOGLE_SEARCH_API_KEY=',
-    'GOOGLE_SEARCH_CX=',
-    '',
-    "AT_PRIVATE_KEY_PATH=$(Join-Path $paths.Keys 'at-private.pem')",
-    'AT_KEY_VERSION=1',
-    'AT_CERTIFICATE_NUMBER=0',
-    'AT_PRODUCER_TAX_ID=',
-    "AT_TIMEZONE=$TimeZone"
-  )
-  Write-Utf8File $EnvFile (($lines -join "`r`n") + "`r`n")
+  $content = New-EnvContent @{
+    DatabaseUrl = "mysql://$credentials@${DbHost}:$DbPort/$DbName"
+    Port = $Port
+    Host = $hostLine
+    Trust = $trust
+    PublicUrl = $PublicUrl
+    Jwt = New-Secret $node
+    Refresh = New-Secret $node
+    AdminEmail = $AdminEmail
+    Dump = $dump
+    Backups = $paths.Backups
+    Uploads = $paths.Uploads
+    KeyPath = Join-Path $paths.Keys 'at-private.pem'
+    TimeZone = $TimeZone
+  }
+  Write-Utf8File $EnvFile $content
   Write-Ok "Criado $EnvFile (segredos JWT gerados)"
 } else {
   Write-Note "Ja existe $EnvFile e nao foi alterado. Edita-o a mao se quiseres mudar porta, URL ou base de dados."
@@ -110,15 +85,7 @@ $envValues = Read-EnvFile
 $Port = [int]$envValues['PORT']
 
 Write-Step 'Chave de assinatura AT'
-$keyPath = $envValues['AT_PRIVATE_KEY_PATH']
-if ($keyPath -and -not (Test-Path $keyPath)) {
-  Invoke-Native $node @((Join-Path $Backend 'scripts\generate-at-key.mjs'), $keyPath) $Backend
-  Write-Note 'Guarda uma copia da chave privada num local seguro: se se perder, os documentos ja emitidos deixam de poder ser verificados.'
-} elseif ($keyPath) {
-  Write-Ok "Chave existente mantida: $keyPath"
-} else {
-  Write-Note 'AT_PRIVATE_KEY_PATH nao definido no .env: garante que AT_PRIVATE_KEY esta preenchido.'
-}
+Initialize-AtKey $node $envValues['AT_PRIVATE_KEY_PATH']
 
 Invoke-Build $node
 

@@ -185,7 +185,66 @@ Se os utilizadores entrarem às vezes pelo IP, acrescenta também esse endereço
 
 3. Confirma que os caminhos no `.env` existem (`BACKUP_DIR`, `UPLOAD_DIR`, `AT_PRIVATE_KEY_PATH`, `FRONTEND_DIR`) e corre `.\instalar.ps1`.
 
-## 11. Resolução de problemas
+## 11. Vários hotéis de donos diferentes (uma base de dados por hotel)
+
+Cada hotel corre como uma instância própria do mesmo código: tem a sua base de dados, um utilizador MySQL que só acede a essa base, a sua porta, as suas pastas e o seu serviço. Um hotel não consegue ver os dados de outro, e as cópias e os restauros são feitos hotel a hotel. O código é compilado uma só vez e partilhado por todos.
+
+```
+hotelmar.exemplo.pt  ──► IIS ──► Node :3101 ──► mavie_hotelmar
+hotelsol.exemplo.pt  ──► IIS ──► Node :3102 ──► mavie_hotelsol
+```
+
+Num servidor usa-se um de dois modos: a instalação única (`instalar.ps1`) ou os hotéis em instâncias (`hoteis.ps1`). Não convém misturá-los.
+
+### Criar um hotel
+
+PowerShell como Administrador, na pasta `deploy\windows`:
+
+```powershell
+.\hoteis.ps1 -Acao novo -Codigo hotelmar -Nome 'Hotel Mar' -AdminEmail dono@hotelmar.pt -Dominio hotelmar.exemplo.pt
+```
+
+O script:
+
+1. Escolhe a primeira porta livre a partir da 3101 (ou a que indicares em `-Port`).
+2. Cria a base de dados `mavie_<codigo>` e o utilizador MySQL `mavie_<codigo>`, com uma password aleatória.
+3. Cria `dados\hoteis\<codigo>\` com `hotel.env`, `uploads`, `backups`, `logs` e `iis\web.config` já apontado para a porta do hotel.
+4. Aplica as migrações e cria o hotel e o administrador. Pede a password do administrador, que não fica guardada.
+5. Regista e arranca o serviço `MAVIE-HGest-<codigo>`.
+
+| Parâmetro | Predefinição | Para quê |
+|---|---|---|
+| `-Codigo` | (obrigatório) | Letras minúsculas e números, 2 a 20. Dá nome à base de dados, ao serviço e à pasta |
+| `-Nome`, `-AdminEmail` | (obrigatórios) | Nome do hotel e email do primeiro administrador |
+| `-Dominio` | | Domínio do hotel atrás do IIS (HTTPS). Sem domínio fica `http://<servidor>:<porta>` |
+| `-Port` | primeira livre a partir de 3101 | Porta interna do hotel |
+| `-DbHost`, `-DbPort` | `localhost`, `3306` | Servidor MySQL/MariaDB |
+| `-DbAdminUser`, `-DbAdminPassword` | `root`, vazio | Conta usada só para criar a base de dados e o utilizador do hotel |
+| `-AbrirFirewall` | | Abre a porta do hotel na rede local (só sem `-Dominio`) |
+
+Com domínio, cria no IIS um site para esse domínio, usa como pasta `dados\hoteis\<codigo>\iis` (que já tem o `web.config`) e emite o certificado com o win-acme, como na secção 6.
+
+A chave de assinatura AT é a do produtor do software e é partilhada por todos os hotéis: `dados\keys\at-private.pem`. Guarda uma cópia fora do servidor.
+
+### Gerir os hotéis
+
+```powershell
+.\hoteis.ps1                                   # estado de todos: porta, endereço, serviço e saúde
+.\hoteis.ps1 -Acao reiniciar -Codigo hotelmar  # sem -Codigo aplica a todos
+.\hoteis.ps1 -Acao parar -Codigo hotelmar
+.\hoteis.ps1 -Acao iniciar -Codigo hotelmar
+.\hoteis.ps1 -Acao logs -Codigo hotelmar
+.\hoteis.ps1 -Acao backup                      # backup de todos para dados\hoteis\<codigo>\backups
+.\hoteis.ps1 -Acao agendar-backups             # backup diario as 02:00, guarda 30 dias (-DiasBackup)
+.\hoteis.ps1 -Acao atualizar -GitPull          # backup, para todos, compila uma vez, migra cada base e arranca
+.\hoteis.ps1 -Acao remover -Codigo hotelmar    # tira o servico; base de dados e pasta ficam intactas
+```
+
+Para mudar o SMTP ou outra configuração de um hotel, edita `dados\hoteis\<codigo>\hotel.env` e faz `reiniciar` desse hotel.
+
+Para passar um hotel para outro servidor, copia a pasta `dados\hoteis\<codigo>` e a chave AT, restaura o backup na base de dados nova, corrige `DATABASE_URL` no `hotel.env` e arranca-o com `executar.cmd "<pasta logs>" "<node.exe>" "<hotel.env>"`.
+
+## 12. Resolução de problemas
 
 | Sintoma | Verificar |
 |---|---|
