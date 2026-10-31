@@ -106,6 +106,10 @@ describe('Preparacao AT', () => {
     const pdf = await ctx.http().get(`/api/invoices/${invoice.body.id}/pdf`).set(auth).responseType('blob').expect(200);
     expect(pdf.body.length).toBeGreaterThan(3000);
     expect((pdf.body.toString('latin1').match(/\/Type \/Page\b/g) ?? []).length).toBe(1);
+    expect(pdf.body.toString('latin1')).toContain('/Subtype /Image');
+    const ticket = await ctx.http().get('/api/print/pdf').query({ document: 'INVOICE', invoiceId: invoice.body.id, paper: 'MM80' }).set(auth).buffer(true).expect(200);
+    expect((ticket.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
+    expect((ticket.body as Buffer).toString('latin1')).not.toContain('/Subtype /Image');
     await ctx.http().get(`/api/saft?hotelId=${hotel.id}&from=${day(0)}&to=${day(0)}`).set(auth).expect(400);
   });
 });

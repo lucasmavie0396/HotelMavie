@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ChargeType, InvoiceType } from '@prisma/client';
-import { printedHash, qrCodeContent, receiptQrContent } from '../at/at-format';
+import { printedHash } from '../at/at-format';
 import { AtSigningService } from '../at/at-signing.service';
 import { JwtPayload } from '../auth/jwt-payload';
 import { nightsBetween } from '../common/dates';
@@ -97,22 +97,6 @@ export class DocumentsService {
       }
     }
     ticket.space();
-    ticket.qr(
-      qrCodeContent({
-        issuerTaxId: invoice.hotel.taxId,
-        customerTaxId: invoice.customerTaxId,
-        type: invoice.type,
-        issuedAt: invoice.issuedAt,
-        invoiceNo: invoice.fullNumber,
-        atcud: invoice.atcud,
-        lines: invoice.lines,
-        taxTotal: invoice.taxTotal,
-        grossTotal: invoice.grossTotal,
-        signature: invoice.hash,
-        certificateNumber: this.signing.certificateNumber,
-      }),
-    );
-    ticket.space();
     ticket.text(this.certification(printedHash(invoice.hash)), { size: 7, align: 'center' });
     if (invoice.type === InvoiceType.INVOICE) ticket.text('Este documento nao serve de recibo.', { size: 7, align: 'center' });
     ticket.footer(invoice.hotel, invoice.createdBy?.name);
@@ -148,19 +132,6 @@ export class DocumentsService {
     ticket.rule();
     ticket.cols(`Pago: ${paymentLabel(receipt)}${receipt.reference ? ` (${receipt.reference})` : ''}`, '', { size: 8 });
     ticket.cols('TOTAL RECEBIDO', ticket.money(receipt.amount), { bold: true, size: 13 });
-    ticket.space();
-    ticket.qr(
-      receiptQrContent({
-        issuerTaxId: receipt.hotel.taxId,
-        customerTaxId: receipt.customerTaxId,
-        issuedAt: receipt.issuedAt,
-        receiptNo: receipt.fullNumber,
-        atcud: receipt.atcud,
-        amount: receipt.amount,
-        certificateNumber: this.signing.certificateNumber,
-        cancelled: receipt.status === 'CANCELLED',
-      }),
-    );
     ticket.space();
     ticket.text(this.certification(), { size: 7, align: 'center' });
     ticket.footer(receipt.hotel, receipt.createdBy?.name);
