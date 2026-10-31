@@ -25,7 +25,7 @@ interface BackupFile {
   createdAt: string;
 }
 
-const ROLE_LABELS = translated<UserRole>('labels.role', ['ADMIN', 'MANAGER', 'RECEPTION']);
+const ROLE_LABELS = translated<UserRole>('labels.role', ['ADMIN', 'MANAGER', 'RECEPTION', 'CASHIER']);
 
 const { t } = useI18n();
 const hotels = useHotelsStore();

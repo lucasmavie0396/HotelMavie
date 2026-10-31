@@ -29,7 +29,7 @@ const REVENUE_SERIES = [
   { key: 'extra', name: 'dashboard.series.extra', color: '#14b8a6' },
 ] as const;
 
-const seesMoney = computed(() => auth.user?.role !== 'RECEPTION');
+const seesMoney = computed(() => auth.isManager);
 const money = (value: string | number) => formatMoney(value, hotels.currency);
 const compactMoney = (value: number) =>
   new Intl.NumberFormat(localeTag(), { notation: 'compact', maximumFractionDigits: 1 }).format(value);

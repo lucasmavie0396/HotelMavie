@@ -1,7 +1,9 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Query, Res } from '@nestjs/common';
+import { ReservationStatus, UserRole } from '@prisma/client';
 import type { Response } from 'express';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { SalesAccess } from '../common/decorators/roles.decorator';
 import { ConfirmDepositDto, DepositService } from './deposit.service';
 import { CompanionDto } from './dto/companion.dto';
 import { CreateReservationDto } from './dto/create-reservation.dto';
@@ -16,9 +18,10 @@ export class ReservationsController {
     private readonly deposits: DepositService,
   ) {}
 
+  @SalesAccess()
   @Get()
   findAll(@Query() query: ReservationQueryDto, @CurrentUser() user: JwtPayload) {
-    return this.reservationsService.findAll(query, user);
+    return this.reservationsService.findAll(user.role === UserRole.CASHIER ? { ...query, status: ReservationStatus.CHECKED_IN } : query, user);
   }
 
   @Get('availability')

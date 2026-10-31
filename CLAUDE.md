@@ -118,7 +118,7 @@ docker compose exec backend npm run db:seed
 | Catálogo e stocks | `catalog/`, `stock/` (armazém principal usado nas vendas, custo médio, inventário, quebras, transferências) | Produtos, Stocks |
 | Compras | `purchases/` (fornecedores, rascunho → receção dá entrada em stock) | Compras |
 | Relatórios e alertas | `reports/` (ocupação, ADR, RevPAR, receita, top produtos; alertas operacionais) | Relatórios, botão Alertas |
-| Utilizadores | `users/` (papéis ADMIN/MANAGER/RECEPTION, sessões por dispositivo em `user_sessions`) | Utilizadores |
+| Utilizadores | `users/` (papéis ADMIN/MANAGER/RECEPTION/CASHIER, sessões por dispositivo em `user_sessions`); CASHIER só acede a rotas marcadas com `@SalesAccess()` (`RolesGuard`) — POS, caixa, impressão de talões e fecho — e no frontend só vê Restaurante/Bar e Caixa | Utilizadores |
 | Backups | `backups/` (mysqldump para `BACKUP_DIR`) | Utilizadores |
 | Contas correntes | `billing/receipts.service.ts` (FT em aberto, recibos RG) | Contas correntes |
 | Recursos humanos | `hr/` (fichas, escalas, ponto, mapa mensal, processamento salarial) | Recursos humanos |

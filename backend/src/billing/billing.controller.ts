@@ -20,7 +20,7 @@ import { invoiceEmail, MailLang, mailLang } from '../mail/templates';
 import type { Response } from 'express';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { Roles } from '../common/decorators/roles.decorator';
+import { Roles, SalesAccess } from '../common/decorators/roles.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateChargeDto, CreatePaymentDto, CreditNoteDto, InvoiceQueryDto, IssueInvoiceDto } from './billing.dto';
 import {
@@ -221,6 +221,7 @@ export class BillingController {
     this.sendPdf(res, await this.pdf.renderReceipt(receipt, hotel, query.lang ?? 'pt'), receipt.fullNumber);
   }
 
+  @SalesAccess()
   @Get('cash-registers')
   registers(@Query() query: RegisterQueryDto, @CurrentUser() user: JwtPayload) {
     return this.cash.findRegisters(query, user);
@@ -232,26 +233,31 @@ export class BillingController {
     return this.cash.createRegister(dto, user);
   }
 
+  @SalesAccess()
   @Post('cash-registers/:id/open')
   open(@Param('id', ParseIntPipe) id: number, @Body() dto: OpenSessionDto, @CurrentUser() user: JwtPayload) {
     return this.cash.open(id, dto, user);
   }
 
+  @SalesAccess()
   @Get('cash-registers/:id/sessions')
   sessions(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
     return this.cash.sessions(id, user);
   }
 
+  @SalesAccess()
   @Get('cash-sessions/:id')
   session(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
     return this.cash.session(id, user);
   }
 
+  @SalesAccess()
   @Post('cash-sessions/:id/movements')
   movement(@Param('id', ParseIntPipe) id: number, @Body() dto: CashMovementDto, @CurrentUser() user: JwtPayload) {
     return this.cash.addMovement(id, dto, user);
   }
 
+  @SalesAccess()
   @Post('cash-sessions/:id/close')
   @HttpCode(HttpStatus.OK)
   close(@Param('id', ParseIntPipe) id: number, @Body() dto: CloseSessionDto, @CurrentUser() user: JwtPayload) {

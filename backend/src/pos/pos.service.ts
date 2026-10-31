@@ -9,7 +9,6 @@ import {
   Prisma,
   ReservationStatus,
   StockMovementType,
-  UserRole,
 } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
@@ -28,6 +27,7 @@ import {
 import { AuditService } from '../audit/audit';
 import { JwtPayload } from '../auth/jwt-payload';
 import { requireOpenCash } from '../billing/cash-guard';
+import { isManagerRole } from '../common/decorators/roles.decorator';
 import { FolioService } from '../billing/folio.service';
 import { InvoicesService } from '../billing/invoices.service';
 import { Ticket, TicketPdfService } from '../billing/ticket-pdf.service';
@@ -293,7 +293,7 @@ export class PosService {
 
   async voidItem(orderId: number, itemId: number, reason: string, user: JwtPayload) {
     const order = await this.openOrder(orderId, user);
-    if (user.role === UserRole.RECEPTION) {
+    if (!isManagerRole(user.role)) {
       throw new ForbiddenException('So um gestor pode anular linhas enviadas para preparacao');
     }
     return this.prisma.$transaction(async (tx) => {
@@ -558,7 +558,7 @@ export class PosService {
 
   async cancel(orderId: number, user: JwtPayload) {
     const order = await this.openOrder(orderId, user);
-    if (order.items.some((item) => !item.voidedAt) && user.role === UserRole.RECEPTION) {
+    if (order.items.some((item) => !item.voidedAt) && !isManagerRole(user.role)) {
       throw new ForbiddenException('So um gestor pode anular pedidos com produtos');
     }
     await this.prisma.order.update({ where: { id: orderId }, data: { status: OrderStatus.CANCELLED, closedAt: new Date() } });

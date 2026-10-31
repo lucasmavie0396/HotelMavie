@@ -1,6 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 
 export const MANAGER = { email: 'gestor-ui@teste.local', password: 'Teste-UI-1234' };
+export const CASHIER = { email: 'caixa-ui@teste.local', password: 'Teste-UI-1234' };
 
 export async function distinctAddress(page: Page) {
   const part = () => Math.floor(Math.random() * 250) + 1;

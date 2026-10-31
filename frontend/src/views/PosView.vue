@@ -56,7 +56,7 @@ const close = reactive({
   payments: [{ paymentTypeId: 0, amount: 0, cashSessionId: 0, reference: '' }],
 });
 
-const isManager = computed(() => auth.user?.role !== 'RECEPTION');
+const isManager = computed(() => auth.isManager);
 const outlet = computed<Outlet>(() => (mode.value === 'BAR' ? 'BAR' : 'RESTAURANT'));
 const money = (value: string | number) => formatMoney(value, hotels.currency);
 const categories = computed(() => {
@@ -289,7 +289,7 @@ onMounted(load);
     <PageHeader section="pos" :title="t('pos.title')" :subtitle="t('pos.subtitle')">
       <div class="flex rounded-lg bg-white p-0.5 text-sm shadow">
         <button
-          v-for="item in MODES"
+          v-for="item in MODES.filter((entry) => entry.value !== 'ROOMS' || !auth.isCashier)"
           :key="item.value"
           type="button"
           class="rounded px-4 py-1.5"

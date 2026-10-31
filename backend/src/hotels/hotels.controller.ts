@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseIntPip
 import { UserRole } from '@prisma/client';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { Roles } from '../common/decorators/roles.decorator';
+import { Roles, SalesAccess } from '../common/decorators/roles.decorator';
 import { ImageUploadDto } from '../uploads/uploads';
 import { CreateHotelDto } from './dto/create-hotel.dto';
 import { UpdateHotelDto } from './dto/update-hotel.dto';
@@ -12,6 +12,7 @@ import { HotelsService } from './hotels.service';
 export class HotelsController {
   constructor(private readonly hotelsService: HotelsService) {}
 
+  @SalesAccess()
   @Get()
   findAll(@CurrentUser() user: JwtPayload) {
     return this.hotelsService.findAll(user);
@@ -23,6 +24,7 @@ export class HotelsController {
     return this.hotelsService.domainCheck(id, user);
   }
 
+  @SalesAccess()
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
     return this.hotelsService.findOne(id, user);

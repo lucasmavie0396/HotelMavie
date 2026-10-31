@@ -5,7 +5,7 @@ import { IsBoolean, IsEnum, IsIn, IsInt, IsOptional, IsString, MaxLength } from 
 import { PAYMENT_MECHANISM } from '../at/at-format';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { Roles } from '../common/decorators/roles.decorator';
+import { Roles, SalesAccess } from '../common/decorators/roles.decorator';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { PrismaService } from '../prisma/prisma.service';
@@ -100,6 +100,7 @@ export class PaymentTypesController {
     private readonly types: PaymentTypesService,
   ) {}
 
+  @SalesAccess()
   @Get()
   async list(@Query() query: HotelQueryDto, @CurrentUser() user: JwtPayload) {
     const hotelId = resolveHotelScope(user, query.hotelId);

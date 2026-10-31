@@ -3,7 +3,7 @@ import { Prisma, UserRole } from '@prisma/client';
 import { AuditService } from '../audit/audit';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { Roles } from '../common/decorators/roles.decorator';
+import { Roles, SalesAccess } from '../common/decorators/roles.decorator';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { PrismaService } from '../prisma/prisma.service';
@@ -23,6 +23,7 @@ export class CatalogController {
     private readonly audit: AuditService,
   ) {}
 
+  @SalesAccess()
   @Get('product-categories')
   categories(@Query() query: HotelQueryDto, @CurrentUser() user: JwtPayload) {
     return this.prisma.productCategory.findMany({
@@ -50,6 +51,7 @@ export class CatalogController {
     return this.prisma.productCategory.update({ where: { id }, data: dto });
   }
 
+  @SalesAccess()
   @Get('products')
   products(@Query() query: ProductQueryDto, @CurrentUser() user: JwtPayload) {
     const q = query.q?.trim();

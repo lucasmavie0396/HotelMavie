@@ -1,7 +1,8 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { ChargeType, InvoiceStatus, InvoiceType, PaymentMethod, Prisma, Reservation, UserRole } from '@prisma/client';
+import { ChargeType, InvoiceStatus, InvoiceType, PaymentMethod, Prisma, Reservation } from '@prisma/client';
 import { AuditService } from '../audit/audit';
 import { JwtPayload } from '../auth/jwt-payload';
+import { isManagerRole } from '../common/decorators/roles.decorator';
 import { canAccessHotel } from '../common/hotel-scope';
 import { DecimalLike, sumMoney, toMoney } from '../common/money';
 import { PrismaService } from '../prisma/prisma.service';
@@ -154,7 +155,7 @@ export class FolioService {
 
   async recordPayment(tx: Prisma.TransactionClient, input: PaymentInput, user: JwtPayload) {
     const amount = toMoney(input.amount);
-    if (amount.isNegative() && user.role === UserRole.RECEPTION) {
+    if (amount.isNegative() && !isManagerRole(user.role)) {
       throw new ForbiddenException('Devolucoes so podem ser feitas por um gestor');
     }
     const type = await this.paymentTypes.resolve(tx, input.hotelId, {

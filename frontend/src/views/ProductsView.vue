@@ -23,7 +23,7 @@ const editingId = ref<number | null>(null);
 const recipeFor = ref<Product | null>(null);
 const q = ref('');
 
-const canManage = computed(() => auth.user?.role !== 'RECEPTION');
+const canManage = computed(() => auth.isManager);
 const filtered = computed(() => {
   const term = q.value.trim().toLowerCase();
   return term ? products.value.filter((p) => `${p.name} ${p.sku ?? ''}`.toLowerCase().includes(term)) : products.value;

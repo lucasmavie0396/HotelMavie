@@ -47,6 +47,9 @@ await prisma.employee.create({
 await prisma.user.create({
   data: { name: 'Gestor Interface', email: 'gestor-ui@teste.local', role: 'MANAGER', hotelId: hotel.id, passwordHash: await bcrypt.hash('Teste-UI-1234', 4) },
 });
+await prisma.user.create({
+  data: { name: 'Caixa Interface', email: 'caixa-ui@teste.local', role: 'CASHIER', hotelId: hotel.id, passwordHash: await bcrypt.hash('Teste-UI-1234', 4) },
+});
 await prisma.$disconnect();
 
 const uploads = join(tmpdir(), 'mavie-ui-test-uploads');

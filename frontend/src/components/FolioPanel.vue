@@ -31,7 +31,7 @@ const error = ref('');
 const busy = ref(false);
 const panel = ref<'charge' | 'payment' | 'invoice' | null>(null);
 
-const isManager = computed(() => auth.user?.role !== 'RECEPTION');
+const isManager = computed(() => auth.isManager);
 const hasCash = useOwnCash(registers);
 const money = (value: string | number) => formatMoney(value, hotels.currency);
 const openSessions = computed(() =>

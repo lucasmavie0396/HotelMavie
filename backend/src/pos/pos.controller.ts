@@ -4,6 +4,7 @@ import { IsString, Length } from 'class-validator';
 import type { Response } from 'express';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { SalesAccess } from '../common/decorators/roles.decorator';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { resolveHotelScope } from '../common/hotel-scope';
 import { CloseOrderDto, KdsQueryDto, KdsReadyDto, MoveItemsDto, OpenOrderDto, OrderItemDto, OrderQueryDto, PosService } from './pos.service';
@@ -29,6 +30,7 @@ export class KdsController {
     return this.pos.kds(query, user);
   }
 
+  @SalesAccess()
   @Get('printing')
   printing(@Query() query: HotelQueryDto, @CurrentUser() user: JwtPayload) {
     const hotelId = resolveHotelScope(user, query.hotelId);
@@ -45,6 +47,7 @@ export class KdsController {
   }
 }
 
+@SalesAccess()
 @Controller('orders')
 export class PosController {
   constructor(private readonly pos: PosService) {}

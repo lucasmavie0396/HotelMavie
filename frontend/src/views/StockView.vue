@@ -47,7 +47,7 @@ const form = reactive({
   items: [] as { productId: number; quantity: number }[],
 });
 
-const isManager = computed(() => auth.user?.role !== 'RECEPTION');
+const isManager = computed(() => auth.isManager);
 const shown = computed(() => (onlyLow.value ? levels.value.filter((l) => l.belowMinimum) : levels.value));
 const stockValue = computed(() => levels.value.reduce((sum, l) => sum + Math.max(Number(l.quantity), 0) * Number(l.cost), 0));
 const filteredDocuments = computed(() => documents.value.filter((d) => !typeFilter.value || d.type === typeFilter.value));

@@ -18,7 +18,7 @@ const route = useRoute();
 const router = useRouter();
 
 const links = computed(() =>
-  [
+  (auth.isCashier ? ['pos', 'cash'] : [
     'dashboard',
     'calendar',
     'reservations',
@@ -33,9 +33,9 @@ const links = computed(() =>
     'stock',
     'hr',
     'reports',
-    ...(auth.user?.role !== 'RECEPTION' ? ['purchases', 'audit', 'settings'] : []),
+    ...(auth.isManager ? ['purchases', 'audit', 'settings'] : []),
     ...(auth.user?.role === 'ADMIN' ? ['users', 'hotels'] : []),
-  ].map((name) => ({ to: { name }, name, ...SECTIONS[name] })),
+  ]).map((name) => ({ to: { name }, name, ...SECTIONS[name] })),
 );
 
 const content = ref<HTMLElement | null>(null);
@@ -105,7 +105,7 @@ async function logout() {
         </select>
         <span v-else class="text-sm font-medium">{{ hotels.selected?.name }}</span>
         <div class="flex items-center gap-3">
-          <NotificationsBell v-if="hotels.selectedId" :key="hotels.selectedId" />
+          <NotificationsBell v-if="hotels.selectedId && !auth.isCashier" :key="hotels.selectedId" />
           <LanguageSwitcher />
           <RouterLink :to="{ name: 'account' }" class="text-sm text-slate-600 hover:text-indigo-600 hover:underline" :title="t('layout.accountTitle')">{{ auth.user?.name }}</RouterLink>
           <button class="btn-secondary" type="button" @click="logout">{{ t('layout.logout') }}</button>

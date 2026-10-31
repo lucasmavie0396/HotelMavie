@@ -27,7 +27,7 @@ const paymentTypes = usePaymentTypesStore();
 const error = ref('');
 const busy = ref(false);
 
-const isManager = computed(() => auth.user?.role !== 'RECEPTION');
+const isManager = computed(() => auth.isManager);
 const money = (value: string | number) => formatMoney(value, hotels.currency);
 const total = computed(() => openInvoices.value.reduce((sum, invoice) => sum + Number(amounts[invoice.id] || 0), 0));
 const totalOpen = computed(() => accounts.value.reduce((sum, account) => sum + Number(account.open), 0));

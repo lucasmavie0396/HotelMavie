@@ -24,7 +24,7 @@ const opening = reactive<Record<number, number>>({});
 const movement = reactive({ type: 'OUT' as 'IN' | 'OUT', amount: 0, description: '' });
 const closing = reactive({ countedAmount: 0, notes: '' });
 
-const isManager = computed(() => auth.user?.role !== 'RECEPTION');
+const isManager = computed(() => auth.isManager);
 const money = (value: string | number) => formatMoney(value, hotels.currency);
 
 async function load() {

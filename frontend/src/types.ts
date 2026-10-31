@@ -1,4 +1,4 @@
-export type UserRole = 'ADMIN' | 'MANAGER' | 'RECEPTION';
+export type UserRole = 'ADMIN' | 'MANAGER' | 'RECEPTION' | 'CASHIER';
 
 export type RoomStatus = 'AVAILABLE' | 'OCCUPIED' | 'CLEANING' | 'MAINTENANCE';
 

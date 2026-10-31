@@ -15,7 +15,7 @@ const CONTRACTS = translated<ContractType>('hr.contracts', ['PERMANENT', 'FIXED_
 const { t } = useI18n();
 const auth = useAuthStore();
 const hotels = useHotelsStore();
-const isManager = computed(() => auth.user?.role !== 'RECEPTION');
+const isManager = computed(() => auth.isManager);
 type Tab = 'clock' | 'schedule' | 'employees' | 'monthly' | 'payroll';
 const tab = ref<Tab>('clock');
 const tabs = computed<{ value: Tab; label: string }[]>(() => [

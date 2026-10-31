@@ -104,6 +104,8 @@ function hotelForThisDomain() {
   return domainSlug;
 }
 
+const CASHIER_ROUTES = ['pos', 'cash', 'account'];
+
 router.beforeEach(async (to) => {
   const slug = await hotelForThisDomain();
   if (slug) {
@@ -120,6 +122,9 @@ router.beforeEach(async (to) => {
   }
   if (to.meta.guestOnly && auth.isAuthenticated) {
     return { name: 'dashboard' };
+  }
+  if (auth.user?.role === 'CASHIER' && to.meta.requiresAuth && !CASHIER_ROUTES.includes(String(to.name))) {
+    return { name: 'pos' };
   }
   if (to.meta.roles && (!auth.user || !to.meta.roles.includes(auth.user.role))) {
     return { name: 'dashboard' };

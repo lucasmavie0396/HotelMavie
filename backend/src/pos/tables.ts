@@ -3,7 +3,7 @@ import { OrderStatus, Outlet, UserRole } from '@prisma/client';
 import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { Roles } from '../common/decorators/roles.decorator';
+import { Roles, SalesAccess } from '../common/decorators/roles.decorator';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { sumMoney } from '../common/money';
@@ -68,6 +68,7 @@ export function tableLabel(table: { number: number; name: string | null }) {
 export class TablesController {
   constructor(private readonly prisma: PrismaService) {}
 
+  @SalesAccess()
   @Get()
   async list(@Query() query: TableQueryDto, @CurrentUser() user: JwtPayload) {
     const tables = await this.prisma.diningTable.findMany({

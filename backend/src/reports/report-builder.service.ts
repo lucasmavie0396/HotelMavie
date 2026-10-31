@@ -75,7 +75,7 @@ export const REPORTS: ReportDefinition[] = [
   { key: 'inventory', title: 'Diferencas de inventario', description: 'Acertos dos inventarios lancados no periodo, por produto, com o valor das faltas e sobras.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
   { key: 'waste', title: 'Quebras e devolucoes', description: 'Quebras por motivo e por produto e devolucoes a fornecedores, ao custo medio.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
   { key: 'expiry', title: 'Validades', description: 'Lotes em stock com a data de validade, assinalando os expirados e os que expiram em 30 dias.', group: 'Restauracao e stocks', params: 'stock', roles: MANAGERS },
-  { key: 'cash-close', title: 'Fecho de caixa', description: 'Documento de fecho de uma sessao de caixa: movimentos, vendas, formas de pagamento e produtos por categoria.', group: 'Financeiro', params: 'session', roles: EVERYONE, hidden: true },
+  { key: 'cash-close', title: 'Fecho de caixa', description: 'Documento de fecho de uma sessao de caixa: movimentos, vendas, formas de pagamento e produtos por categoria.', group: 'Financeiro', params: 'session', roles: [...EVERYONE, UserRole.CASHIER], hidden: true },
 ];
 
 const CHARGE_LABELS: Record<ChargeType, string> = { ACCOMMODATION: 'Alojamento', RESTAURANT: 'Restaurante', BAR: 'Bar', EXTRA: 'Extras' };

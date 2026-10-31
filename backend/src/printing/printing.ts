@@ -2,6 +2,7 @@ import {
   BadGatewayException,
   BadRequestException,
   Body,
+  ForbiddenException,
   Controller,
   Get,
   HttpCode,
@@ -25,7 +26,7 @@ import { JwtPayload } from '../auth/jwt-payload';
 import { DocumentsService } from '../billing/documents.service';
 import { Ticket, TicketPdfService } from '../billing/ticket-pdf.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { Roles } from '../common/decorators/roles.decorator';
+import { Roles, SalesAccess } from '../common/decorators/roles.decorator';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { PosService } from '../pos/pos.service';
@@ -35,6 +36,7 @@ import { ReportRenderService } from '../reports/report-render.service';
 
 export const DOCUMENTS = ['ORDER', 'VOID', 'PREBILL', 'STATEMENT', 'INVOICE', 'RECEIPT', 'PAYMENT', 'TEST', 'REPORT'] as const;
 export type PrintDocument = (typeof DOCUMENTS)[number];
+const CASHIER_DOCUMENTS: PrintDocument[] = ['ORDER', 'VOID', 'PREBILL', 'INVOICE', 'REPORT'];
 
 const STATION_PURPOSE: Record<PrepStation, PrinterPurpose> = {
   KITCHEN: PrinterPurpose.KITCHEN,
@@ -167,6 +169,9 @@ export class PrintService {
   ) {}
 
   async build(dto: PrintDto, user: JwtPayload): Promise<Built> {
+    if (user.role === UserRole.CASHIER && !CASHIER_DOCUMENTS.includes(dto.document)) {
+      throw new ForbiddenException('Sem permissao para esta operacao');
+    }
     const need = <T>(value: T | undefined, field: string) => {
       if (value === undefined || value === null) throw new BadRequestException(`Falta ${field}`);
       return value;
@@ -338,12 +343,14 @@ export class PrintingController {
     return this.printing.print({ document: 'TEST', printerId: id }, user);
   }
 
+  @SalesAccess()
   @Post('print')
   @HttpCode(HttpStatus.OK)
   print(@Body() dto: PrintDto, @CurrentUser() user: JwtPayload) {
     return this.printing.print(dto, user);
   }
 
+  @SalesAccess()
   @Get('print/pdf')
   async pdf(@Query() dto: PrintDto, @CurrentUser() user: JwtPayload, @Res() res: Response) {
     const { buffer, name } = await this.printing.pdf(dto, user);

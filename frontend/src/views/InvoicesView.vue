@@ -15,7 +15,7 @@ const invoices = ref<InvoiceSummary[]>([]);
 const error = ref('');
 const filters = reactive({ type: '' as InvoiceType | '', from: '', to: '', q: '' });
 
-const isManager = computed(() => auth.user?.role !== 'RECEPTION');
+const isManager = computed(() => auth.isManager);
 const totals = computed(() => {
   let issued = 0;
   let credited = 0;

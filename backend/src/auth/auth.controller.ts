@@ -2,12 +2,14 @@ import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Post } from '@nes
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { SalesAccess } from '../common/decorators/roles.decorator';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { DisableTwoFactorDto, ForgotPasswordDto, ResetPasswordDto, TwoFactorCodeDto, TwoFactorLoginDto } from './dto/security.dto';
 import { JwtPayload } from './jwt-payload';
 
+@SalesAccess()
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}

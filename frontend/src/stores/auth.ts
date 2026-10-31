@@ -26,6 +26,8 @@ export const useAuthStore = defineStore('auth', () => {
   const accessToken = computed(() => session.value?.accessToken ?? null);
   const user = computed(() => session.value?.user ?? null);
   const isAuthenticated = computed(() => session.value !== null);
+  const isManager = computed(() => user.value?.role === 'ADMIN' || user.value?.role === 'MANAGER');
+  const isCashier = computed(() => user.value?.role === 'CASHIER');
 
   function setSession(value: Session | null) {
     session.value = value;
@@ -100,5 +102,5 @@ export const useAuthStore = defineStore('auth', () => {
     setSession(null);
   }
 
-  return { accessToken, user, isAuthenticated, login, loginTwoFactor, refresh, logout };
+  return { accessToken, user, isAuthenticated, isManager, isCashier, login, loginTwoFactor, refresh, logout };
 });
