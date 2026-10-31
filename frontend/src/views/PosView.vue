@@ -163,12 +163,20 @@ const addNote = (item: OrderItem) => {
   });
 };
 
+const printingScreens = () =>
+  api
+    .get<{ stations: string[] }>('/kds/printing', { params: { hotelId: hotels.selectedId } })
+    .then(({ data }) => data.stations)
+    .catch(() => [] as string[]);
+
 const voidItem = (item: OrderItem) => {
   const reason = window.prompt(t('pos.voidPrompt', { quantity: Number(item.quantity), name: item.description }));
   if (!reason) return;
   run(async () => {
     const { data } = await api.post<Order>(`/orders/${current.value!.id}/items/${item.id}/void`, { reason });
-    notice.value = await printDocument({ document: 'VOID', orderId: data.id, itemId: item.id });
+    if (!(await printingScreens()).includes(station(item))) {
+      notice.value = await printDocument({ document: 'VOID', orderId: data.id, itemId: item.id });
+    }
     return data;
   }, t('pos.voided'));
 };
@@ -177,7 +185,8 @@ const sendOrder = () =>
   run(async () => {
     const order = current.value!;
     const { data } = await api.post<{ sentAt: string; targets: { station: 'KITCHEN' | 'BAR' | 'NONE'; printerId: number | null }[] }>(`/orders/${order.id}/send`);
-    for (const target of data.targets) {
+    const screens = await printingScreens();
+    for (const target of data.targets.filter((item) => !screens.includes(item.station))) {
       await printDocument({ document: 'ORDER', orderId: order.id, station: target.station, printerId: target.printerId, sentAt: data.sentAt });
     }
     return (await api.get<Order>(`/orders/${order.id}`)).data;

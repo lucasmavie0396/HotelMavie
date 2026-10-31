@@ -3,20 +3,29 @@ import PageHeader from '@/components/PageHeader.vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { api, errorMessage } from '@/services/api';
+import { printDocument } from '@/services/print';
 import { useHotelsStore } from '@/stores/hotels';
 import type { KdsCard } from '@/types';
 import { formatDateTime } from '@/utils/format';
 
 type Station = 'KITCHEN' | 'BAR';
+interface Printed {
+  mark: number;
+  voids: number[];
+}
 
 const STATION_KEY = 'mavie.kdsStation';
+const PRINT_KEY = 'mavie.kdsPrint';
 const { t } = useI18n();
 const hotels = useHotelsStore();
 const station = ref<Station>(readStation());
+const printing = ref(readPrinting());
 const pending = ref<KdsCard[]>([]);
 const done = ref<KdsCard[]>([]);
 const error = ref('');
+const notice = ref('');
 const busy = ref(false);
+let printingNow = false;
 const now = ref(Date.now());
 const root = ref<HTMLElement | null>(null);
 let poll: ReturnType<typeof setInterval> | undefined;
@@ -33,6 +42,9 @@ function readStation(): Station {
 }
 
 function setStation(value: Station) {
+  if (printing.value && value !== station.value) {
+    api.get('/kds', { params: { hotelId: hotels.selectedId, station: station.value, printing: 'false' } }).catch(() => undefined);
+  }
   station.value = value;
   try {
     localStorage.setItem(STATION_KEY, value);
@@ -43,12 +55,87 @@ function setStation(value: Station) {
   }
 }
 
-async function load() {
+function readPrinting() {
   try {
-    const { data } = await api.get<{ pending: KdsCard[]; done: KdsCard[] }>('/kds', { params: { hotelId: hotels.selectedId, station: station.value } });
+    return localStorage.getItem(PRINT_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+const printedKey = () => `mavie.kdsPrinted.${hotels.selectedId}.${station.value}`;
+
+function readPrinted(): Printed | null {
+  try {
+    const raw = localStorage.getItem(printedKey());
+    return raw ? (JSON.parse(raw) as Printed) : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePrinted(value: Printed | null) {
+  try {
+    if (value) localStorage.setItem(printedKey(), JSON.stringify({ mark: value.mark, voids: value.voids.slice(-300) }));
+    else localStorage.removeItem(printedKey());
+  } catch {
+    return;
+  }
+}
+
+function setPrinting(value: boolean) {
+  printing.value = value;
+  try {
+    localStorage.setItem(PRINT_KEY, String(value));
+  } catch {
+    return;
+  } finally {
+    savePrinted(null);
+    load(value ? 'true' : 'false');
+  }
+}
+
+async function printNew(cards: KdsCard[]) {
+  const time = (card: KdsCard) => new Date(card.sentAt).getTime();
+  const voidedIds = (list: KdsCard[]) => list.flatMap((card) => card.items.filter((item) => item.voided).map((item) => item.id));
+  const state = readPrinted();
+  if (!state) {
+    savePrinted({ mark: Math.max(0, ...cards.map(time)), voids: voidedIds(cards) });
+    return;
+  }
+  let count = 0;
+  const fresh = cards.filter((card) => time(card) > state.mark).sort((a, b) => time(a) - time(b));
+  for (const card of fresh) {
+    await printDocument({ document: 'ORDER', orderId: card.orderId, station: station.value, sentAt: card.sentAt });
+    state.mark = Math.max(state.mark, time(card));
+    state.voids.push(...voidedIds([card]));
+    savePrinted(state);
+    count++;
+  }
+  for (const card of cards) {
+    for (const item of card.items) {
+      if (!item.voided || state.voids.includes(item.id)) continue;
+      await printDocument({ document: 'VOID', orderId: card.orderId, itemId: item.id });
+      state.voids.push(item.id);
+      savePrinted(state);
+      count++;
+    }
+  }
+  if (count) notice.value = t('kitchen.printed', { n: count });
+}
+
+async function load(printingFlag: 'true' | 'false' | undefined = printing.value ? 'true' : undefined) {
+  try {
+    const { data } = await api.get<{ pending: KdsCard[]; done: KdsCard[] }>('/kds', {
+      params: { hotelId: hotels.selectedId, station: station.value, printing: printingFlag },
+    });
     pending.value = data.pending;
     done.value = data.done;
     error.value = '';
+    if (printing.value && !printingNow) {
+      printingNow = true;
+      await printNew([...data.pending, ...data.done]).finally(() => (printingNow = false));
+    }
   } catch (e) {
     error.value = errorMessage(e);
   }
@@ -85,6 +172,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
   clearInterval(poll);
   clearInterval(clock);
+  if (printing.value) {
+    api.get('/kds', { params: { hotelId: hotels.selectedId, station: station.value, printing: 'false' } }).catch(() => undefined);
+  }
 });
 </script>
 
@@ -98,7 +188,13 @@ onBeforeUnmount(() => {
       <button class="btn-secondary" type="button" @click="fullscreen">{{ t('kitchen.fullscreen') }}</button>
     </PageHeader>
 
+    <label class="flex items-center gap-2 text-sm text-slate-700" :title="t('kitchen.printHint')">
+      <input type="checkbox" :checked="printing" @change="setPrinting(($event.target as HTMLInputElement).checked)" />
+      {{ t('kitchen.print') }}
+    </label>
+    <p v-if="printing" class="text-xs text-slate-500">{{ t('kitchen.printHint') }}</p>
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
+    <p v-if="notice" class="text-sm text-emerald-700">{{ notice }}</p>
 
     <div v-if="pending.length" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
       <article v-for="card in pending" :key="card.key" class="flex flex-col rounded-2xl border-l-8 p-4 shadow" :class="urgency(card)">

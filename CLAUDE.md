@@ -114,7 +114,7 @@ docker compose exec backend npm run db:seed
 | Faturação | `billing/invoices.service.ts` (séries FT/FR/NC por ano, numeração sem falhas, hash encadeado, nota de crédito), PDF com pdfkit | Faturação |
 | Caixa | `billing/cash.service.ts` (sessões, movimentos, fecho com diferença); documento de fecho = relatório oculto `cash-close` (`sessionId`), com o que o operador da sessão registou entre a abertura e o fecho; `billing/cash-guard.ts` impede pagamentos, faturas e fecho de pedidos POS sem um caixa aberto pelo próprio operador (numerário sem `cashSessionId` vai para esse caixa; nos testes `createUser`/`createHotel` abrem caixas, `{ cash: false }` desliga) | Caixa |
 | IVA | `tax-rates/` (por hotel; 0% exige motivo de isenção) | Configuração |
-| Restaurante/bar | `pos/` (pedidos, pagar com fatura-recibo ou lançar no quarto) | Restaurante / Bar |
+| Restaurante/bar | `pos/` (pedidos, pagar com fatura-recibo ou lançar no quarto); ecrã cozinha/bar (`/kds`) com opção por computador de imprimir os pedidos novos e anulações pelo agente local desse PC — enquanto o ecrã está registado (`printing=true`, 30 s, em memória), o POS consulta `/kds/printing` e não imprime esses talões | Restaurante / Bar, Ecrã cozinha/bar |
 | Catálogo e stocks | `catalog/`, `stock/` (armazém principal usado nas vendas, custo médio, inventário, quebras, transferências) | Produtos, Stocks |
 | Compras | `purchases/` (fornecedores, rascunho → receção dá entrada em stock) | Compras |
 | Relatórios e alertas | `reports/` (ocupação, ADR, RevPAR, receita, top produtos; alertas operacionais) | Relatórios, botão Alertas |

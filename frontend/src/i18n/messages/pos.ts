@@ -73,6 +73,9 @@ export const posViews = {
     kitchen: {
       subtitle: '{orders} pedido(s) em preparacao · {items} artigo(s) · atualiza a cada 10 s',
       fullscreen: 'Ecra inteiro',
+      print: 'Imprimir pedidos novos neste ecra',
+      printHint: 'Os taloes deste posto saem na impressora configurada, atraves do agente de impressao deste computador. O POS deixa de os imprimir enquanto este ecra estiver aberto.',
+      printed: 'Impressos {n} talao(oes)',
       undo: 'Voltar a por em preparacao',
       markItem: 'Marcar este artigo como pronto',
       voided: 'ANULADO',
@@ -236,6 +239,9 @@ export const posViews = {
     kitchen: {
       subtitle: '{orders} order(s) in preparation · {items} item(s) · refreshes every 10 s',
       fullscreen: 'Full screen',
+      print: 'Print new orders on this screen',
+      printHint: 'Tickets for this station go to the configured printer through this computer\'s print agent. The POS stops printing them while this screen is open.',
+      printed: '{n} ticket(s) printed',
       undo: 'Put back into preparation',
       markItem: 'Mark this item as ready',
       voided: 'VOIDED',

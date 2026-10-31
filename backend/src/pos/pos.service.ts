@@ -152,7 +152,13 @@ export class MoveItemsDto {
 export class KdsQueryDto extends HotelQueryDto {
   @IsEnum(PrepStation)
   station: PrepStation;
+
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  printing?: string;
 }
+
+const PRINTING_SCREEN_TTL = 30_000;
 
 export class KdsReadyDto {
   @IsArray()
@@ -191,6 +197,8 @@ const orderInclude = {
 
 @Injectable()
 export class PosService {
+  private readonly printingScreens = new Map<string, number>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly folio: FolioService,
@@ -484,8 +492,18 @@ export class PosService {
     });
   }
 
+  printingStations(hotelId: number) {
+    const now = Date.now();
+    return Object.values(PrepStation).filter((station) => (this.printingScreens.get(`${hotelId}:${station}`) ?? 0) > now - PRINTING_SCREEN_TTL);
+  }
+
   async kds(query: KdsQueryDto, user: JwtPayload) {
     const hotelId = resolveHotelScope(user, query.hotelId);
+    if (hotelId && query.printing === 'true') {
+      this.printingScreens.set(`${hotelId}:${query.station}`, Date.now());
+    } else if (hotelId && query.printing === 'false') {
+      this.printingScreens.delete(`${hotelId}:${query.station}`);
+    }
     const since = new Date(Date.now() - 12 * 3600 * 1000);
     const orders = await this.prisma.order.findMany({
       where: {

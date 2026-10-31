@@ -1,9 +1,11 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseEnumPipe, ParseIntPipe, Post, Query, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseEnumPipe, ParseIntPipe, Post, Query, Res } from '@nestjs/common';
 import { PrepStation } from '@prisma/client';
 import { IsString, Length } from 'class-validator';
 import type { Response } from 'express';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { HotelQueryDto } from '../common/hotel-query.dto';
+import { resolveHotelScope } from '../common/hotel-scope';
 import { CloseOrderDto, KdsQueryDto, KdsReadyDto, MoveItemsDto, OpenOrderDto, OrderItemDto, OrderQueryDto, PosService } from './pos.service';
 
 class VoidItemDto {
@@ -25,6 +27,15 @@ export class KdsController {
   @Get()
   list(@Query() query: KdsQueryDto, @CurrentUser() user: JwtPayload) {
     return this.pos.kds(query, user);
+  }
+
+  @Get('printing')
+  printing(@Query() query: HotelQueryDto, @CurrentUser() user: JwtPayload) {
+    const hotelId = resolveHotelScope(user, query.hotelId);
+    if (!hotelId) {
+      throw new BadRequestException('hotelId e obrigatorio');
+    }
+    return { stations: this.pos.printingStations(hotelId) };
   }
 
   @Post('ready')

@@ -32,6 +32,23 @@ describe('Pedidos a cozinha e bar, anulacoes e taloes', () => {
   const add = (orderId: number, product: { id: number }, quantity = 1, notes?: string) =>
     ctx.http().post(`/api/orders/${orderId}/items`).set(auth).send({ productId: product.id, quantity, notes }).expect(201);
 
+  it('o ecra da cozinha que imprime fica registado ate parar, so no seu posto e hotel', async () => {
+    const { hotel } = await setup();
+    const other = await createHotel(ctx.prisma);
+    const printing = (hotelId: number) => ctx.http().get('/api/kds/printing').query({ hotelId }).set(auth).expect(200);
+    expect((await printing(hotel.id)).body.stations).toEqual([]);
+
+    await ctx.http().get('/api/kds').query({ hotelId: hotel.id, station: 'KITCHEN', printing: 'true' }).set(auth).expect(200);
+    expect((await printing(hotel.id)).body.stations).toEqual(['KITCHEN']);
+    expect((await printing(other.hotel.id)).body.stations).toEqual([]);
+
+    await ctx.http().get('/api/kds').query({ hotelId: hotel.id, station: 'KITCHEN' }).set(auth).expect(200);
+    expect((await printing(hotel.id)).body.stations).toEqual(['KITCHEN']);
+    await ctx.http().get('/api/kds').query({ hotelId: hotel.id, station: 'KITCHEN', printing: 'false' }).set(auth).expect(200);
+    expect((await printing(hotel.id)).body.stations).toEqual([]);
+    await ctx.http().get('/api/kds').query({ hotelId: hotel.id, station: 'KITCHEN', printing: 'sim' }).set(auth).expect(400);
+  });
+
   it('envia so as linhas novas, separadas por cozinha e bar', async () => {
     const { beer, dish, orderId } = await setup();
     await add(orderId, dish, 2, 'mal passado');
