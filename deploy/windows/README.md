@@ -205,9 +205,34 @@ Faz duplo clique em **`deploy\windows\Novo hotel.cmd`**. O Windows pede permiss�
 - o domínio, se o hotel o tiver;
 - a conta do MySQL/MariaDB usada para criar a base de dados (por omissão `root`).
 
+Ao abrir, o assistente verifica os **requisitos do servidor** e só deixa criar o hotel quando estão todos cumpridos. O que faltar instala-se com o botão **Instalar o que falta** (ver "Requisitos" a seguir).
+
 Carrega em **Criar hotel**. O progresso aparece na própria janela e, no fim, o botão **Abrir o painel** abre o hotel novo no navegador. Por baixo, o assistente corre o mesmo comando `hoteis.ps1 -Acao novo` descrito a seguir.
 
 Para ter o assistente à mão, cria um atalho para o `Novo hotel.cmd` no ambiente de trabalho do servidor.
+
+### Requisitos verificados e instalados
+
+| Requisito | Se faltar |
+|---|---|
+| Node.js 22 ou superior | Transfere o instalador oficial de nodejs.org, confirma o SHA-256 publicado e instala |
+| Servidor MySQL / MariaDB a responder | Se houver um serviço MySQL/MariaDB parado, arranca-o. Senão, transfere o MariaDB 11.4 LTS de mariadb.org, confirma o SHA-256 e instala-o como serviço `MariaDB`, com o root a ficar com a password indicada |
+| Ferramentas `mysql` e `mysqldump` | Vêm com o MySQL/MariaDB; se o servidor for remoto, é preciso instalar o cliente à mão |
+| Acesso de administrador à base de dados | Não se instala: corrige o utilizador ou a password |
+| MAVIE-HGest compilado | Instala as dependências e compila (precisa de internet) |
+| IIS, URL Rewrite, Application Request Routing e proxy ativo (só com domínio) | Ativa o IIS no Windows, transfere os módulos de download.microsoft.com, confirma a assinatura da Microsoft, instala e ativa o proxy |
+
+Um ficheiro transferido cuja verificação falhe é apagado e a instalação para. Os instaladores ficam em `%TEMP%\mavie-instaladores`.
+
+O mesmo pela linha de comandos:
+
+```powershell
+.\requisitos.ps1                         # só verificar
+.\requisitos.ps1 -Instalar               # instalar o que falta
+.\requisitos.ps1 -Instalar -ComDominio   # inclui o IIS
+```
+
+O `hoteis.ps1 -Acao novo` também corre esta verificação e instala o que faltar antes de criar o hotel.
 
 ### Criar um hotel pela linha de comandos
 
@@ -223,7 +248,8 @@ O script:
 2. Cria a base de dados `mavie_<codigo>` e o utilizador MySQL `mavie_<codigo>`, com uma password aleatória.
 3. Cria `dados\hoteis\<codigo>\` com `hotel.env`, `uploads`, `backups`, `logs` e `iis\web.config` já apontado para a porta do hotel.
 4. Aplica as migrações e cria o hotel e o administrador. Pede a password do administrador, que não fica guardada.
-5. Regista e arranca o serviço `MAVIE-HGest-<codigo>`.
+5. Cria no ambiente de trabalho público do servidor (visível para todos os utilizadores) o atalho **MAVIE-HGest - <nome do hotel>**, que abre o painel do hotel.
+6. Regista e arranca o serviço `MAVIE-HGest-<codigo>`.
 
 | Parâmetro | Predefinição | Para quê |
 |---|---|---|
@@ -250,7 +276,8 @@ A chave de assinatura AT é a do produtor do software e é partilhada por todos 
 .\hoteis.ps1 -Acao backup                      # backup de todos para dados\hoteis\<codigo>\backups
 .\hoteis.ps1 -Acao agendar-backups             # backup diario as 02:00, guarda 30 dias (-DiasBackup)
 .\hoteis.ps1 -Acao atualizar -GitPull          # backup, para todos, compila uma vez, migra cada base e arranca
-.\hoteis.ps1 -Acao remover -Codigo hotelmar    # tira o servico; base de dados e pasta ficam intactas
+.\hoteis.ps1 -Acao atalho                      # volta a criar os atalhos do painel no ambiente de trabalho
+.\hoteis.ps1 -Acao remover -Codigo hotelmar    # tira o servico e o atalho; base de dados e pasta ficam intactas
 ```
 
 Para mudar o SMTP ou outra configuração de um hotel, edita `dados\hoteis\<codigo>\hotel.env` e faz `reiniciar` desse hotel.

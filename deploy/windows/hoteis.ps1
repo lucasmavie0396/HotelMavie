@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('estado', 'novo', 'iniciar', 'parar', 'reiniciar', 'logs', 'backup', 'agendar-backups', 'atualizar', 'remover')]
+  [ValidateSet('estado', 'novo', 'atalho', 'iniciar', 'parar', 'reiniciar', 'logs', 'backup', 'agendar-backups', 'atualizar', 'remover')]
   [string]$Acao = 'estado',
   [string]$Codigo,
   [string]$Nome,
@@ -86,22 +86,18 @@ function New-Hotel {
   if (Test-Path (Join-Path $dir 'hotel.env')) { throw "O hotel '$code' ja existe em $dir" }
 
   Write-Host "MAVIE-HGest - novo hotel '$Nome' ($code)" -ForegroundColor White
-  Write-Step 'Verificar requisitos'
+  Write-Step 'Verificar e instalar requisitos'
+  . (Join-Path $PSScriptRoot 'requisitos.ps1') -DbHost $DbHost -DbPort $DbPort -DbAdminUser $DbAdminUser -DbAdminPassword $DbAdminPassword
+  Install-MissingRequirements -Dominio:([bool]$Dominio)
   $node = Assert-Node
   $mysql = Find-MysqlTool 'mysql.exe'
-  if (-not $mysql) { throw 'mysql.exe nao encontrado (cliente MySQL/MariaDB).' }
   $dump = Find-Mysqldump
-  if (-not $dump) { $dump = '' }
   $dbName = "mavie_$code"
   $dbUser = "mavie_$code"
   $exists = Invoke-MysqlAdmin $mysql "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = '$dbName'"
   if ("$exists".Trim() -ne '0') { throw "A base de dados $dbName ja existe. Escolhe outro codigo ou remove-a a mao." }
   if (-not $Port) { $Port = Get-FreePort }
   Write-Ok "Base de dados $dbName, porta $Port"
-
-  if (-not (Test-Path $MainJs) -or -not (Test-Path (Join-Path $Frontend 'dist\index.html'))) {
-    Invoke-Build $node -SemMigrar
-  }
 
   Write-Step 'Criar a base de dados e o utilizador proprio'
   $dbPassword = New-Secret $node 24
@@ -180,6 +176,9 @@ function New-Hotel {
     Write-Ok "Firewall: porta $Port aberta (redes de dominio e privadas)"
   }
 
+  $shortcut = New-PanelShortcut $Nome $publicUrl
+  Write-Ok "Atalho do painel no ambiente de trabalho: $shortcut"
+
   if ($SemServico) {
     Write-Step 'Concluido (sem arranque automatico)'
     Write-Host "    Para arrancar: deploy\windows\executar.cmd `"$($paths.Logs)`" `"$node`" `"$envPath`""
@@ -216,6 +215,14 @@ switch ($Acao) {
     if ($rows) { $rows | Format-Table -AutoSize } else { Write-Note 'Ainda nao ha hoteis. Cria o primeiro com: hoteis.ps1 -Acao novo -Codigo ... -Nome ... -AdminEmail ...' }
   }
   'novo' { New-Hotel }
+  'atalho' {
+    Assert-Admin
+    foreach ($item in Get-Targets) {
+      $label = $item.Nome
+      if (-not $label) { $label = $item.Codigo }
+      Write-Ok "$($item.Codigo): $(New-PanelShortcut $label $item.Url)"
+    }
+  }
   'iniciar' {
     Assert-Admin
     foreach ($item in Get-Targets) {
@@ -324,7 +331,9 @@ switch ($Acao) {
     Stop-Api $item.TaskName $item.EnvPath
     if (Get-ApiTask $item.TaskName) { Unregister-ScheduledTask -TaskName $item.TaskName -Confirm:$false }
     Get-NetFirewallRule -DisplayName $item.TaskName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-    Write-Ok "$($item.Codigo): servico e regra de firewall removidos."
+    if ($item.Nome) { Remove-PanelShortcut $item.Nome }
+    Remove-PanelShortcut $item.Codigo
+    Write-Ok "$($item.Codigo): servico, regra de firewall e atalho removidos."
     Write-Note "A base de dados mavie_$($item.Codigo) e a pasta $($item.Dir) ficam intactas. Apaga-as a mao so depois de guardares um backup."
   }
 }

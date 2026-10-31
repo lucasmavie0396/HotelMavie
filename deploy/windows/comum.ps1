@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+if ([Console]::IsOutputRedirected) { [Console]::OutputEncoding = New-Object Text.UTF8Encoding $false }
 
 $Raiz = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $Backend = Join-Path $Raiz 'backend'
@@ -8,6 +9,10 @@ $MainJs = Join-Path $Backend 'dist\main.js'
 $NomeTarefa = 'MAVIE-HGest'
 $DadosHoteis = Join-Path $Raiz 'dados\hoteis'
 $ChaveAtPartilhada = Join-Path $Raiz 'dados\keys\at-private.pem'
+
+function U([string]$Text) {
+  return [regex]::Unescape($Text)
+}
 
 function Write-Step([string]$Text) {
   Write-Host ''
@@ -274,6 +279,22 @@ function Register-ApiTask([string]$Node, [string]$LogDir, [string]$TaskName = $N
   $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
   $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
   Register-ScheduledTask -TaskName $TaskName -Description $Description -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+}
+
+function Get-PanelShortcutPath([string]$HotelName) {
+  $safe = ($HotelName -replace '[\\/:*?"<>|]', '').Trim()
+  return Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) "MAVIE-HGest - $safe.url"
+}
+
+function New-PanelShortcut([string]$HotelName, [string]$Url) {
+  $path = Get-PanelShortcutPath $HotelName
+  Write-Utf8File $path ("[InternetShortcut]`r`nURL=$Url`r`n")
+  return $path
+}
+
+function Remove-PanelShortcut([string]$HotelName) {
+  $path = Get-PanelShortcutPath $HotelName
+  if (Test-Path $path) { Remove-Item $path -Force }
 }
 
 function Get-HotelInstances {
