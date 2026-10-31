@@ -42,3 +42,15 @@ Pedidos vindos de outros sites são recusados.
 Em **Configuração → Impressoras**, escolha a ligação **Instalada neste computador**. A lista mostra as impressoras do Windows; escolha a impressora, o papel e use **Testar**.
 
 O talão sai pela impressora com esse nome no computador onde o documento é emitido. Se a cozinha imprimir a partir de vários postos, instale (ou partilhe) a impressora da cozinha com o mesmo nome em todos eles.
+
+Para a cozinha e o bar imprimirem no seu próprio posto, abra o **Ecrã cozinha/bar** nesse computador e ligue **Imprimir pedidos novos neste ecrã**. Na impressora da cozinha/bar use **Saída = Impressora**; com **Saída = PDF** o talão só aparece no ecrã.
+
+## Ambiente de Trabalho Remoto (RDP)
+
+Quando o MAVIE-HGest é usado por Ligação ao Ambiente de Trabalho Remoto, o agente corre no servidor e só vê as impressoras redirecionadas da sessão:
+
+1. Instale a térmica no Windows do computador local (o PC da cozinha ou do bar).
+2. Na Ligação ao Ambiente de Trabalho Remoto: **Mostrar opções → Recursos locais → Impressoras** ativado.
+3. Volte a ligar. A térmica aparece no servidor como `Nome (redirecionado N)`.
+
+O número `N` muda a cada ligação. O MAVIE-HGest guarda o nome sem esse sufixo e o agente encontra a impressora em qualquer sessão.

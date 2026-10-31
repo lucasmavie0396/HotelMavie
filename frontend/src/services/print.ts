@@ -107,6 +107,10 @@ async function agent<T>(path: string, init?: RequestInit) {
   return body as T;
 }
 
+export function printerBaseName(name: string) {
+  return name.replace(/\s*\((?:redirecionad[ao]|redirected|redirigid[ao])\s*\d*\)\s*$/i, '').trim();
+}
+
 export function listLocalPrinters() {
   return agent<LocalPrinter[]>('/printers');
 }

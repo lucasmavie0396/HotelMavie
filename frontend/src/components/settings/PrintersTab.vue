@@ -3,7 +3,7 @@ import { onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { translated } from '@/i18n';
 import { api, errorMessage } from '@/services/api';
-import { agentUrl, DEFAULT_AGENT_URL, listLocalPrinters, previewPdfFrom, printDocument, setAgentUrl, type LocalPrinter } from '@/services/print';
+import { agentUrl, DEFAULT_AGENT_URL, listLocalPrinters, previewPdfFrom, printDocument, printerBaseName, setAgentUrl, type LocalPrinter } from '@/services/print';
 import { useHotelsStore } from '@/stores/hotels';
 import type { PaperWidth, Printer, PrinterConnection, PrinterOutput, PrinterPurpose } from '@/types';
 
@@ -93,9 +93,11 @@ function reset() {
 }
 
 function chooseLocal(name: string) {
-  form.localName = name;
-  if (!form.name) form.name = name.slice(0, 60);
+  form.localName = printerBaseName(name);
+  if (!form.name) form.name = form.localName.slice(0, 60);
 }
+
+const isInstalled = (name: string) => local.value.some((item) => printerBaseName(item.name).toLowerCase() === printerBaseName(name).toLowerCase());
 
 const save = () =>
   run(async () => {
@@ -160,10 +162,10 @@ onMounted(() => {
         <div class="flex gap-2">
           <select :value="form.localName" class="input" required @change="chooseLocal(($event.target as HTMLSelectElement).value)">
             <option value="" disabled>{{ local.length ? t('printersTab.choose') : t('printersTab.noneFound') }}</option>
-            <option v-if="form.localName && !local.some((item) => item.name === form.localName)" :value="form.localName">
+            <option v-if="form.localName && !isInstalled(form.localName)" :value="form.localName">
               {{ form.localName }} ({{ t('printersTab.notHere') }})
             </option>
-            <option v-for="item in local" :key="item.name" :value="item.name">
+            <option v-for="item in local" :key="item.name" :value="printerBaseName(item.name)">
               {{ item.name }}{{ item.isDefault ? ` · ${t('printersTab.systemDefault')}` : '' }}{{ item.offline ? ' · offline' : '' }} ({{ item.driver }})
             </option>
           </select>

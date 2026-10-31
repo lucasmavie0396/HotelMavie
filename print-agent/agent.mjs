@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const PORT = Number(process.env.PRINT_AGENT_PORT ?? 9123);
 const ORIGINS = (process.env.PRINT_AGENT_ORIGINS ?? 'http://localhost:5173,http://127.0.0.1:5173')
   .split(',')
@@ -14,6 +14,15 @@ const ORIGINS = (process.env.PRINT_AGENT_ORIGINS ?? 'http://localhost:5173,http:
   .filter(Boolean);
 const MAX_BYTES = 2 * 1024 * 1024;
 const RAW_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'raw-print.ps1');
+const REDIRECTED = /\s*\((?:redirecionad[ao]|redirected|redirigid[ao])\s*\d*\)\s*$/i;
+
+function baseName(name) {
+  return name.replace(REDIRECTED, '').trim().toLowerCase();
+}
+
+function resolvePrinter(printers, wanted) {
+  return printers.find((item) => item.name === wanted) ?? printers.find((item) => baseName(item.name) === baseName(wanted));
+}
 
 function powershell(args, timeout = 30_000) {
   return new Promise((resolve, reject) => {
@@ -117,13 +126,13 @@ const server = createServer(async (req, res) => {
         send(res, 400, { message: 'Documento vazio ou demasiado grande' });
         return;
       }
-      const printers = await listPrinters();
-      if (!printers.some((item) => item.name === printer)) {
+      const found = resolvePrinter(await listPrinters(), printer);
+      if (!found) {
         send(res, 404, { message: `A impressora "${printer}" nao esta instalada neste computador` });
         return;
       }
-      await printRaw(printer, data, copies);
-      send(res, 200, { status: 'printed', printer });
+      await printRaw(found.name, data, copies);
+      send(res, 200, { status: 'printed', printer: found.name });
       return;
     }
     send(res, 404, { message: 'Nao encontrado' });
