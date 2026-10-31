@@ -9,7 +9,8 @@ export function requestLang(req: Pick<Request, 'headers'>): Lang {
 
 const EXACT: Record<string, string> = {
   'A caixa indicada nao esta aberta': 'The selected cash register is not open',
-  'A categoria Isento so se aplica a taxas de 0%': 'The Exempt category only applies to 0% rates',
+  'Abre o teu caixa antes de vender ou receber pagamentos': 'Open your cash register before selling or taking payments',
+  'A categoria Isento so se aplica a taxas de 0%':'The Exempt category only applies to 0% rates',
   'A conta de destino tem de ser outra': 'The target bill must be a different one',
   'A conta de utilizador tem de pertencer a este hotel': 'The user account must belong to this hotel',
   'A data de entrada nao pode ser no passado': 'The arrival date cannot be in the past',
@@ -136,7 +137,6 @@ const EXACT: Record<string, string> = {
   'O sinal nao pode ser superior ao total da reserva': 'The deposit cannot exceed the booking total',
   'O total do documento nao pode ser negativo': 'The document total cannot be negative',
   'Pagamento nao encontrado': 'Payment not found',
-  'Pagamentos em numerario precisam de uma caixa aberta': 'Cash payments require an open cash register',
   'Password ou codigo invalidos': 'Invalid password or code',
   'Pedido nao encontrado': 'Order not found',
   'Periodo invalido': 'Invalid period',

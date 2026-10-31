@@ -84,20 +84,32 @@ describe('Faturacao, conta do hospede e caixa', () => {
     }
   });
 
-  it('numerario exige caixa aberta e o fecho calcula a diferenca', async () => {
+  it('sem caixa aberto pelo operador nao vende nem recebe, e o fecho calcula a diferenca', async () => {
     const { hotel, rooms } = await createHotel(ctx.prisma);
     const id = await checkedIn(hotel.id, rooms[0].id);
-    await ctx.http().post(`/api/reservations/${id}/payments`).set(auth).send({ amount: 50, method: 'CASH' }).expect(400);
+    const cashier = (await login(ctx, (await createUser(ctx.prisma, UserRole.MANAGER, hotel.id, { cash: false })).email)).auth;
+    const rate = await ctx.prisma.taxRate.create({ data: { hotelId: hotel.id, name: 'Normal', rate: 16 } });
+    const product = await ctx.prisma.product.create({ data: { hotelId: hotel.id, name: 'Agua', price: 1, taxRateId: rate.id } });
+    const order = await ctx.http().post('/api/orders').set(cashier).send({ hotelId: hotel.id, outlet: 'BAR' }).expect(201);
+    await ctx.http().post(`/api/orders/${order.body.id}/items`).set(cashier).send({ productId: product.id, quantity: 1 }).expect(201);
 
-    const register = await ctx.http().post('/api/cash-registers').set(auth).send({ hotelId: hotel.id, name: 'Rececao' }).expect(201);
-    const session = await ctx.http().post(`/api/cash-registers/${register.body.id}/open`).set(auth).send({ openingAmount: 100 }).expect(201);
-    await ctx.http().post(`/api/cash-registers/${register.body.id}/open`).set(auth).send({ openingAmount: 0 }).expect(409);
+    await ctx.http().post(`/api/reservations/${id}/payments`).set(cashier).send({ amount: 50, method: 'CARD' }).expect(409);
+    await ctx.http().post(`/api/reservations/${id}/invoices`).set(cashier).send({}).expect(409);
+    await ctx.http().post(`/api/orders/${order.body.id}/close`).set(cashier).send({ mode: 'PAY', payments: [{ method: 'CARD', amount: 1 }] }).expect(409);
+    await ctx.http().post(`/api/orders/${order.body.id}/close`).set(cashier).send({ mode: 'ROOM', reservationId: id }).expect(409);
 
-    await ctx.http().post(`/api/reservations/${id}/payments`).set(auth).send({ amount: 60, method: 'CASH', cashSessionId: session.body.id }).expect(201);
-    await ctx.http().post(`/api/cash-sessions/${session.body.id}/movements`).set(auth).send({ type: 'OUT', amount: 15, description: 'Troco' }).expect(201);
-    const closed = await ctx.http().post(`/api/cash-sessions/${session.body.id}/close`).set(auth).send({ countedAmount: 140 }).expect(200);
+    const register = await ctx.http().post('/api/cash-registers').set(cashier).send({ hotelId: hotel.id, name: 'Rececao' }).expect(201);
+    const session = await ctx.http().post(`/api/cash-registers/${register.body.id}/open`).set(cashier).send({ openingAmount: 100 }).expect(201);
+    await ctx.http().post(`/api/cash-registers/${register.body.id}/open`).set(cashier).send({ openingAmount: 0 }).expect(409);
+
+    const paid = await ctx.http().post(`/api/reservations/${id}/payments`).set(cashier).send({ amount: 60, method: 'CASH' }).expect(201);
+    expect(paid.body.cashSessionId).toBe(session.body.id);
+    await ctx.http().post(`/api/orders/${order.body.id}/close`).set(cashier).send({ mode: 'PAY', payments: [{ method: 'CARD', amount: 1 }] }).expect(200);
+    await ctx.http().post(`/api/cash-sessions/${session.body.id}/movements`).set(cashier).send({ type: 'OUT', amount: 15, description: 'Troco' }).expect(201);
+    const closed = await ctx.http().post(`/api/cash-sessions/${session.body.id}/close`).set(cashier).send({ countedAmount: 140 }).expect(200);
     expect(closed.body).toMatchObject({ expectedAmount: '145', countedAmount: '140', difference: '-5' });
 
+    await ctx.http().post(`/api/reservations/${id}/payments`).set(cashier).send({ amount: 1, method: 'CARD' }).expect(409);
     await ctx.http().post(`/api/reservations/${id}/payments`).set(auth).send({ amount: 1, method: 'CASH', cashSessionId: session.body.id }).expect(409);
   });
 

@@ -27,6 +27,7 @@ import {
 } from 'class-validator';
 import { AuditService } from '../audit/audit';
 import { JwtPayload } from '../auth/jwt-payload';
+import { requireOpenCash } from '../billing/cash-guard';
 import { FolioService } from '../billing/folio.service';
 import { InvoicesService } from '../billing/invoices.service';
 import { Ticket, TicketPdfService } from '../billing/ticket-pdf.service';
@@ -566,6 +567,7 @@ export class PosService {
     }
     const chargeType = order.outlet === Outlet.BAR ? ChargeType.BAR : ChargeType.RESTAURANT;
     const label = order.outlet === Outlet.BAR ? 'Bar' : 'Restaurante';
+    await requireOpenCash(this.prisma, order.hotelId, user.sub);
     if (dto.mode === 'PAY') {
       await this.invoices.ensureSeries(order.hotelId, InvoiceType.INVOICE_RECEIPT);
     }

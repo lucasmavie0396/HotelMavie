@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useAuthStore } from '@/stores/auth';
 import { usePaymentTypesStore } from '@/stores/paymentTypes';
 import type { CashRegister } from '@/types';
 
@@ -10,10 +11,13 @@ const cashSessionId = defineModel<number>('cashSessionId', { default: 0 });
 const reference = defineModel<string>('reference', { default: '' });
 
 const { t } = useI18n();
+const auth = useAuthStore();
 const types = usePaymentTypesStore();
 const selected = computed(() => types.byId(typeId.value));
 const sessions = computed(() =>
-  (props.registers ?? []).flatMap((register) => register.sessions.map((session) => ({ id: session.id, label: register.name }))),
+  (props.registers ?? [])
+    .flatMap((register) => register.sessions.map((session) => ({ id: session.id, label: register.name, own: session.openedById === auth.user?.id })))
+    .sort((a, b) => Number(b.own) - Number(a.own)),
 );
 
 function ensureSelection() {

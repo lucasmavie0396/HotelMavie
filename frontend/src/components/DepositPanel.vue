@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import CashRequired from '@/components/CashRequired.vue';
 import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
+import { useOwnCash } from '@/composables/cashGuard';
 import { api, errorMessage, openPdf } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
 import type { CashRegister, Reservation } from '@/types';
@@ -13,6 +15,8 @@ const emit = defineEmits<{ updated: [reservation: Reservation] }>();
 const { t } = useI18n();
 const hotels = useHotelsStore();
 const registers = ref<CashRegister[]>([]);
+const registersLoaded = ref(false);
+const hasCash = useOwnCash(registers);
 const error = ref('');
 const notice = ref('');
 const busy = ref(false);
@@ -47,6 +51,7 @@ watch(
 async function loadRegisters() {
   try {
     registers.value = (await api.get<CashRegister[]>('/cash-registers', { params: { hotelId: props.reservation.hotelId } })).data;
+    registersLoaded.value = true;
   } catch (e) {
     error.value = errorMessage(e);
   }
@@ -55,7 +60,7 @@ async function loadRegisters() {
 watch(
   opened,
   (value) => {
-    if (value && !registers.value.length) loadRegisters();
+    if (value && !registersLoaded.value) loadRegisters();
   },
   { immediate: true },
 );
@@ -125,6 +130,7 @@ const email = () =>
       <p v-if="reservation.depositAmount !== null && reservation.depositReference" class="text-sm text-slate-700">
         {{ t('deposit.guestPaid', { amount: money(reservation.depositAmount), method: reservation.depositPaymentType?.name ?? '-', reference: reservation.depositReference }) }}
       </p>
+      <CashRequired v-if="registersLoaded" :registers="registers" />
       <form class="grid gap-3 sm:grid-cols-4" @submit.prevent="confirm">
         <label class="text-sm">
           {{ t('deposit.amountReceived') }}
@@ -139,7 +145,7 @@ const email = () =>
             <input v-model="form.sendEmail" type="checkbox" :disabled="!reservation.guest.email" />
             {{ t('deposit.sendEmail') }}
           </label>
-          <button class="btn" type="submit" :disabled="busy || !form.paymentTypeId">
+          <button class="btn" type="submit" :disabled="busy || !hasCash || !form.paymentTypeId">
             {{ reservation.status === 'PENDING' ? t('deposit.confirmApprove') : t('deposit.confirmOnly') }}
           </button>
         </div>

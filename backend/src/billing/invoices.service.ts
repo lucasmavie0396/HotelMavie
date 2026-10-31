@@ -9,6 +9,7 @@ import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { splitGross, sumMoney } from '../common/money';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreditNoteDto, InvoiceQueryDto, IssueInvoiceDto } from './billing.dto';
+import { requireOpenCash } from './cash-guard';
 
 export interface CustomerData {
   customerName?: string;
@@ -80,6 +81,7 @@ export class InvoicesService {
     if (!reservation || !canAccessHotel(user, reservation.hotelId)) {
       throw new NotFoundException('Reserva nao encontrada');
     }
+    await requireOpenCash(this.prisma, reservation.hotelId, user.sub);
     const type = dto.type ?? InvoiceType.INVOICE;
     await this.ensureSeries(reservation.hotelId, type);
     return this.prisma.$transaction(async (tx) => {

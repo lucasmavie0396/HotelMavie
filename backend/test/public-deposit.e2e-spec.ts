@@ -2,7 +2,7 @@ import { UserRole } from '@prisma/client';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { UploadsService } from '../src/uploads/uploads';
-import { createApp, createHotel, createUser, day, login, TestContext } from './helpers';
+import { createApp, createHotel, createUser, day, login, openCash, TestContext } from './helpers';
 
 const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
@@ -158,20 +158,22 @@ describe('Site publico e sinal', () => {
     expect((pdf.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
   });
 
-  it('sinal registado ao balcao, em numerario exige caixa aberta', async () => {
+  it('sinal registado ao balcao exige o caixa do rececionista aberto', async () => {
     const { hotel, rooms } = await createHotel(ctx.prisma, { depositPercent: 50 });
-    const reception = await staff(hotel.id);
+    const { user, email } = await createUser(ctx.prisma, UserRole.RECEPTION, hotel.id, { cash: false });
+    const reception = (await login(ctx, email)).auth;
     const guest = await ctx.prisma.guest.create({ data: { hotelId: hotel.id, firstName: 'Balcao', lastName: 'Sinal' } });
     const created = await ctx.http().post('/api/reservations').set(reception).send({ guestId: guest.id, roomId: rooms[0].id, checkIn: day(10), checkOut: day(12) }).expect(201);
     expect(created.body.depositAmount).toBeNull();
 
     await ctx.http().get(`/api/payment-types?hotelId=${hotel.id}`).set(reception).expect(200);
     const cash = await ctx.prisma.paymentType.findFirstOrThrow({ where: { hotelId: hotel.id, kind: 'CASH' } });
-    await ctx.http().post(`/api/reservations/${created.body.id}/deposit/confirm`).set(reception).send({ paymentTypeId: cash.id }).expect(400);
+    await ctx.http().post(`/api/reservations/${created.body.id}/deposit/confirm`).set(reception).send({ paymentTypeId: cash.id }).expect(409);
 
-    const card = await ctx.prisma.paymentType.findFirstOrThrow({ where: { hotelId: hotel.id, kind: 'CARD' } });
-    const confirmed = await ctx.http().post(`/api/reservations/${created.body.id}/deposit/confirm`).set(reception).send({ paymentTypeId: card.id }).expect(200);
+    const session = await openCash(ctx.prisma, user.id, hotel.id);
+    const confirmed = await ctx.http().post(`/api/reservations/${created.body.id}/deposit/confirm`).set(reception).send({ paymentTypeId: cash.id }).expect(200);
     expect(confirmed.body).toMatchObject({ status: 'CONFIRMED', depositAmount: '80' });
+    expect((await ctx.prisma.payment.findUniqueOrThrow({ where: { id: confirmed.body.depositPaymentId } })).cashSessionId).toBe(session.id);
     await ctx.http().post(`/api/reservations/${created.body.id}/deposit/email`).set(reception).expect(400);
   });
 

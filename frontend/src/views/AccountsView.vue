@@ -2,7 +2,9 @@
 import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import CashRequired from '@/components/CashRequired.vue';
 import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
+import { useOwnCash } from '@/composables/cashGuard';
 import { api, errorMessage, openInvoicePdf } from '@/services/api';
 import { printDocument } from '@/services/print';
 import { usePaymentTypesStore } from '@/stores/paymentTypes';
@@ -29,9 +31,7 @@ const isManager = computed(() => auth.user?.role !== 'RECEPTION');
 const money = (value: string | number) => formatMoney(value, hotels.currency);
 const total = computed(() => openInvoices.value.reduce((sum, invoice) => sum + Number(amounts[invoice.id] || 0), 0));
 const totalOpen = computed(() => accounts.value.reduce((sum, account) => sum + Number(account.open), 0));
-const openSessions = computed(() =>
-  registers.value.flatMap((register) => register.sessions.map((session) => ({ id: session.id, label: register.name }))),
-);
+const hasCash = useOwnCash(registers);
 
 function daysSince(date: string) {
   return Math.floor((Date.now() - new Date(date).getTime()) / 86_400_000);
@@ -95,10 +95,7 @@ async function cancel(receipt: ReceiptDoc) {
   const reason = window.prompt(t('accounts.cancelPrompt', { number: receipt.fullNumber }));
   if (!reason) return;
   try {
-    await api.post(`/receipts/${receipt.id}/cancel`, {
-      reason,
-      cashSessionId: receipt.method === 'CASH' ? openSessions.value[0]?.id : undefined,
-    });
+    await api.post(`/receipts/${receipt.id}/cancel`, { reason });
     await load();
   } catch (e) {
     error.value = errorMessage(e);
@@ -182,6 +179,7 @@ onMounted(load);
           </tr>
         </tbody>
       </table>
+      <CashRequired :registers="registers" />
       <div class="grid gap-3 sm:grid-cols-4">
         <PaymentTypeSelect
           v-model:type-id="payment.paymentTypeId"
@@ -189,7 +187,7 @@ onMounted(load);
           v-model:reference="payment.reference"
           :registers="registers"
         />
-        <button class="btn" type="submit" :disabled="busy || total <= 0 || !payment.paymentTypeId">{{ t('accounts.issue', { amount: money(total) }) }}</button>
+        <button class="btn" type="submit" :disabled="busy || !hasCash || total <= 0 || !payment.paymentTypeId">{{ t('accounts.issue', { amount: money(total) }) }}</button>
       </div>
     </form>
 

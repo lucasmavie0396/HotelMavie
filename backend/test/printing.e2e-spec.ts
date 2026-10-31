@@ -166,7 +166,7 @@ describe('Impressoras e tipos de pagamento', () => {
     expect(paid.body).toMatchObject({ method: 'MOBILE', paymentTypeId: mpesa.body.id });
     await pay({ paymentTypeId: foreign.id }).expect(400);
     const cash = defaults.body.find((t: { kind: string }) => t.kind === 'CASH');
-    await pay({ paymentTypeId: cash.id }).expect(400);
+    expect((await pay({ paymentTypeId: cash.id }).expect(201)).body.cashSessionId).toEqual(expect.any(Number));
     const legacy = await pay({ method: 'CARD' }).expect(201);
     expect(legacy.body.paymentTypeId).toBe(defaults.body.find((t: { kind: string }) => t.kind === 'CARD').id);
 

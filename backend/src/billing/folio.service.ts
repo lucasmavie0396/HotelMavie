@@ -6,6 +6,7 @@ import { canAccessHotel } from '../common/hotel-scope';
 import { DecimalLike, sumMoney, toMoney } from '../common/money';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateChargeDto, CreatePaymentDto } from './billing.dto';
+import { requireOpenCash } from './cash-guard';
 import { PaymentTypesService } from './payment-types';
 
 export interface ChargeInput {
@@ -161,11 +162,9 @@ export class FolioService {
       paymentTypeId: input.paymentTypeId,
       reference: amount.isNegative() ? 'estorno' : input.reference,
     });
+    const own = await requireOpenCash(tx, input.hotelId, user.sub);
     let cashSessionId: number | null = null;
-    if (type.method === PaymentMethod.CASH) {
-      if (!input.cashSessionId) {
-        throw new BadRequestException('Pagamentos em numerario precisam de uma caixa aberta');
-      }
+    if (type.method === PaymentMethod.CASH && input.cashSessionId) {
       const session = await tx.cashSession.findUnique({
         where: { id: input.cashSessionId },
         include: { register: { select: { hotelId: true } } },
@@ -174,6 +173,8 @@ export class FolioService {
         throw new ConflictException('A caixa indicada nao esta aberta');
       }
       cashSessionId = session.id;
+    } else if (type.method === PaymentMethod.CASH) {
+      cashSessionId = own.id;
     }
     const payment = await tx.payment.create({
       data: {

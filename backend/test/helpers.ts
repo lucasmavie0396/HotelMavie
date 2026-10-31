@@ -10,6 +10,8 @@ import { PrismaService } from '../src/prisma/prisma.service';
 
 export const PASSWORD = 'Teste-1234';
 
+const cashiers: number[] = [];
+
 export interface TestContext {
   app: NestExpressApplication;
   prisma: PrismaClient;
@@ -52,15 +54,29 @@ export async function createHotel(prisma: PrismaClient, options: { rooms?: numbe
     accommodationRate = await prisma.taxRate.create({ data: { hotelId: hotel.id, name: 'Alojamento', rate, atCategory: 'RED' } });
     await prisma.hotel.update({ where: { id: hotel.id }, data: { accommodationTaxRateId: accommodationRate.id } });
   }
+  for (const userId of cashiers) {
+    await openCash(prisma, userId, hotel.id);
+  }
   return { hotel, rooms, accommodationRate };
 }
 
-export async function createUser(prisma: PrismaClient, role: UserRole, hotelId: number | null) {
+export async function createUser(prisma: PrismaClient, role: UserRole, hotelId: number | null, options: { cash?: boolean } = {}) {
   const email = `${role.toLowerCase()}-${uid()}@teste.local`;
   const user = await prisma.user.create({
     data: { name: `${role} ${email}`, email, role, hotelId, passwordHash: await bcrypt.hash(PASSWORD, 4) },
   });
+  if (hotelId && options.cash !== false) {
+    await openCash(prisma, user.id, hotelId);
+  }
+  if (!hotelId && options.cash !== false) {
+    cashiers.push(user.id);
+  }
   return { user, email };
+}
+
+export async function openCash(prisma: PrismaClient, userId: number, hotelId: number) {
+  const register = await prisma.cashRegister.create({ data: { hotelId, name: `Caixa ${uid()}` } });
+  return prisma.cashSession.create({ data: { registerId: register.id, openingAmount: 0, openedById: userId } });
 }
 
 export async function login(ctx: TestContext, email: string) {

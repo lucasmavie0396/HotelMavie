@@ -3,7 +3,9 @@ import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import RoomAccountPanel from '@/components/RoomAccountPanel.vue';
+import CashRequired from '@/components/CashRequired.vue';
 import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
+import { useOwnCash } from '@/composables/cashGuard';
 import { api, errorMessage } from '@/services/api';
 import { fileUrl } from '@/services/files';
 import { printDocument } from '@/services/print';
@@ -67,9 +69,7 @@ const categories = computed(() => {
 const visibleProducts = computed(() =>
   products.value.filter((p) => p.active && (!categoryFilter.value || p.categoryId === categoryFilter.value)),
 );
-const openSessions = computed(() =>
-  registers.value.flatMap((register) => register.sessions.map((session) => ({ id: session.id, label: register.name }))),
-);
+const hasCash = useOwnCash(registers);
 const paidTotal = computed(() => close.payments.reduce((sum, p) => sum + Number(p.amount || 0), 0));
 const pendingCount = computed(() => current.value?.items.filter((item) => !item.sentAt && !item.voidedAt).length ?? 0);
 const activeItems = computed(() => current.value?.items.filter((item) => !item.voidedAt).length ?? 0);
@@ -488,6 +488,7 @@ onMounted(load);
             </div>
 
             <form v-else class="space-y-3 rounded-md bg-slate-50 p-3 text-sm" @submit.prevent="confirmClose">
+              <CashRequired :registers="registers" />
               <div class="flex gap-4">
                 <label class="flex items-center gap-1"><input v-model="close.mode" type="radio" value="PAY" />{{ t('pos.payNow') }}</label>
                 <label class="flex items-center gap-1"><input v-model="close.mode" type="radio" value="ROOM" :disabled="!inHouse.length" />{{ t('pos.chargeRoom') }}</label>
@@ -524,7 +525,7 @@ onMounted(load);
               </template>
               <div class="flex justify-end gap-2">
                 <button class="btn-secondary" type="button" @click="closing = false">{{ t('common.back') }}</button>
-                <button class="btn" type="submit" :disabled="busy">{{ t('common.confirm') }}</button>
+                <button class="btn" type="submit" :disabled="busy || !hasCash">{{ t('common.confirm') }}</button>
               </div>
             </form>
           </template>

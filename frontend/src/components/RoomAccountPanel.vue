@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import CashRequired from '@/components/CashRequired.vue';
 import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
+import { useOwnCash } from '@/composables/cashGuard';
 import { api, errorMessage } from '@/services/api';
 import { printDocument, type PrintRequest } from '@/services/print';
 import { useHotelsStore } from '@/stores/hotels';
@@ -20,6 +22,7 @@ const notice = ref('');
 const busy = ref(false);
 const pay = reactive({ amount: 0, paymentTypeId: 0, cashSessionId: 0, reference: '', invoice: true, customerTaxId: '' });
 const paymentTypes = usePaymentTypesStore();
+const hasCash = useOwnCash(registers);
 
 const money = (value: string | number) => formatMoney(value, hotels.currency);
 const selected = computed(() => inHouse.value.find((reservation) => reservation.id === selectedId.value) ?? null);
@@ -171,6 +174,7 @@ defineExpose({ load });
 
       <form class="grid gap-3 rounded-md bg-slate-50 p-3 sm:grid-cols-2" @submit.prevent="receive">
         <h3 class="text-sm font-semibold sm:col-span-2">{{ t('roomAccount.receive') }}</h3>
+        <CashRequired class="sm:col-span-2" :registers="registers" />
         <input v-model.number="pay.amount" class="input" type="number" min="0.01" step="0.01" :aria-label="t('common.value')" required />
         <PaymentTypeSelect v-model:type-id="pay.paymentTypeId" v-model:cash-session-id="pay.cashSessionId" v-model:reference="pay.reference" :registers="registers" />
         <label class="flex items-center gap-2 text-sm sm:col-span-2" :class="uninvoiced.length ? '' : 'text-slate-400'">
@@ -178,7 +182,7 @@ defineExpose({ load });
           {{ t('roomAccount.issue', { n: uninvoiced.length, amount: money(uninvoicedTotal) }) }}
         </label>
         <input v-if="pay.invoice && uninvoiced.length" v-model="pay.customerTaxId" class="input" :placeholder="t('pos.taxId')" />
-        <button class="btn sm:col-start-2" type="submit" :disabled="busy || !pay.paymentTypeId">
+        <button class="btn sm:col-start-2" type="submit" :disabled="busy || !hasCash || !pay.paymentTypeId">
           {{ t('roomAccount.receiveAmount', { amount: money(pay.amount || 0) }) }}
         </button>
       </form>

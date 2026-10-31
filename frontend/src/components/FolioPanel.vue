@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import CashRequired from '@/components/CashRequired.vue';
 import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
+import { useOwnCash } from '@/composables/cashGuard';
 import { api, emailInvoice, errorMessage, openInvoicePdf } from '@/services/api';
 import { printDocument, type PrintRequest } from '@/services/print';
 import { usePaymentTypesStore } from '@/stores/paymentTypes';
@@ -30,6 +32,7 @@ const busy = ref(false);
 const panel = ref<'charge' | 'payment' | 'invoice' | null>(null);
 
 const isManager = computed(() => auth.user?.role !== 'RECEPTION');
+const hasCash = useOwnCash(registers);
 const money = (value: string | number) => formatMoney(value, hotels.currency);
 const openSessions = computed(() =>
   registers.value.flatMap((register) => register.sessions.map((session) => ({ id: session.id, label: register.name }))),
@@ -153,6 +156,7 @@ defineExpose({ load });
     </div>
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
+    <CashRequired v-if="panel === 'payment' || panel === 'invoice'" :registers="registers" />
     <p v-if="Number(folio.pendingAccommodation) > 0" class="text-xs text-slate-500">
       {{ t('folio.pendingAccommodation', { amount: money(folio.pendingAccommodation) }) }}
     </p>
@@ -179,7 +183,7 @@ defineExpose({ load });
         v-model:reference="payment.reference"
         :registers="registers"
       />
-      <button class="btn" type="submit" :disabled="busy || !payment.paymentTypeId">
+      <button class="btn" type="submit" :disabled="busy || !hasCash || !payment.paymentTypeId">
         {{ t('folio.register') }}
       </button>
       <p v-if="payment.amount < 0" class="text-xs text-slate-500 sm:col-span-5">{{ t('folio.negative') }}</p>
@@ -197,7 +201,7 @@ defineExpose({ load });
         {{ t('folio.invoiceHint', { n: uninvoiced.length }) }}
         <template v-if="invoice.type === 'INVOICE'">{{ t('folio.invoiceDueHint') }}</template>
       </p>
-      <button class="btn" type="submit" :disabled="busy">{{ t('folio.issue') }}</button>
+      <button class="btn" type="submit" :disabled="busy || !hasCash">{{ t('folio.issue') }}</button>
     </form>
 
     <div class="overflow-x-auto">

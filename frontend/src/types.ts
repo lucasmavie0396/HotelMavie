@@ -230,6 +230,7 @@ export interface CashSession {
   countedAmount: string | null;
   difference: string | null;
   notes: string | null;
+  openedById?: number | null;
   openedBy?: { name: string } | null;
   closedBy?: { name: string } | null;
 }
