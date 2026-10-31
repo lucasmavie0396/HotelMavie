@@ -196,7 +196,20 @@ hotelsol.exemplo.pt  ──► IIS ──► Node :3102 ──► mavie_hotelsol
 
 Num servidor usa-se um de dois modos: a instalação única (`instalar.ps1`) ou os hotéis em instâncias (`hoteis.ps1`). Não convém misturá-los.
 
-### Criar um hotel
+### Criar um hotel com o assistente
+
+Faz duplo clique em **`deploy\windows\Novo hotel.cmd`**. O Windows pede permissão de administrador e abre uma janela onde se preenche:
+
+- o nome do hotel (o código é sugerido a partir do nome);
+- o email e a password do administrador do hotel;
+- o domínio, se o hotel o tiver;
+- a conta do MySQL/MariaDB usada para criar a base de dados (por omissão `root`).
+
+Carrega em **Criar hotel**. O progresso aparece na própria janela e, no fim, o botão **Abrir o painel** abre o hotel novo no navegador. Por baixo, o assistente corre o mesmo comando `hoteis.ps1 -Acao novo` descrito a seguir.
+
+Para ter o assistente à mão, cria um atalho para o `Novo hotel.cmd` no ambiente de trabalho do servidor.
+
+### Criar um hotel pela linha de comandos
 
 PowerShell como Administrador, na pasta `deploy\windows`:
 

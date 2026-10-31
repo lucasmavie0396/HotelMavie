@@ -22,6 +22,8 @@ param(
 
 . (Join-Path $PSScriptRoot 'comum.ps1')
 
+if (-not $DbAdminPassword -and $env:MAVIE_DB_ADMIN_PASSWORD) { $DbAdminPassword = $env:MAVIE_DB_ADMIN_PASSWORD }
+
 function Assert-Admin {
   if (-not (Test-Administrator)) { throw 'Abre o PowerShell como Administrador.' }
 }
