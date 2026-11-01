@@ -1,6 +1,6 @@
-# Instalar o MAVIE-HGest num Windows Server
+# Instalar o MAVIE-HGest em Windows (Server, 10 ou 11)
 
-Um só processo Node serve a API, o painel e o site público. No servidor só é preciso Node e MySQL/MariaDB; o IIS é opcional, para HTTPS com domínio próprio.
+Um só processo Node serve a API, o painel e o site público. No servidor só é preciso Node e MySQL/MariaDB; o IIS é opcional, para HTTPS com domínio próprio. O "servidor" pode ser um Windows Server ou um computador com Windows 10 ou 11 que fique sempre ligado.
 
 ```
 Postos da receção / bar / cozinha ──► http://servidor:8080 ──► Node (MAVIE-HGest) ──► MySQL / MariaDB
@@ -11,7 +11,7 @@ Postos da receção / bar / cozinha ──► http://servidor:8080 ──► Nod
 
 | | |
 |---|---|
-| Sistema | Windows Server 2016, 2019, 2022 ou 2025 (também funciona em Windows 10/11) |
+| Sistema | Windows 10 ou 11 (Pro ou Home) ou Windows Server 2016, 2019, 2022 ou 2025, sempre de 64 bits |
 | Node.js | 22 LTS, instalador MSI de https://nodejs.org (marcar "Add to PATH") |
 | Base de dados | MySQL 8.4 ou MariaDB 10.4+ (pode ser o do XAMPP), no próprio servidor ou noutro |
 | Hardware | 2 CPU, 4 GB RAM, 20 GB de disco livres (indicativo, para 1 a 3 hotéis) |
@@ -215,14 +215,19 @@ Para ter o assistente à mão, cria um atalho para o `Novo hotel.cmd` no ambient
 
 | Requisito | Se faltar |
 |---|---|
+| Windows 10, 11 ou Server 2016+, 64 bits | Não se instala: é preciso outro computador |
+| Computador sem suspensão automática | Desliga a suspensão e a hibernação quando ligado à corrente (`powercfg`), para os postos não perderem o acesso |
 | Node.js 22 ou superior | Transfere o instalador oficial de nodejs.org, confirma o SHA-256 publicado e instala |
-| Servidor MySQL / MariaDB a responder | Se houver um serviço MySQL/MariaDB parado, arranca-o. Senão, transfere o MariaDB 11.4 LTS de mariadb.org, confirma o SHA-256 e instala-o como serviço `MariaDB`, com o root a ficar com a password indicada |
-| Ferramentas `mysql` e `mysqldump` | Vêm com o MySQL/MariaDB; se o servidor for remoto, é preciso instalar o cliente à mão |
-| Acesso de administrador à base de dados | Não se instala: corrige o utilizador ou a password |
+| Servidor MySQL / MariaDB a responder | Se houver um serviço MySQL/MariaDB parado, arranca-o. Senão, transfere o MariaDB 11.4 LTS de mariadb.org, confirma o SHA-256 e instala-o como serviço `MariaDB` (com o cliente e o HeidiSQL), com o root a ficar com a password indicada |
+| Ferramentas `mysql` e `mysqldump` | Instala só o cliente do MariaDB 11.4 (sem servidor), mesmo que a base de dados esteja noutro computador |
+| Gestor da base de dados | Aceita HeidiSQL, phpMyAdmin (XAMPP), MySQL Workbench ou DBeaver; se não houver nenhum, instala o HeidiSQL do pacote do MariaDB |
+| Acesso de administrador à base de dados | Não se instala: corrige o utilizador ou a password. Se o root não tiver password (XAMPP), deixa o campo vazio |
 | MAVIE-HGest compilado | Instala as dependências e compila (precisa de internet) |
 | IIS, URL Rewrite, Application Request Routing e proxy ativo (só com domínio) | Ativa o IIS no Windows, transfere os módulos de download.microsoft.com, confirma a assinatura da Microsoft, instala e ativa o proxy |
 
 Um ficheiro transferido cuja verificação falhe é apagado e a instalação para. Os instaladores ficam em `%TEMP%\mavie-instaladores`.
+
+Em Windows 10/11, a rede do computador tem de estar como **Privada** (Definições → Rede e Internet) para os postos chegarem ao sistema; o assistente avisa se estiver como Pública.
 
 O mesmo pela linha de comandos:
 

@@ -143,11 +143,11 @@ Add-Label 'Password' 300 32 76 '' $group | Out-Null
 $dbPass = New-Object Windows.Forms.TextBox
 $dbPass.UseSystemPasswordChar = $true
 Add-Control $dbPass 380 29 250 26 $group | Out-Null
-Add-Label 'Se o MariaDB tiver de ser instalado, esta password fica a ser a do root.' 14 62 620 'DimGray' $group | Out-Null
+Add-Label (U 'Vazio se o root n\u00e3o tiver password (ex.: XAMPP). Se o MariaDB for instalado, fica a ser a do root.') 14 62 630 'DimGray' $group | Out-Null
 
 $reqGroup = New-Object Windows.Forms.GroupBox
-$reqGroup.Text = U 'Requisitos do servidor (obrigat\u00f3rios)'
-Add-Control $reqGroup 690 16 410 344 | Out-Null
+$reqGroup.Text = U 'Requisitos do computador (obrigat\u00f3rios)'
+Add-Control $reqGroup 690 16 410 384 | Out-Null
 $reqList = New-Object Windows.Forms.ListView
 $reqList.View = 'Details'
 $reqList.FullRowSelect = $true
@@ -156,15 +156,15 @@ $reqList.HeaderStyle = 'Nonclickable'
 [void]$reqList.Columns.Add('Estado', 64)
 [void]$reqList.Columns.Add('Detalhe', 300)
 $reqList.ShowItemToolTips = $true
-Add-Control $reqList 12 24 386 238 $reqGroup | Out-Null
+Add-Control $reqList 12 24 386 278 $reqGroup | Out-Null
 $check = New-Object Windows.Forms.Button
 $check.Text = 'Verificar de novo'
-Add-Control $check 12 270 150 32 $reqGroup | Out-Null
+Add-Control $check 12 310 150 32 $reqGroup | Out-Null
 $install = New-Object Windows.Forms.Button
 $install.Text = U 'Instalar o que falta'
 $install.Enabled = $false
-Add-Control $install 172 270 170 32 $reqGroup | Out-Null
-$reqStatus = Add-Label '' 12 310 386 '' $reqGroup
+Add-Control $install 172 310 170 32 $reqGroup | Out-Null
+$reqStatus = Add-Label '' 12 350 386 '' $reqGroup
 
 $create = New-Object Windows.Forms.Button
 $create.Text = 'Criar hotel'
@@ -184,14 +184,14 @@ $log.ScrollBars = 'Vertical'
 $log.BackColor = [Drawing.Color]::FromArgb(1, 36, 86)
 $log.ForeColor = [Drawing.Color]::WhiteSmoke
 $log.Font = New-Object Drawing.Font('Consolas', 9)
-Add-Control $log 690 372 410 212 | Out-Null
+Add-Control $log 690 412 410 172 | Out-Null
 
 function Update-Installed {
   $items = @(Get-HotelInstances)
   if ($items.Count) {
     $installed.Text = (U 'Hot\u00e9is instalados: ') + (($items | ForEach-Object { "$($_.Codigo) ($($_.Port))" }) -join ', ')
   } else {
-    $installed.Text = U 'Ainda n\u00e3o h\u00e1 hot\u00e9is instalados neste servidor.'
+    $installed.Text = U 'Ainda n\u00e3o h\u00e1 hot\u00e9is instalados neste computador.'
   }
 }
 
@@ -228,6 +228,9 @@ function Update-Requirements {
   if ($script:reqOk) {
     $reqStatus.ForeColor = [Drawing.Color]::DarkGreen
     $reqStatus.Text = 'Tudo pronto.'
+  } elseif (@($missing | Where-Object { $_.Id -eq 'sistema' }).Count) {
+    $reqStatus.ForeColor = [Drawing.Color]::Firebrick
+    $reqStatus.Text = U 'Esta vers\u00e3o do Windows n\u00e3o \u00e9 suportada.'
   } elseif (@($missing | Where-Object { -not $_.Instalavel }).Count) {
     $reqStatus.ForeColor = [Drawing.Color]::Firebrick
     $reqStatus.Text = U 'Corrija os dados do MySQL e verifique de novo.'

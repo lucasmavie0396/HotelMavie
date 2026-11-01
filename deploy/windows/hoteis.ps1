@@ -174,6 +174,8 @@ function New-Hotel {
       New-NetFirewallRule -DisplayName $taskName -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow -Profile Domain, Private | Out-Null
     }
     Write-Ok "Firewall: porta $Port aberta (redes de dominio e privadas)"
+    $public = @(Get-NetConnectionProfile -ErrorAction SilentlyContinue | Where-Object { $_.NetworkCategory -eq 'Public' })
+    if ($public.Count) { Write-Note "A rede '$($public[0].Name)' esta como Publica: os postos so chegam ao sistema depois de a mudar para Privada (Definicoes > Rede e Internet)." }
   }
 
   $shortcut = New-PanelShortcut $Nome $publicUrl

@@ -13,6 +13,7 @@ param(
 if (-not $DbAdminPassword -and $env:MAVIE_DB_ADMIN_PASSWORD) { $DbAdminPassword = $env:MAVIE_DB_ADMIN_PASSWORD }
 
 $NodeMajor = 22
+$WindowsBuildMinimo = 14393
 $MariaDbSerie = '11.4'
 $Instaladores = Join-Path $env:TEMP 'mavie-instaladores'
 $UrlRewriteMsi = 'https://download.microsoft.com/download/1/2/8/128E2E22-C1B9-44A4-BE2A-5859ED1D4592/rewrite_amd64_en-US.msi'
@@ -53,12 +54,48 @@ function Get-StoppedDbService {
   Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'mysql|mariadb' -and $_.Status -ne 'Running' } | Select-Object -First 1
 }
 
-function Test-DbLogin {
+function Get-WindowsInfo {
+  $os = Get-CimInstance Win32_OperatingSystem
+  $build = [int]$os.BuildNumber
+  return [pscustomobject]@{
+    Nome = $os.Caption -replace '^Microsoft\s+', ''
+    Build = $build
+    Cliente = ($os.ProductType -eq 1)
+    Ok = ([Environment]::Is64BitOperatingSystem -and $build -ge $WindowsBuildMinimo)
+  }
+}
+
+function Get-SleepTimeouts {
+  $result = @{}
+  foreach ($setting in @('STANDBYIDLE', 'HIBERNATEIDLE')) {
+    $output = & powercfg.exe /query SCHEME_CURRENT SUB_SLEEP $setting 2>$null
+    if ($LASTEXITCODE -ne 0) { continue }
+    $values = @($output | Where-Object { $_ -match ':\s*0x[0-9a-fA-F]+\s*$' } | ForEach-Object { [Convert]::ToInt32(($_ -replace '^.*0x', ''), 16) })
+    if ($values.Count -ge 2) { $result[$setting] = $values[$values.Count - 2] }
+  }
+  return $result
+}
+
+function Find-DbManager {
+  $candidates = @(
+    (Join-Path $env:CommonProgramFiles 'MariaDBShared\HeidiSQL\heidisql.exe'),
+    (Join-Path $env:ProgramFiles 'HeidiSQL\heidisql.exe'),
+    'C:\xampp\phpMyAdmin\index.php'
+  )
+  if (${env:ProgramFiles(x86)}) { $candidates += Join-Path ${env:ProgramFiles(x86)} 'HeidiSQL\heidisql.exe' }
+  $candidates += Get-ChildItem -Path (Join-Path $env:ProgramFiles 'MySQL\MySQL Workbench*\MySQLWorkbench.exe'), (Join-Path $env:ProgramFiles 'DBeaver\dbeaver.exe') -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+  foreach ($candidate in $candidates) {
+    if ($candidate -and (Test-Path $candidate)) { return $candidate }
+  }
+  return $null
+}
+
+function Test-DbLogin([string]$Password = $DbAdminPassword) {
   $mysql = Find-MysqlTool 'mysql.exe'
   if (-not $mysql) { return $false }
   $previous = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
-  $env:MYSQL_PWD = $DbAdminPassword
+  $env:MYSQL_PWD = $Password
   try {
     & $mysql -h $DbHost -P "$DbPort" -u $DbAdminUser -N -B -e 'SELECT 1' 2>$null | Out-Null
     return ($LASTEXITCODE -eq 0)
@@ -91,6 +128,17 @@ function Get-InstalledText([bool]$Ok) {
 function Get-Requirements([switch]$Dominio) {
   $list = @()
 
+  $windows = Get-WindowsInfo
+  $detail = "$($windows.Nome) (build $($windows.Build))"
+  if (-not $windows.Ok) { $detail += U ': precisa do Windows 10, 11 ou Server 2016 ou superior, de 64 bits' }
+  $list += New-Requirement 'sistema' 'Windows 10, 11 ou Server (64 bits)' $windows.Ok $detail $false
+
+  $timeouts = Get-SleepTimeouts
+  $sleepOk = -not (@($timeouts.Values | Where-Object { $_ -gt 0 }).Count)
+  $detail = U 'Nunca suspende quando ligado \u00e0 corrente'
+  if (-not $sleepOk) { $detail = U 'Entra em suspens\u00e3o: os postos perdem o acesso ao sistema' }
+  $list += New-Requirement 'energia' (U 'Computador sem suspens\u00e3o autom\u00e1tica') $sleepOk $detail $true
+
   $node = Find-Node
   $version = $null
   if ($node) { $version = (& $node -v).Trim() }
@@ -115,11 +163,19 @@ function Get-Requirements([switch]$Dominio) {
   $clientOk = [bool]($mysql -and $dump)
   $detail = U 'mysql.exe ou mysqldump.exe n\u00e3o encontrados'
   if ($clientOk) { $detail = Split-Path $mysql }
-  $list += New-Requirement 'db-cliente' 'Ferramentas mysql e mysqldump' $clientOk $detail $false
+  $list += New-Requirement 'db-cliente' 'Ferramentas mysql e mysqldump' $clientOk $detail $true
+
+  $manager = Find-DbManager
+  $detail = U 'N\u00e3o instalado (instala o HeidiSQL)'
+  if ($manager) { $detail = $manager }
+  $list += New-Requirement 'db-gestor' 'Gestor da base de dados' ([bool]$manager) $detail $true
 
   $loginOk = [bool]($serverOk -and $clientOk -and (Test-DbLogin))
   $detail = "Conta $DbAdminUser aceite"
-  if (-not $loginOk) { $detail = (U 'N\u00e3o foi poss\u00edvel entrar como ') + "$DbAdminUser (verifique a password)" }
+  if (-not $loginOk) {
+    $detail = (U 'N\u00e3o foi poss\u00edvel entrar como ') + "$DbAdminUser (verifique a password)"
+    if ($serverOk -and $clientOk -and $DbAdminPassword -and (Test-DbLogin '')) { $detail = "A conta $DbAdminUser" + (U ' deste servidor n\u00e3o tem password: deixe o campo Password vazio') }
+  }
   if (-not ($serverOk -and $clientOk)) { $detail = 'Depende do servidor e das ferramentas acima' }
   $list += New-Requirement 'db-login' (U 'Acesso de administrador \u00e0 base de dados') $loginOk $detail $false
 
@@ -238,6 +294,23 @@ function Install-DbServer {
   Write-Ok 'Base de dados a responder'
 }
 
+function Install-DbTools([string[]]$Features, [string]$Name) {
+  Write-Step "Instalar $Name (MariaDB $MariaDbSerie, sem servidor)"
+  $installer = Get-MariaDbInstaller
+  $path = Save-Installer $installer.Url $installer.File
+  Assert-Sha256 $path $installer.Sha256
+  Install-Msi $path @("ADDLOCAL=$($Features -join ',')")
+  Update-PathFromRegistry
+  Write-Ok "$Name instalado"
+}
+
+function Set-NoSleep {
+  Write-Step 'Desligar a suspensao automatica (ligado a corrente)'
+  & powercfg.exe /change standby-timeout-ac 0 | Out-Null
+  & powercfg.exe /change hibernate-timeout-ac 0 | Out-Null
+  Write-Ok 'O computador ja nao suspende quando esta ligado a corrente'
+}
+
 function Install-Build {
   $node = Assert-Node
   Invoke-Build $node -SemMigrar
@@ -248,7 +321,8 @@ function Install-Iis {
   if (Get-Command Install-WindowsFeature -ErrorAction SilentlyContinue) {
     Install-WindowsFeature -Name Web-Server, Web-Mgmt-Console | Out-Null
   } else {
-    Enable-WindowsOptionalFeature -Online -FeatureName IIS-WebServerRole, IIS-WebServer, IIS-ManagementConsole -All -NoRestart | Out-Null
+    $features = @('IIS-WebServerRole', 'IIS-WebServer', 'IIS-CommonHttpFeatures', 'IIS-StaticContent', 'IIS-DefaultDocument', 'IIS-HttpErrors', 'IIS-HealthAndDiagnostics', 'IIS-HttpLogging', 'IIS-Security', 'IIS-RequestFiltering', 'IIS-Performance', 'IIS-HttpCompressionStatic', 'IIS-WebServerManagementTools', 'IIS-ManagementConsole')
+    Enable-WindowsOptionalFeature -Online -FeatureName $features -All -NoRestart | Out-Null
   }
   Write-Ok 'IIS instalado'
 }
@@ -274,7 +348,10 @@ function Enable-IisProxy {
 function Install-Requirement([string]$Id) {
   switch ($Id) {
     'node' { Install-NodeJs }
+    'energia' { Set-NoSleep }
     'db-servidor' { Install-DbServer }
+    'db-cliente' { Install-DbTools @('Client', 'HeidiSQL') 'Ferramentas mysql, mysqldump e HeidiSQL' }
+    'db-gestor' { Install-DbTools @('HeidiSQL') 'HeidiSQL' }
     'compilacao' { Install-Build }
     'iis' { Install-Iis }
     'iis-rewrite' { Install-IisModule $UrlRewriteMsi 'rewrite_amd64_en-US.msi' 'IIS URL Rewrite' }
@@ -292,7 +369,7 @@ function Write-Requirements($List) {
 
 function Install-MissingRequirements([switch]$Dominio) {
   if (-not (Test-Administrator)) { throw 'Abre o PowerShell como Administrador para instalar os requisitos.' }
-  foreach ($id in @('node', 'db-servidor', 'compilacao', 'iis', 'iis-rewrite', 'iis-arr', 'iis-proxy')) {
+  foreach ($id in @('energia', 'node', 'db-servidor', 'db-cliente', 'db-gestor', 'compilacao', 'iis', 'iis-rewrite', 'iis-arr', 'iis-proxy')) {
     $item = Get-Requirements -Dominio:$Dominio | Where-Object { $_.Id -eq $id }
     if ($item -and -not $item.Ok -and $item.Instalavel) { Install-Requirement $id }
   }
