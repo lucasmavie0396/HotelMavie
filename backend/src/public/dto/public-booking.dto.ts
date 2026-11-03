@@ -1,6 +1,56 @@
+import { BookingKind } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsDateString, IsEmail, IsIn, IsInt, IsOptional, IsString, Length, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsDateString,
+  IsDefined,
+  IsEmail,
+  IsEnum,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Length,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateIf,
+  ValidateNested,
+} from 'class-validator';
 import { CompanionDto } from '../../reservations/dto/companion.dto';
+import { CompanyDto, MAX_GROUP_ROOMS, OccupantDto } from '../../reservations/dto/group-booking.dto';
+
+export class PublicRoomRequestDto {
+  @IsString()
+  @MaxLength(60)
+  roomType: string;
+
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  adults: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(20)
+  children?: number;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => OccupantDto)
+  occupant?: OccupantDto;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(19)
+  @ValidateNested({ each: true })
+  @Type(() => CompanionDto)
+  companions?: CompanionDto[];
+}
 
 export class PublicAvailabilityQueryDto {
   @IsDateString({ strict: true })
@@ -28,14 +78,34 @@ export class PublicBookingDto {
   @Length(10, 10)
   checkOut: string;
 
+  @IsOptional()
+  @IsEnum(BookingKind)
+  kind?: BookingKind;
+
+  @ValidateIf((dto: PublicBookingDto) => dto.kind === BookingKind.CORPORATE)
+  @IsDefined()
+  @ValidateNested()
+  @Type(() => CompanyDto)
+  company?: CompanyDto;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_GROUP_ROOMS)
+  @ValidateNested({ each: true })
+  @Type(() => PublicRoomRequestDto)
+  rooms?: PublicRoomRequestDto[];
+
+  @ValidateIf((dto: PublicBookingDto) => !dto.rooms)
   @IsString()
   @MaxLength(60)
-  roomType: string;
+  roomType?: string;
 
+  @ValidateIf((dto: PublicBookingDto) => !dto.rooms)
   @IsInt()
   @Min(1)
   @Max(20)
-  adults: number;
+  adults?: number;
 
   @IsOptional()
   @IsInt()
@@ -75,15 +145,17 @@ export class PublicBookingDto {
   @MaxLength(60)
   nationality?: string;
 
+  @ValidateIf((dto: PublicBookingDto) => dto.kind !== BookingKind.CORPORATE)
   @IsString()
   @MinLength(2)
   @MaxLength(30)
-  documentType: string;
+  documentType?: string;
 
+  @ValidateIf((dto: PublicBookingDto) => dto.kind !== BookingKind.CORPORATE)
   @IsString()
   @MinLength(3)
   @MaxLength(50)
-  documentNumber: string;
+  documentNumber?: string;
 
   @IsOptional()
   @IsString()

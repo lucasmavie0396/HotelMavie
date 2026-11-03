@@ -1,5 +1,5 @@
 import { BadRequestException, Body, ConflictException, Controller, Get, NotFoundException, Param, Post, Query } from '@nestjs/common';
-import { PaymentMethod, Prisma, ReservationSource } from '@prisma/client';
+import { BookingKind, Hotel, PaymentMethod, Prisma, ReservationSource } from '@prisma/client';
 import { Throttle } from '@nestjs/throttler';
 import { PaymentTypesService } from '../billing/payment-types';
 import { Public } from '../common/decorators/public.decorator';
@@ -8,8 +8,8 @@ import { toMoney } from '../common/money';
 import { MailService } from '../mail/mail.service';
 import { bookingRequestEmail, newBookingAlertEmail } from '../mail/templates';
 import { PrismaService } from '../prisma/prisma.service';
-import { ReservationsService } from '../reservations/reservations.service';
-import { PublicAvailabilityQueryDto, PublicBookingDto } from './dto/public-booking.dto';
+import { assertCompanions, groupSummary, ReservationsService } from '../reservations/reservations.service';
+import { PublicAvailabilityQueryDto, PublicBookingDto, PublicRoomRequestDto } from './dto/public-booking.dto';
 
 const MAX_TYPE_IMAGES = 8;
 
@@ -90,37 +90,30 @@ export class PublicController {
     if (dto.depositPaymentTypeId && !(await this.depositTypes(hotel.id)).some((type) => type.id === dto.depositPaymentTypeId)) {
       throw new BadRequestException('Forma de pagamento invalida');
     }
-    const children = dto.children ?? 0;
-    const companions = dto.companions ?? [];
-    if (companions.length > dto.adults + children - 1) {
-      throw new BadRequestException(`A reserva e para ${dto.adults + children} pessoa(s): no maximo ${dto.adults + children - 1} acompanhante(s) alem do titular`);
+    const corporate = dto.kind === BookingKind.CORPORATE;
+    const requests: PublicRoomRequestDto[] = dto.rooms ?? [{ roomType: dto.roomType!, adults: dto.adults!, children: dto.children, companions: dto.companions }];
+    for (const request of requests) {
+      assertCompanions(request.adults, request.children ?? 0, request.companions);
+      if (corporate && !(request.occupant?.documentType?.trim() && request.occupant.documentNumber?.trim())) {
+        throw new BadRequestException('Numa reserva empresarial indica, em cada quarto, o funcionario que la fica e o documento dele');
+      }
     }
-    if (companions.filter((companion) => companion.isChild).length > children) {
-      throw new BadRequestException('Ha mais criancas nos acompanhantes do que na reserva');
+
+    const email = dto.email.toLowerCase();
+    if (corporate || requests.length > 1) {
+      return this.bookGroup(hotel, dto, requests, email, checkIn, checkOut, needsDeposit ? reference : undefined);
     }
-    const candidates = await this.reservations.findAvailableRooms(hotel.id, checkIn, checkOut, dto.adults + children, dto.roomType);
+
+    const children = dto.children ?? requests[0].children ?? 0;
+    const adults = requests[0].adults;
+    const roomType = requests[0].roomType;
+    const companions = requests[0].companions ?? [];
+    const candidates = await this.reservations.findAvailableRooms(hotel.id, checkIn, checkOut, adults + children, roomType);
     if (!candidates.length) {
       throw new ConflictException('Ja nao ha quartos deste tipo disponiveis para essas datas');
     }
 
-    const email = dto.email.toLowerCase();
-    const text = (value?: string) => value?.trim() || null;
-    const personal = {
-      phone: text(dto.phone),
-      birthDate: dto.birthDate ? new Date(`${dto.birthDate}T00:00:00.000Z`) : null,
-      nationality: text(dto.nationality),
-      documentType: text(dto.documentType),
-      documentNumber: text(dto.documentNumber),
-      taxId: text(dto.taxId),
-      address: text(dto.address),
-    };
-    const existing = await this.prisma.guest.findFirst({ where: { hotelId: hotel.id, email } });
-    const guest = existing
-      ? await this.prisma.guest.update({
-          where: { id: existing.id },
-          data: Object.fromEntries(Object.entries(personal).filter(([key, value]) => value !== null && !existing[key as keyof typeof personal])),
-        })
-      : await this.prisma.guest.create({ data: { hotelId: hotel.id, firstName: dto.firstName.trim(), lastName: dto.lastName.trim(), email, ...personal } });
+    const guest = await this.titularGuest(hotel.id, dto, email);
 
     for (const room of candidates) {
       try {
@@ -130,7 +123,7 @@ export class PublicController {
           roomId: room.id,
           checkIn,
           checkOut,
-          adults: dto.adults,
+          adults,
           children,
           source: ReservationSource.ONLINE,
           notes: dto.notes,
@@ -144,7 +137,7 @@ export class PublicController {
           roomType: room.type,
           checkIn: dto.checkIn,
           checkOut: dto.checkOut,
-          adults: dto.adults,
+          adults,
           children,
           totalAmount: reservation.totalAmount,
           depositAmount: reservation.depositAmount,
@@ -174,6 +167,85 @@ export class PublicController {
       }
     }
     throw new ConflictException('Ja nao ha quartos deste tipo disponiveis para essas datas');
+  }
+
+  private async bookGroup(
+    hotel: Hotel,
+    dto: PublicBookingDto,
+    requests: PublicRoomRequestDto[],
+    email: string,
+    checkIn: Date,
+    checkOut: Date,
+    reference?: string,
+  ) {
+    const corporate = dto.kind === BookingKind.CORPORATE;
+    const contactName = `${dto.firstName.trim()} ${dto.lastName.trim()}`;
+    const titular = corporate ? null : await this.titularGuest(hotel.id, dto, email);
+    const rooms = [];
+    for (const request of requests) {
+      const guestId = request.occupant ? await this.reservations.resolveOccupant(this.prisma, hotel.id, request.occupant) : titular!.id;
+      rooms.push({ roomType: request.roomType, adults: request.adults, children: request.children ?? 0, guestId, companions: request.companions });
+    }
+    const group = await this.reservations.bookGroup({
+      hotelId: hotel.id,
+      kind: corporate ? BookingKind.CORPORATE : BookingKind.INDIVIDUAL,
+      company: corporate
+        ? { ...dto.company!, email: dto.company!.email || email, phone: dto.company!.phone || dto.phone, contactName: dto.company!.contactName || contactName }
+        : undefined,
+      checkIn,
+      checkOut,
+      source: ReservationSource.ONLINE,
+      notes: dto.notes,
+      locale: dto.locale ?? 'pt',
+      deposit: reference ? { percent: hotel.depositPercent, reference, paymentTypeId: dto.depositPaymentTypeId } : undefined,
+      rooms,
+    });
+    const stay = { ...groupSummary(group), guestName: corporate ? group.companyName! : contactName };
+    const lang = dto.locale === 'en' ? 'en' : 'pt';
+    this.mail.queue({ hotelId: hotel.id, kind: 'BOOKING_REQUEST', to: email, replyTo: hotel.email, relatedId: group.reservations[0].id, ...bookingRequestEmail(hotel, stay, lang) });
+    if (hotel.email) {
+      this.mail.queue({ hotelId: hotel.id, kind: 'BOOKING_ALERT', to: hotel.email, replyTo: email, relatedId: group.reservations[0].id, ...newBookingAlertEmail(hotel, stay, email) });
+    }
+    return {
+      code: group.code,
+      status: group.reservations[0].status,
+      checkIn: dto.checkIn,
+      checkOut: dto.checkOut,
+      roomType: stay.roomType,
+      totalAmount: stay.totalAmount,
+      depositAmount: stay.depositAmount,
+      depositReference: stay.depositReference,
+      currency: hotel.currency,
+      companyName: group.companyName,
+      rooms: group.reservations.map((reservation) => ({
+        code: reservation.code,
+        roomType: reservation.room.type,
+        adults: reservation.adults,
+        children: reservation.children,
+        guestName: `${reservation.guest.firstName} ${reservation.guest.lastName}`,
+        totalAmount: reservation.totalAmount,
+      })),
+    };
+  }
+
+  private async titularGuest(hotelId: number, dto: PublicBookingDto, email: string) {
+    const text = (value?: string) => value?.trim() || null;
+    const personal = {
+      phone: text(dto.phone),
+      birthDate: dto.birthDate ? new Date(`${dto.birthDate}T00:00:00.000Z`) : null,
+      nationality: text(dto.nationality),
+      documentType: text(dto.documentType),
+      documentNumber: text(dto.documentNumber),
+      taxId: text(dto.taxId),
+      address: text(dto.address),
+    };
+    const existing = await this.prisma.guest.findFirst({ where: { hotelId, email } });
+    return existing
+      ? this.prisma.guest.update({
+          where: { id: existing.id },
+          data: Object.fromEntries(Object.entries(personal).filter(([key, value]) => value !== null && !existing[key as keyof typeof personal])),
+        })
+      : this.prisma.guest.create({ data: { hotelId, firstName: dto.firstName.trim(), lastName: dto.lastName.trim(), email, ...personal } });
   }
 
   private async depositTypes(hotelId: number) {

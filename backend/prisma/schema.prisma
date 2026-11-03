@@ -52,6 +52,7 @@ model Hotel {
   rooms                  Room[]
   guests                 Guest[]
   reservations           Reservation[]
+  reservationGroups      ReservationGroup[]
   taxRates               TaxRate[]
   charges                Charge[]
   payments               Payment[]
@@ -225,11 +226,39 @@ model Guest {
   @@map("guests")
 }
 
+enum BookingKind {
+  INDIVIDUAL
+  CORPORATE
+}
+
+model ReservationGroup {
+  id             Int           @id @default(autoincrement())
+  code           String        @unique @db.VarChar(20)
+  hotelId        Int
+  hotel          Hotel         @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  kind           BookingKind   @default(INDIVIDUAL)
+  companyName    String?       @db.VarChar(200)
+  companyTaxId   String?       @db.VarChar(30)
+  companyAddress String?       @db.VarChar(255)
+  companyEmail   String?       @db.VarChar(150)
+  companyPhone   String?       @db.VarChar(30)
+  contactName    String?       @db.VarChar(150)
+  notes          String?       @db.Text
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  reservations   Reservation[]
+
+  @@index([hotelId, companyTaxId])
+  @@map("reservation_groups")
+}
+
 model Reservation {
   id                   Int                    @id @default(autoincrement())
   code                 String                 @unique @db.VarChar(20)
   hotelId              Int
   hotel                Hotel                  @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  groupId              Int?
+  group                ReservationGroup?      @relation(fields: [groupId], references: [id], onDelete: SetNull)
   guestId              Int
   guest                Guest                  @relation(fields: [guestId], references: [id], onDelete: Restrict)
   roomId               Int
@@ -270,6 +299,7 @@ model Reservation {
   @@index([hotelId, checkOut])
   @@index([roomId, checkIn, checkOut])
   @@index([guestId])
+  @@index([groupId])
   @@map("reservations")
 }
 

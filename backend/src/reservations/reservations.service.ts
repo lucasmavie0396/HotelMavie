@@ -1,16 +1,17 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, ReservationSource, ReservationStatus, RoomStatus } from '@prisma/client';
+import { BookingKind, Prisma, ReservationSource, ReservationStatus, RoomStatus } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { JwtPayload } from '../auth/jwt-payload';
 import { FolioService } from '../billing/folio.service';
 import { addDays, assertStayRange, parseDate, todayUtc } from '../common/dates';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
-import { toMoney } from '../common/money';
+import { sumMoney, toMoney } from '../common/money';
 import { MailService } from '../mail/mail.service';
-import { bookingConfirmedEmail, mailLang } from '../mail/templates';
+import { bookingConfirmedEmail, mailLang, StaySummary } from '../mail/templates';
 import { PrismaService } from '../prisma/prisma.service';
 import { CompanionDto, companionData } from './dto/companion.dto';
 import { CreateReservationDto } from './dto/create-reservation.dto';
+import { CompanyDto, CreateGroupReservationDto, OccupantDto } from './dto/group-booking.dto';
 import { AvailabilityQueryDto, ReservationQueryDto } from './dto/reservation-query.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
 
@@ -30,7 +31,38 @@ export const reservationInclude = {
   depositPaymentType: { select: { id: true, name: true } },
   depositConfirmedBy: { select: { name: true } },
   companions: { orderBy: { id: 'asc' } },
+  group: {
+    select: { id: true, code: true, kind: true, companyName: true, companyTaxId: true, companyAddress: true, companyEmail: true, companyPhone: true, contactName: true },
+  },
 } satisfies Prisma.ReservationInclude;
+
+export const groupInclude = {
+  reservations: { include: reservationInclude, orderBy: { id: 'asc' } },
+} satisfies Prisma.ReservationGroupInclude;
+
+export interface GroupRoomInput {
+  roomId?: number;
+  roomType?: string;
+  adults: number;
+  children: number;
+  guestId: number;
+  pricePerNight?: number;
+  companions?: CompanionDto[];
+}
+
+export interface GroupBookingInput {
+  hotelId: number;
+  kind: BookingKind;
+  company?: CompanyDto;
+  checkIn: Date;
+  checkOut: Date;
+  source: ReservationSource;
+  notes?: string;
+  locale?: string;
+  createdById?: number;
+  deposit?: BookingInput['deposit'];
+  rooms: GroupRoomInput[];
+}
 
 export interface BookingInput {
   hotelId: number;
@@ -47,10 +79,59 @@ export interface BookingInput {
   createdById?: number;
   deposit?: { percent: Prisma.Decimal; reference?: string; paymentTypeId?: number | null };
   companions?: CompanionDto[];
+  groupId?: number;
 }
 
-function generateCode() {
-  return `R${randomBytes(4).toString('hex').toUpperCase()}`;
+function generateCode(prefix = 'R') {
+  return `${prefix}${randomBytes(4).toString('hex').toUpperCase()}`;
+}
+
+export function assertCompanions(adults: number, children: number, companions: CompanionDto[] = []) {
+  if (companions.length > adults + children - 1) {
+    throw new BadRequestException(`O quarto e para ${adults + children} pessoa(s): no maximo ${adults + children - 1} acompanhante(s) alem do hospede principal`);
+  }
+  if (companions.filter((companion) => companion.isChild).length > children) {
+    throw new BadRequestException('Ha mais criancas nos acompanhantes do que no quarto');
+  }
+}
+
+type GroupWithReservations = Prisma.ReservationGroupGetPayload<{ include: typeof groupInclude }>;
+
+export function groupSummary(group: GroupWithReservations, onlyIds?: number[]): StaySummary {
+  const list = onlyIds ? group.reservations.filter((reservation) => onlyIds.includes(reservation.id)) : group.reservations;
+  const counts = new Map<string, number>();
+  for (const reservation of list) {
+    counts.set(reservation.room.type, (counts.get(reservation.room.type) ?? 0) + 1);
+  }
+  const first = list[0];
+  const deposits = list.map((reservation) => reservation.depositAmount).filter((value): value is Prisma.Decimal => value !== null);
+  return {
+    code: group.code,
+    guestName: group.kind === BookingKind.CORPORATE && group.companyName ? group.companyName : `${first.guest.firstName} ${first.guest.lastName}`,
+    roomType: [...counts].map(([type, count]) => (count > 1 ? `${count} x ${type}` : type)).join(', '),
+    checkIn: first.checkIn,
+    checkOut: first.checkOut,
+    adults: list.reduce((total, reservation) => total + reservation.adults, 0),
+    children: list.reduce((total, reservation) => total + reservation.children, 0),
+    totalAmount: sumMoney(list.map((reservation) => reservation.totalAmount)),
+    depositAmount: deposits.length ? sumMoney(deposits) : null,
+    depositReference: first.depositReference,
+  };
+}
+
+function companyData(company?: CompanyDto) {
+  const text = (value?: string) => value?.trim() || null;
+  if (!company) {
+    return {};
+  }
+  return {
+    companyName: company.name.trim(),
+    companyTaxId: company.taxId.replace(/\s/g, ''),
+    companyAddress: text(company.address),
+    companyEmail: company.email?.trim().toLowerCase() || null,
+    companyPhone: text(company.phone),
+    contactName: text(company.contactName),
+  };
 }
 
 function overlapWhere(checkIn: Date, checkOut: Date, excludeId?: number): Prisma.ReservationWhereInput {
@@ -84,6 +165,8 @@ export class ReservationsService {
               { code: { contains: q } },
               { guest: { firstName: { contains: q } } },
               { guest: { lastName: { contains: q } } },
+              { group: { code: { contains: q } } },
+              { group: { companyName: { contains: q } } },
             ],
           }
         : {}),
@@ -115,8 +198,17 @@ export class ReservationsService {
     return this.findAvailableRooms(hotelId, checkIn, checkOut, query.guests ?? 1, undefined, query.excludeReservationId);
   }
 
-  findAvailableRooms(hotelId: number, checkIn: Date, checkOut: Date, guests: number, type?: string, excludeId?: number, withImages = false) {
-    return this.prisma.room.findMany({
+  findAvailableRooms(
+    hotelId: number,
+    checkIn: Date,
+    checkOut: Date,
+    guests: number,
+    type?: string,
+    excludeId?: number,
+    withImages = false,
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
+    return tx.room.findMany({
       include: withImages ? { images: { select: { file: true }, orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] } } : undefined,
       where: {
         hotelId,
@@ -153,43 +245,225 @@ export class ReservationsService {
     });
   }
 
-  async book(input: BookingInput) {
-    const nights = assertStayRange(input.checkIn, input.checkOut);
-    return this.prisma.$transaction(async (tx) => {
-      const room = await this.lockRoom(tx, input.roomId, input.hotelId);
-      this.assertCapacity(room.capacity, input.adults, input.children);
-      await this.assertRoomFree(tx, room.id, input.checkIn, input.checkOut);
+  book(input: BookingInput) {
+    return this.prisma.$transaction((tx) => this.bookInTx(tx, input));
+  }
 
-      const pricePerNight = new Prisma.Decimal(input.pricePerNight ?? room.pricePerNight);
-      const totalAmount = pricePerNight.mul(nights);
-      const deposit = input.deposit
-        ? {
-            depositAmount: toMoney(totalAmount.mul(input.deposit.percent).div(100)),
-            depositReference: input.deposit.reference,
-            depositPaymentTypeId: input.deposit.paymentTypeId ?? null,
-          }
-        : {};
-      return tx.reservation.create({
-        data: {
-          code: generateCode(),
-          hotelId: input.hotelId,
-          guestId: input.guestId,
-          roomId: room.id,
-          checkIn: input.checkIn,
-          checkOut: input.checkOut,
-          adults: input.adults,
-          children: input.children,
-          source: input.source,
-          pricePerNight,
-          totalAmount,
-          notes: input.notes,
-          locale: input.locale,
-          createdById: input.createdById,
-          ...deposit,
-          ...(input.companions?.length ? { companions: { create: input.companions.map(companionData) } } : {}),
-        },
-        include: reservationInclude,
+  async findGroup(id: number, user: JwtPayload) {
+    const group = await this.prisma.reservationGroup.findUnique({ where: { id }, include: groupInclude });
+    if (!group || !canAccessHotel(user, group.hotelId)) {
+      throw new NotFoundException('Grupo de reservas nao encontrado');
+    }
+    return group;
+  }
+
+  async lastCompany(taxId: string, user: JwtPayload, hotelId?: number) {
+    const scope = resolveHotelScope(user, hotelId);
+    return this.prisma.reservationGroup.findFirst({
+      where: { hotelId: scope, kind: BookingKind.CORPORATE, companyTaxId: taxId.replace(/\s/g, '') },
+      orderBy: { id: 'desc' },
+      select: { companyName: true, companyTaxId: true, companyAddress: true, companyEmail: true, companyPhone: true, contactName: true },
+    });
+  }
+
+  async createGroup(dto: CreateGroupReservationDto, user: JwtPayload) {
+    const titular = dto.guestId ? await this.prisma.guest.findUnique({ where: { id: dto.guestId } }) : null;
+    if (dto.guestId && (!titular || !canAccessHotel(user, titular.hotelId))) {
+      throw new NotFoundException('Hospede nao encontrado');
+    }
+    const hotelId = titular?.hotelId ?? resolveHotelScope(user, dto.hotelId);
+    if (!hotelId) {
+      throw new BadRequestException('hotelId e obrigatorio');
+    }
+    if (dto.kind === BookingKind.INDIVIDUAL && !titular) {
+      throw new BadRequestException('Escolhe o hospede titular da reserva');
+    }
+    if (new Set(dto.rooms.map((room) => room.roomId)).size !== dto.rooms.length) {
+      throw new BadRequestException('O mesmo quarto aparece duas vezes na reserva');
+    }
+    const checkIn = parseDate(dto.checkIn);
+    if (checkIn < todayUtc()) {
+      throw new BadRequestException('Nao e possivel criar reservas com entrada no passado');
+    }
+    for (const room of dto.rooms) {
+      assertCompanions(room.adults, room.children ?? 0, room.companions);
+      if (dto.kind === BookingKind.CORPORATE && !room.guestId && !room.occupant) {
+        throw new BadRequestException('Numa reserva empresarial cada quarto precisa do funcionario que la fica');
+      }
+    }
+    const roomGuestIds = dto.rooms.map((room) => room.guestId).filter((id): id is number => !!id);
+    if (roomGuestIds.length) {
+      const found = await this.prisma.guest.count({ where: { id: { in: roomGuestIds }, hotelId } });
+      if (found !== new Set(roomGuestIds).size) {
+        throw new NotFoundException('Hospede nao encontrado');
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const rooms: GroupRoomInput[] = [];
+      for (const room of dto.rooms) {
+        const guestId = room.guestId ?? (room.occupant ? await this.resolveOccupant(tx, hotelId, room.occupant) : titular!.id);
+        rooms.push({ roomId: room.roomId, adults: room.adults, children: room.children ?? 0, pricePerNight: room.pricePerNight, guestId, companions: room.companions });
+      }
+      return this.bookGroupInTx(tx, {
+        hotelId,
+        kind: dto.kind,
+        company: dto.kind === BookingKind.CORPORATE ? dto.company : undefined,
+        checkIn,
+        checkOut: parseDate(dto.checkOut),
+        source: dto.source ?? ReservationSource.DESK,
+        notes: dto.notes,
+        createdById: user.sub,
+        rooms,
       });
+    });
+  }
+
+  bookGroup(input: GroupBookingInput) {
+    return this.prisma.$transaction((tx) => this.bookGroupInTx(tx, input));
+  }
+
+  async resolveOccupant(tx: Prisma.TransactionClient, hotelId: number, occupant: OccupantDto) {
+    const text = (value?: string) => value?.trim() || null;
+    const documentNumber = text(occupant.documentNumber);
+    const email = occupant.email?.trim().toLowerCase() || null;
+    const personal = {
+      email,
+      phone: text(occupant.phone),
+      birthDate: occupant.birthDate ? new Date(`${occupant.birthDate}T00:00:00.000Z`) : null,
+      nationality: text(occupant.nationality),
+      documentType: text(occupant.documentType),
+      documentNumber,
+    };
+    const existing = documentNumber
+      ? await tx.guest.findFirst({ where: { hotelId, documentNumber } })
+      : email
+        ? await tx.guest.findFirst({ where: { hotelId, email } })
+        : null;
+    if (existing) {
+      const missing = Object.fromEntries(Object.entries(personal).filter(([key, value]) => value !== null && !existing[key as keyof typeof personal]));
+      if (Object.keys(missing).length) {
+        await tx.guest.update({ where: { id: existing.id }, data: missing });
+      }
+      return existing.id;
+    }
+    const created = await tx.guest.create({ data: { hotelId, firstName: occupant.firstName.trim(), lastName: occupant.lastName.trim(), ...personal } });
+    return created.id;
+  }
+
+  private async bookGroupInTx(tx: Prisma.TransactionClient, input: GroupBookingInput) {
+    const group = await tx.reservationGroup.create({
+      data: { code: generateCode('G'), hotelId: input.hotelId, kind: input.kind, notes: input.notes, ...companyData(input.company) },
+    });
+    const used = new Set<number>();
+    for (const room of input.rooms) {
+      const candidates = room.roomId
+        ? [room.roomId]
+        : (await this.findAvailableRooms(input.hotelId, input.checkIn, input.checkOut, room.adults + room.children, room.roomType, undefined, false, tx))
+            .map((candidate) => candidate.id)
+            .filter((id) => !used.has(id));
+      let booked = false;
+      for (const roomId of candidates) {
+        try {
+          const reservation = await this.bookInTx(tx, {
+            hotelId: input.hotelId,
+            guestId: room.guestId,
+            roomId,
+            checkIn: input.checkIn,
+            checkOut: input.checkOut,
+            adults: room.adults,
+            children: room.children,
+            source: input.source,
+            pricePerNight: room.pricePerNight,
+            notes: input.notes,
+            locale: input.locale,
+            createdById: input.createdById,
+            deposit: input.deposit,
+            companions: room.companions,
+            groupId: group.id,
+          });
+          used.add(reservation.roomId);
+          booked = true;
+          break;
+        } catch (error) {
+          if (!(error instanceof ConflictException) || room.roomId) {
+            throw error;
+          }
+        }
+      }
+      if (!booked) {
+        throw new ConflictException(room.roomType ? `Ja nao ha quartos ${room.roomType} livres para essas datas e ocupantes` : 'O quarto ja nao esta livre');
+      }
+    }
+    return tx.reservationGroup.findUniqueOrThrow({ where: { id: group.id }, include: groupInclude });
+  }
+
+  async confirmGroup(id: number, user: JwtPayload) {
+    const group = await this.findGroup(id, user);
+    const pending = group.reservations.filter((reservation) => reservation.status === ReservationStatus.PENDING);
+    if (!pending.length) {
+      throw new ConflictException('Nao ha quartos por confirmar neste grupo');
+    }
+    await this.prisma.reservation.updateMany({ where: { id: { in: pending.map((reservation) => reservation.id) }, status: ReservationStatus.PENDING }, data: { status: ReservationStatus.CONFIRMED } });
+    const updated = await this.findGroup(id, user);
+    const to = group.companyEmail ?? pending[0].guest.email;
+    if (to) {
+      const hotel = await this.prisma.hotel.findUniqueOrThrow({ where: { id: group.hotelId } });
+      const content = bookingConfirmedEmail(hotel, groupSummary(updated, pending.map((reservation) => reservation.id)), mailLang(pending[0].locale));
+      this.mail.queue({ hotelId: hotel.id, kind: 'BOOKING_CONFIRMED', to, replyTo: hotel.email, relatedId: pending[0].id, ...content });
+    }
+    return updated;
+  }
+
+  async cancelGroup(id: number, user: JwtPayload) {
+    const group = await this.findGroup(id, user);
+    const open = group.reservations.filter((reservation) => EDITABLE_STATUSES.includes(reservation.status));
+    if (!open.length) {
+      throw new ConflictException('Nao ha quartos por cancelar neste grupo');
+    }
+    await this.prisma.reservation.updateMany({
+      where: { id: { in: open.map((reservation) => reservation.id) }, status: { in: EDITABLE_STATUSES } },
+      data: { status: ReservationStatus.CANCELLED, cancelledAt: new Date() },
+    });
+    return this.findGroup(id, user);
+  }
+
+  private async bookInTx(tx: Prisma.TransactionClient, input: BookingInput) {
+    const nights = assertStayRange(input.checkIn, input.checkOut);
+    const room = await this.lockRoom(tx, input.roomId, input.hotelId);
+    this.assertCapacity(room.capacity, input.adults, input.children);
+    await this.assertRoomFree(tx, room.id, input.checkIn, input.checkOut);
+
+    const pricePerNight = new Prisma.Decimal(input.pricePerNight ?? room.pricePerNight);
+    const totalAmount = pricePerNight.mul(nights);
+    const deposit = input.deposit
+      ? {
+          depositAmount: toMoney(totalAmount.mul(input.deposit.percent).div(100)),
+          depositReference: input.deposit.reference,
+          depositPaymentTypeId: input.deposit.paymentTypeId ?? null,
+        }
+      : {};
+    return tx.reservation.create({
+      data: {
+        code: generateCode(),
+        hotelId: input.hotelId,
+        groupId: input.groupId,
+        guestId: input.guestId,
+        roomId: room.id,
+        checkIn: input.checkIn,
+        checkOut: input.checkOut,
+        adults: input.adults,
+        children: input.children,
+        source: input.source,
+        pricePerNight,
+        totalAmount,
+        notes: input.notes,
+        locale: input.locale,
+        createdById: input.createdById,
+        ...deposit,
+        ...(input.companions?.length ? { companions: { create: input.companions.map(companionData) } } : {}),
+      },
+      include: reservationInclude,
     });
   }
 

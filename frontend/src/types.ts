@@ -101,6 +101,27 @@ export interface Reservation {
   depositPaymentType: { id: number; name: string } | null;
   depositConfirmedBy: { name: string } | null;
   companions: Companion[];
+  groupId: number | null;
+  group: ReservationGroupInfo | null;
+}
+
+export type BookingKind = 'INDIVIDUAL' | 'CORPORATE';
+
+export interface ReservationGroupInfo {
+  id: number;
+  code: string;
+  kind: BookingKind;
+  companyName: string | null;
+  companyTaxId: string | null;
+  companyAddress: string | null;
+  companyEmail: string | null;
+  companyPhone: string | null;
+  contactName: string | null;
+}
+
+export interface ReservationGroup extends ReservationGroupInfo {
+  notes: string | null;
+  reservations: Reservation[];
 }
 
 export interface Companion {

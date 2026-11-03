@@ -26,6 +26,7 @@ const hasCash = useOwnCash(registers);
 
 const money = (value: string | number) => formatMoney(value, hotels.currency);
 const selected = computed(() => inHouse.value.find((reservation) => reservation.id === selectedId.value) ?? null);
+const selectedCompany = computed(() => (selected.value?.group?.kind === 'CORPORATE' ? selected.value.group : null));
 const uninvoiced = computed(() => folio.value?.charges.filter((charge) => !charge.invoiceId) ?? []);
 const uninvoicedTotal = computed(() => uninvoiced.value.reduce((sum, charge) => sum + Number(charge.total), 0));
 const openSessions = computed(() =>
@@ -59,7 +60,7 @@ async function loadFolio() {
       amount: Math.max(Number(folio.value.balance), 0),
       reference: '',
       invoice: uninvoiced.value.length > 0,
-      customerTaxId: '',
+      customerTaxId: selectedCompany.value?.companyTaxId ?? '',
     });
   } catch (e) {
     error.value = errorMessage(e);
@@ -79,6 +80,9 @@ async function receive() {
         type: 'INVOICE_RECEIPT',
         chargeIds: uninvoiced.value.map((charge) => charge.id),
         customerTaxId: pay.customerTaxId || undefined,
+        ...(selectedCompany.value && pay.customerTaxId === selectedCompany.value.companyTaxId
+          ? { customerName: selectedCompany.value.companyName ?? undefined, customerAddress: selectedCompany.value.companyAddress ?? undefined }
+          : {}),
       });
       invoiceId = data.id;
     }

@@ -6,6 +6,7 @@ import { useRoute } from 'vue-router';
 import CompanionsPanel from '@/components/CompanionsPanel.vue';
 import DepositPanel from '@/components/DepositPanel.vue';
 import FolioPanel from '@/components/FolioPanel.vue';
+import GroupPanel from '@/components/GroupPanel.vue';
 import ReservationActions from '@/components/ReservationActions.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { api, errorMessage } from '@/services/api';
@@ -117,6 +118,8 @@ onMounted(load);
         </p>
       </div>
     </div>
+
+    <GroupPanel :reservation="reservation" @updated="load" />
 
     <CompanionsPanel :reservation="reservation" @updated="fill" />
 

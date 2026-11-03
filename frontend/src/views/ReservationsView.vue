@@ -161,7 +161,12 @@ onMounted(load);
                 {{ reservation.code }}
               </RouterLink>
             </td>
-            <td class="px-4 py-3">{{ reservation.guest.firstName }} {{ reservation.guest.lastName }}</td>
+            <td class="px-4 py-3">
+              {{ reservation.guest.firstName }} {{ reservation.guest.lastName }}
+              <span v-if="reservation.group" class="mt-0.5 block text-xs" :class="reservation.group.kind === 'CORPORATE' ? 'text-violet-700' : 'text-slate-500'">
+                {{ reservation.group.kind === 'CORPORATE' ? reservation.group.companyName : t('group.badge') }} · {{ reservation.group.code }}
+              </span>
+            </td>
             <td class="px-4 py-3">{{ reservation.room.number }} <span class="text-slate-500">{{ reservation.room.type }}</span></td>
             <td class="px-4 py-3">{{ formatDate(reservation.checkIn) }}</td>
             <td class="px-4 py-3">{{ formatDate(reservation.checkOut) }}</td>

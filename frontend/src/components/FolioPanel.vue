@@ -85,11 +85,12 @@ function openPayment() {
 }
 
 function openInvoice() {
+  const company = props.reservation.group?.kind === 'CORPORATE' ? props.reservation.group : null;
   Object.assign(invoice, {
     type: Number(folio.value?.balance ?? 0) <= 0 ? 'INVOICE_RECEIPT' : 'INVOICE',
-    customerName: `${props.reservation.guest.firstName} ${props.reservation.guest.lastName}`,
-    customerTaxId: '',
-    customerAddress: '',
+    customerName: company?.companyName ?? `${props.reservation.guest.firstName} ${props.reservation.guest.lastName}`,
+    customerTaxId: company?.companyTaxId ?? '',
+    customerAddress: company?.companyAddress ?? '',
   });
   panel.value = 'invoice';
 }
