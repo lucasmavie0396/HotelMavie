@@ -5,6 +5,7 @@ import { IsEnum, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min } from 'c
 import { JwtPayload } from '../auth/jwt-payload';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { sumMoney, toMoney } from '../common/money';
+import { forUpdate, lockHint } from '../prisma/database';
 import { PrismaService } from '../prisma/prisma.service';
 
 export class CreateRegisterDto {
@@ -84,7 +85,7 @@ export class CashService {
       throw new NotFoundException('Caixa nao encontrada');
     }
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM cash_registers WHERE id = ${registerId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM cash_registers ${lockHint()} WHERE id = ${registerId} ${forUpdate()}`;
       const open = await tx.cashSession.findFirst({ where: { registerId, closedAt: null } });
       if (open) {
         throw new ConflictException('Esta caixa ja esta aberta');

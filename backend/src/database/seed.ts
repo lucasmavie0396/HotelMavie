@@ -1,8 +1,9 @@
+import { createPrismaClient } from '../prisma/database';
 import 'dotenv/config';
-import { PrismaClient, UserRole } from '@prisma/client';
+import { UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 const ROOMS = [
   { number: '101', type: 'Standard', capacity: 2, pricePerNight: 60, floor: 1 },

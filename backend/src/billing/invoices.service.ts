@@ -7,6 +7,7 @@ import { JwtPayload } from '../auth/jwt-payload';
 import { addDays, parseDate } from '../common/dates';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { splitGross, sumMoney } from '../common/money';
+import { forUpdate, lockHint } from '../prisma/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreditNoteDto, InvoiceQueryDto, IssueInvoiceDto } from './billing.dto';
 import { requireOpenCash } from './cash-guard';
@@ -32,6 +33,15 @@ export const invoiceInclude = {
   creditNotes: { select: { id: true, fullNumber: true } },
 } satisfies Prisma.InvoiceInclude;
 
+export async function createSeriesIfMissing(client: Prisma.TransactionClient, hotelId: number, type: InvoiceType, code: string) {
+  if (await client.invoiceSeries.findUnique({ where: { hotelId_type_code: { hotelId, type, code } }, select: { id: true } })) return;
+  try {
+    await client.invoiceSeries.create({ data: { hotelId, type, code } });
+  } catch (error) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') throw error;
+  }
+}
+
 export function seriesCode(date: Date) {
   return String(localParts(date).year);
 }
@@ -47,7 +57,7 @@ export class InvoicesService {
   async ensureSeries(hotelId: number, ...types: InvoiceType[]) {
     const code = seriesCode(new Date());
     for (const type of types) {
-      await this.prisma.$executeRaw`INSERT IGNORE INTO invoice_series (hotelId, type, code, nextNumber, active, createdAt) VALUES (${hotelId}, ${type}, ${code}, 1, true, NOW(3))`;
+      await createSeriesIfMissing(this.prisma, hotelId, type, code);
     }
   }
 
@@ -219,8 +229,8 @@ export class InvoicesService {
     const code = seriesCode(issuedAt);
     const [series] = await tx.$queryRaw<
       { id: number; code: string; nextNumber: number; lastHash: string | null; atValidationCode: string | null }[]
-    >`SELECT id, code, nextNumber, lastHash, atValidationCode FROM invoice_series
-      WHERE hotelId = ${input.hotelId} AND type = ${input.type} AND code = ${code} FOR UPDATE`;
+    >`SELECT id, code, nextNumber, lastHash, atValidationCode FROM invoice_series ${lockHint()}
+      WHERE hotelId = ${input.hotelId} AND type = ${input.type} AND code = ${code} ${forUpdate()}`;
     if (!series) {
       throw new ConflictException('Serie de faturacao indisponivel, tenta novamente');
     }

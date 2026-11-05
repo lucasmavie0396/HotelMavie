@@ -8,7 +8,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { PrismaService } from '../prisma/prisma.service';
-import { seriesCode } from '../billing/invoices.service';
+import { createSeriesIfMissing, seriesCode } from '../billing/invoices.service';
 import { AtSigningService } from './at-signing.service';
 import { SaftService } from './saft.service';
 
@@ -73,7 +73,7 @@ export class AtController {
       throw new BadRequestException('hotelId e obrigatorio');
     }
     const code = seriesCode(new Date());
-    await this.prisma.$executeRaw`INSERT IGNORE INTO invoice_series (hotelId, type, code, nextNumber, active, createdAt) VALUES (${hotelId}, ${dto.type}, ${code}, 1, true, NOW(3))`;
+    await createSeriesIfMissing(this.prisma, hotelId, dto.type, code);
     return this.prisma.invoiceSeries.findUniqueOrThrow({ where: { hotelId_type_code: { hotelId, type: dto.type, code } } });
   }
 

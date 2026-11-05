@@ -20,19 +20,22 @@ function Test-HotelInput([hashtable]$Data) {
   if ($Data.Password.Length -lt 8) { $errors += U 'A password do administrador tem de ter pelo menos 8 caracteres.' }
   elseif ($Data.Password -ne $Data.Confirmar) { $errors += U 'As passwords n\u00e3o coincidem.' }
   if ($Data.Dominio -and $Data.Dominio -notmatch '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$') { $errors += U 'O dom\u00ednio n\u00e3o \u00e9 v\u00e1lido (exemplo: reservas.hotelmar.pt, sem https://).' }
-  if (-not $Data.DbUser.Trim()) { $errors += U 'Indique o utilizador administrador do MySQL.' }
+  if ($Data.BaseDados -ne 'SQLServer' -and -not $Data.DbUser.Trim()) { $errors += U 'Indique o utilizador administrador do MySQL.' }
+  if ($Data.SqlInstancia -match '["\s]') { $errors += U 'O nome da inst\u00e2ncia n\u00e3o pode ter espa\u00e7os nem aspas.' }
   return $errors
 }
 
 function New-HotelArguments([hashtable]$Data) {
-  $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$Hoteis`" -Acao novo -Codigo $($Data.Codigo) -Nome `"$($Data.Nome.Trim())`" -AdminEmail `"$($Data.Email.Trim())`" -DbAdminUser `"$($Data.DbUser.Trim())`""
+  $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$Hoteis`" -Acao novo -Codigo $($Data.Codigo) -Nome `"$($Data.Nome.Trim())`" -AdminEmail `"$($Data.Email.Trim())`" -BaseDados $($Data.BaseDados) -DbAdminUser `"$($Data.DbUser.Trim())`""
+  if ($Data.SqlInstancia) { $arguments += " -SqlInstancia $($Data.SqlInstancia)" }
   if ($Data.Dominio) { $arguments += " -Dominio $($Data.Dominio)" }
   if ($Data.Firewall -and -not $Data.Dominio) { $arguments += ' -AbrirFirewall' }
   return $arguments
 }
 
-function New-RequirementsArguments([string]$User, [bool]$WithDomain) {
-  $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$Requisitos`" -Instalar -DbAdminUser `"$($User.Trim())`""
+function New-RequirementsArguments([string]$User, [bool]$WithDomain, [string]$Kind = 'MySQL', [string]$Instance = '') {
+  $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$Requisitos`" -Instalar -BaseDados $Kind -DbAdminUser `"$($User.Trim())`""
+  if ($Instance) { $arguments += " -SqlInstancia $Instance" }
   if ($WithDomain) { $arguments += ' -ComDominio' }
   return $arguments
 }
@@ -82,7 +85,7 @@ Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 $font = New-Object Drawing.Font('Segoe UI', 10)
 $form = New-Object Windows.Forms.Form
 $form.Text = 'MAVIE-HGest - Novo hotel'
-$form.ClientSize = New-Object Drawing.Size(1120, 600)
+$form.ClientSize = New-Object Drawing.Size(1120, 632)
 $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = 'FixedDialog'
 $form.MaximizeBox = $false
@@ -133,17 +136,43 @@ $firewall.Checked = $true
 Add-Control $firewall 230 340 440 24 | Out-Null
 
 $group = New-Object Windows.Forms.GroupBox
-$group.Text = U 'Servidor MySQL / MariaDB (conta de administrador)'
-Add-Control $group 20 374 650 92 | Out-Null
-Add-Label 'Utilizador' 14 32 80 '' $group | Out-Null
+$group.Text = U 'Base de dados (conta de administrador)'
+Add-Control $group 20 374 650 124 | Out-Null
+Add-Label 'Tipo' 14 32 80 '' $group | Out-Null
+$dbKind = New-Object Windows.Forms.ComboBox
+$dbKind.DropDownStyle = 'DropDownList'
+[void]$dbKind.Items.Add('MySQL / MariaDB')
+[void]$dbKind.Items.Add('SQL Server')
+$dbKind.SelectedIndex = 0
+Add-Control $dbKind 96 29 180 26 $group | Out-Null
+$instanceLabel = Add-Label 'Inst\u00e2ncia' 300 32 76 '' $group
+$sqlInstance = New-Object Windows.Forms.TextBox
+Add-Control $sqlInstance 380 29 250 26 $group | Out-Null
+Add-Label 'Utilizador' 14 66 80 '' $group | Out-Null
 $dbUser = New-Object Windows.Forms.TextBox
 $dbUser.Text = 'root'
-Add-Control $dbUser 96 29 180 26 $group | Out-Null
-Add-Label 'Password' 300 32 76 '' $group | Out-Null
+Add-Control $dbUser 96 63 180 26 $group | Out-Null
+Add-Label 'Password' 300 66 76 '' $group | Out-Null
 $dbPass = New-Object Windows.Forms.TextBox
 $dbPass.UseSystemPasswordChar = $true
-Add-Control $dbPass 380 29 250 26 $group | Out-Null
-Add-Label (U 'Vazio se o root n\u00e3o tiver password (ex.: XAMPP). Se o MariaDB for instalado, fica a ser a do root.') 14 62 630 'DimGray' $group | Out-Null
+Add-Control $dbPass 380 63 250 26 $group | Out-Null
+$dbHint = Add-Label '' 14 96 630 'DimGray' $group
+
+function Test-SqlServerChoice { return $dbKind.SelectedIndex -eq 1 }
+
+function Update-DatabaseChoice {
+  $sql = Test-SqlServerChoice
+  $instanceLabel.Enabled = $sql
+  $sqlInstance.Enabled = $sql
+  if ($sql) {
+    if ($dbUser.Text.Trim() -eq 'root') { $dbUser.Text = '' }
+    $dbHint.Text = U 'Utilizador vazio = conta do Windows. Inst\u00e2ncia vazia = a deste PC (ou instala o SQL Server Express).'
+  } else {
+    if (-not $dbUser.Text.Trim()) { $dbUser.Text = 'root' }
+    $dbHint.Text = U 'Vazio se o root n\u00e3o tiver password (ex.: XAMPP). Se o MariaDB for instalado, fica a ser a do root.'
+  }
+}
+Update-DatabaseChoice
 
 $reqGroup = New-Object Windows.Forms.GroupBox
 $reqGroup.Text = U 'Requisitos do computador (obrigat\u00f3rios)'
@@ -170,12 +199,12 @@ $create = New-Object Windows.Forms.Button
 $create.Text = 'Criar hotel'
 $create.Font = New-Object Drawing.Font('Segoe UI', 10, [Drawing.FontStyle]::Bold)
 $create.Enabled = $false
-Add-Control $create 20 480 160 36 | Out-Null
+Add-Control $create 20 512 160 36 | Out-Null
 $open = New-Object Windows.Forms.Button
 $open.Text = 'Abrir o painel'
 $open.Enabled = $false
-Add-Control $open 192 480 160 36 | Out-Null
-$status = Add-Label '' 20 526 650
+Add-Control $open 192 512 160 36 | Out-Null
+$status = Add-Label '' 20 558 650
 
 $log = New-Object Windows.Forms.TextBox
 $log.Multiline = $true
@@ -184,7 +213,7 @@ $log.ScrollBars = 'Vertical'
 $log.BackColor = [Drawing.Color]::FromArgb(1, 36, 86)
 $log.ForeColor = [Drawing.Color]::WhiteSmoke
 $log.Font = New-Object Drawing.Font('Consolas', 9)
-Add-Control $log 690 412 410 172 | Out-Null
+Add-Control $log 690 412 410 204 | Out-Null
 
 function Update-Installed {
   $items = @(Get-HotelInstances)
@@ -203,6 +232,15 @@ function Update-Requirements {
   try {
     $script:DbAdminUser = $dbUser.Text.Trim()
     $script:DbAdminPassword = $dbPass.Text
+    if (Test-SqlServerChoice) {
+      $script:BaseDados = 'SQLServer'
+      $script:SqlInstancia = $sqlInstance.Text.Trim()
+      $script:DbPort = 0
+    } else {
+      $script:BaseDados = 'MySQL'
+      $script:SqlInstancia = ''
+      $script:DbPort = 3306
+    }
     $script:reqItems = @(Get-Requirements -Dominio:([bool]$domain.Text.Trim()))
   } finally {
     $form.Cursor = 'Default'
@@ -247,6 +285,11 @@ $domain.Add_TextChanged({ $firewall.Enabled = -not $domain.Text.Trim() })
 $domain.Add_Leave({ if (-not $script:busy) { Update-Requirements } })
 $dbUser.Add_Leave({ if (-not $script:busy) { Update-Requirements } })
 $dbPass.Add_Leave({ if (-not $script:busy) { Update-Requirements } })
+$sqlInstance.Add_Leave({ if (-not $script:busy) { Update-Requirements } })
+$dbKind.Add_SelectedIndexChanged({
+  Update-DatabaseChoice
+  if (-not $script:busy) { Update-Requirements }
+})
 $check.Add_Click({ Update-Requirements })
 
 $script:process = $null
@@ -320,13 +363,13 @@ $install.Add_Click({
   $missing = @($script:reqItems | Where-Object { -not $_.Ok -and $_.Instalavel })
   if (-not $missing.Count) { return }
   $server = $missing | Where-Object { $_.Id -eq 'db-servidor' }
-  if ($server -and -not (Get-StoppedDbService) -and $dbPass.Text.Length -lt 8) {
+  if (-not (Test-SqlServerChoice) -and $server -and -not (Get-StoppedDbService) -and $dbPass.Text.Length -lt 8) {
     [Windows.Forms.MessageBox]::Show((U 'Vai ser instalado o MariaDB. Escreva primeiro, no campo Password do MySQL, a password que o utilizador root vai ter (m\u00ednimo 8 caracteres) e guarde-a num local seguro.'), 'MAVIE-HGest', 'OK', 'Warning') | Out-Null
     return
   }
   $question = (U 'Vai ser transferido e instalado:') + "`r`n`r`n- " + (($missing | ForEach-Object { $_.Nome }) -join "`r`n- ") + "`r`n`r`n" + (U 'Continuar?')
   if ([Windows.Forms.MessageBox]::Show($question, 'MAVIE-HGest', 'YesNo', 'Question') -ne 'Yes') { return }
-  Start-Work 'install' (New-RequirementsArguments $dbUser.Text ([bool]$domain.Text.Trim())) @{ MAVIE_DB_ADMIN_PASSWORD = $dbPass.Text } (U 'A instalar... pode demorar v\u00e1rios minutos.')
+  Start-Work 'install' (New-RequirementsArguments $dbUser.Text ([bool]$domain.Text.Trim()) $script:BaseDados $sqlInstance.Text.Trim()) @{ MAVIE_DB_ADMIN_PASSWORD = $dbPass.Text } (U 'A instalar... pode demorar v\u00e1rios minutos.')
 })
 
 $create.Add_Click({
@@ -340,6 +383,8 @@ $create.Add_Click({
     Firewall = $firewall.Checked
     DbUser = $dbUser.Text
     DbPassword = $dbPass.Text
+    BaseDados = $(if (Test-SqlServerChoice) { 'SQLServer' } else { 'MySQL' })
+    SqlInstancia = $(if (Test-SqlServerChoice) { $sqlInstance.Text.Trim() } else { '' })
   }
   $errors = @(Test-HotelInput $data)
   if ($errors.Count) {

@@ -8,6 +8,7 @@ import QRCode from 'qrcode';
 import { AuditService } from '../audit/audit';
 import { MailService } from '../mail/mail.service';
 import { passwordResetEmail } from '../mail/templates';
+import { jsonRead, jsonValue } from '../prisma/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { publicUserSelect } from '../users/user.select';
 import { LoginDto } from './dto/login.dto';
@@ -67,7 +68,8 @@ export class AuthService {
 
   async twoFactorStatus(userId: number) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    const codes = Array.isArray(user.totpRecoveryCodes) ? user.totpRecoveryCodes.length : 0;
+    const stored = jsonRead(user.totpRecoveryCodes);
+    const codes = Array.isArray(stored) ? stored.length : 0;
     return { enabled: user.totpEnabled, recoveryCodesLeft: user.totpEnabled ? codes : 0 };
   }
 
@@ -91,7 +93,7 @@ export class AuthService {
     const recoveryCodes = generateRecoveryCodes();
     await this.prisma.user.update({
       where: { id: userId },
-      data: { totpEnabled: true, totpLastStep: step, totpRecoveryCodes: recoveryCodes.map(hashRecoveryCode) },
+      data: { totpEnabled: true, totpLastStep: step, totpRecoveryCodes: jsonValue(recoveryCodes.map(hashRecoveryCode)) },
     });
     await this.audit.log({ hotelId: user.hotelId, userId, action: 'AUTH_2FA_ENABLED', entity: 'user', entityId: userId, summary: `${user.name} ativou o 2FA` });
     return { enabled: true, recoveryCodes };
@@ -109,7 +111,7 @@ export class AuthService {
   }
 
   async clearTwoFactor(userId: number) {
-    await this.prisma.user.update({ where: { id: userId }, data: { totpEnabled: false, totpSecret: null, totpLastStep: null, totpRecoveryCodes: [] } });
+    await this.prisma.user.update({ where: { id: userId }, data: { totpEnabled: false, totpSecret: null, totpLastStep: null, totpRecoveryCodes: jsonValue([]) } });
   }
 
   async forgotPassword(email: string) {
@@ -161,10 +163,11 @@ export class AuthService {
       });
       return count > 0;
     }
-    const codes = Array.isArray(user.totpRecoveryCodes) ? (user.totpRecoveryCodes as string[]) : [];
+    const stored = jsonRead(user.totpRecoveryCodes);
+    const codes = Array.isArray(stored) ? (stored as string[]) : [];
     const hash = hashRecoveryCode(code);
     if (!codes.includes(hash)) return false;
-    await this.prisma.user.update({ where: { id: user.id }, data: { totpRecoveryCodes: codes.filter((item) => item !== hash) } });
+    await this.prisma.user.update({ where: { id: user.id }, data: { totpRecoveryCodes: jsonValue(codes.filter((item) => item !== hash)) } });
     return true;
   }
 

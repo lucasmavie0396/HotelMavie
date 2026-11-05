@@ -5,6 +5,7 @@ import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, MaxLength, Mi
 import { JwtPayload } from '../auth/jwt-payload';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
+import { forUpdate, lockHint } from '../prisma/database';
 import { PrismaService } from '../prisma/prisma.service';
 
 export class CreateWarehouseDto {
@@ -295,9 +296,9 @@ export class StockService {
 
   private async consumeLots(tx: Prisma.TransactionClient, warehouseId: number, productId: number, quantity: Prisma.Decimal) {
     const lots = await tx.$queryRaw<{ id: number; code: string | null; expiryDate: Date | null; quantity: Prisma.Decimal }[]>`
-      SELECT id, code, expiryDate, quantity FROM stock_lots
+      SELECT id, code, expiryDate, quantity FROM stock_lots ${lockHint()}
       WHERE warehouseId = ${warehouseId} AND productId = ${productId} AND quantity > 0
-      ORDER BY expiryDate IS NULL, expiryDate, id FOR UPDATE`;
+      ORDER BY CASE WHEN expiryDate IS NULL THEN 1 ELSE 0 END, expiryDate, id ${forUpdate()}`;
     const used: LotPart[] = [];
     let missing = quantity;
     for (const lot of lots) {

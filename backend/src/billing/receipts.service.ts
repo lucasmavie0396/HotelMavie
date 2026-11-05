@@ -8,6 +8,7 @@ import { JwtPayload } from '../auth/jwt-payload';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { sumMoney, toMoney } from '../common/money';
+import { forUpdate, lockHint } from '../prisma/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { FolioService } from './folio.service';
 import { InvoicesService, seriesCode } from './invoices.service';
@@ -150,7 +151,7 @@ export class ReceiptsService {
     const invoiceIds = dto.lines.map((line) => line.invoiceId);
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM invoices WHERE id IN (${Prisma.join(invoiceIds)}) FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM invoices ${lockHint()} WHERE id IN (${Prisma.join(invoiceIds)}) ${forUpdate()}`;
       const invoices = await tx.invoice.findMany({
         where: { id: { in: invoiceIds } },
         include: { receiptLines: { where: { receipt: { status: ReceiptStatus.ISSUED } }, select: { amount: true } } },
@@ -177,8 +178,8 @@ export class ReceiptsService {
       const issuedAt = new Date();
       const code = seriesCode(issuedAt);
       const [series] = await tx.$queryRaw<{ id: number; code: string; nextNumber: number; atValidationCode: string | null }[]>`
-        SELECT id, code, nextNumber, atValidationCode FROM invoice_series
-        WHERE hotelId = ${hotelId} AND type = ${InvoiceType.RECEIPT} AND code = ${code} FOR UPDATE`;
+        SELECT id, code, nextNumber, atValidationCode FROM invoice_series ${lockHint()}
+        WHERE hotelId = ${hotelId} AND type = ${InvoiceType.RECEIPT} AND code = ${code} ${forUpdate()}`;
       if (!series) {
         throw new ConflictException('Serie de recibos indisponivel, tenta novamente');
       }

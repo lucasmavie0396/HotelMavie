@@ -34,6 +34,7 @@ import { Ticket, TicketPdfService } from '../billing/ticket-pdf.service';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { sumMoney, toMoney } from '../common/money';
+import { forUpdate, lockHint } from '../prisma/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
 import { tableLabel } from './tables';
@@ -235,7 +236,7 @@ export class PosService {
     }
     return this.prisma.$transaction(async (tx) => {
       const [table] = await tx.$queryRaw<{ id: number; hotelId: number; outlet: Outlet; number: number; name: string | null; active: number | boolean }[]>`
-        SELECT id, hotelId, outlet, number, name, active FROM dining_tables WHERE id = ${tableId} FOR UPDATE`;
+        SELECT id, hotelId, outlet, number, name, active FROM dining_tables ${lockHint()} WHERE id = ${tableId} ${forUpdate()}`;
       if (!table || table.hotelId !== scoped || !table.active) {
         throw new BadRequestException('Mesa invalida ou inativa');
       }
@@ -436,7 +437,7 @@ export class PosService {
       let targetId = dto.toOrderId ?? null;
       if (dto.toTableId) {
         const [table] = await tx.$queryRaw<{ id: number; hotelId: number; outlet: Outlet; number: number; name: string | null; active: number | boolean }[]>`
-          SELECT id, hotelId, outlet, number, name, active FROM dining_tables WHERE id = ${dto.toTableId} FOR UPDATE`;
+          SELECT id, hotelId, outlet, number, name, active FROM dining_tables ${lockHint()} WHERE id = ${dto.toTableId} ${forUpdate()}`;
         if (!table || table.hotelId !== source.hotelId || !table.active) {
           throw new BadRequestException('Mesa de destino invalida');
         }
@@ -460,7 +461,7 @@ export class PosService {
         throw new BadRequestException('A conta de destino tem de ser outra');
       }
       const locked = await tx.$queryRaw<{ id: number; hotelId: number; status: OrderStatus }[]>`
-        SELECT id, hotelId, status FROM orders WHERE id IN (${Prisma.join([orderId, targetId])}) ORDER BY id FOR UPDATE`;
+        SELECT id, hotelId, status FROM orders ${lockHint()} WHERE id IN (${Prisma.join([orderId, targetId])}) ORDER BY id ${forUpdate()}`;
       if (locked.length !== 2 || locked.some((order) => order.status !== OrderStatus.OPEN || order.hotelId !== source.hotelId)) {
         throw new ConflictException('As duas contas tem de estar abertas e ser do mesmo hotel');
       }

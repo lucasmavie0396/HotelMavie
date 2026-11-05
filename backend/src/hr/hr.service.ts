@@ -5,6 +5,7 @@ import { JwtPayload } from '../auth/jwt-payload';
 import { addDays, nightsBetween, parseDate } from '../common/dates';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
+import { forUpdate, lockHint } from '../prisma/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClockDto, CopyWeekDto, EmployeeDto, MonthQueryDto, RangeQueryDto, ShiftDto, UpdateEmployeeDto, UpdateShiftDto, UpdateTimeEntryDto } from './hr.dto';
 
@@ -158,7 +159,7 @@ export class HrService {
       throw new BadRequestException('O funcionario esta inativo');
     }
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM employees WHERE id = ${employee.id} FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM employees ${lockHint()} WHERE id = ${employee.id} ${forUpdate()}`;
       const open = await tx.timeEntry.findFirst({ where: { employeeId: employee.id, clockOut: null }, orderBy: { clockIn: 'desc' } });
       if (open) {
         return tx.timeEntry.update({ where: { id: open.id }, data: { clockOut: new Date(), notes: dto.notes ?? open.notes } });

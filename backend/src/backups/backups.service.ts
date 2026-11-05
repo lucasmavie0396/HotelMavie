@@ -4,8 +4,10 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readdir, stat, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { isSqlServer } from '../prisma/database';
+import { PrismaService } from '../prisma/prisma.service';
 
-export const BACKUP_FILE = /^mavie-\d{8}-\d{6}\.sql$/;
+export const BACKUP_FILE = /^mavie-\d{8}-\d{6}\.(sql|bak)$/;
 
 export interface BackupStatus {
   enabled: boolean;
@@ -23,7 +25,10 @@ export class BackupsService implements OnModuleInit, OnModuleDestroy {
   private nextRunAt: Date | null = null;
   private lastRun: BackupStatus['lastRun'] = null;
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   get directory() {
     return resolve(this.config.get<string>('BACKUP_DIR') ?? 'backups');
@@ -71,10 +76,11 @@ export class BackupsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async create() {
-    const url = new URL(this.config.getOrThrow<string>('DATABASE_URL'));
-    const database = url.pathname.replace(/^\//, '');
     await mkdir(this.directory, { recursive: true });
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+    if (isSqlServer(this.config.getOrThrow<string>('DATABASE_URL'))) return this.createSqlServer(`mavie-${stamp}.bak`);
+    const url = new URL(this.config.getOrThrow<string>('DATABASE_URL'));
+    const database = url.pathname.replace(/^\//, '');
     const name = `mavie-${stamp}.sql`;
     const file = join(this.directory, name);
 
@@ -98,6 +104,25 @@ export class BackupsService implements OnModuleInit, OnModuleDestroy {
       child.on('close', (code) => (code === 0 ? done() : fail(new InternalServerErrorException(`mysqldump falhou: ${stderr.trim().slice(0, 300)}`))));
     });
 
+    const info = await stat(file);
+    return { name, size: info.size, createdAt: info.mtime };
+  }
+
+  private async createSqlServer(name: string) {
+    const database = this.config.getOrThrow<string>('DATABASE_URL').match(/(?:^|;)database=([^;]+)/i)?.[1] ?? '';
+    if (!/^[A-Za-z0-9_]+$/.test(database)) {
+      throw new InternalServerErrorException('Nome da base de dados invalido no DATABASE_URL');
+    }
+    const file = join(this.directory, name);
+    try {
+      await this.prisma.$executeRawUnsafe(`BACKUP DATABASE [${database}] TO DISK = N'${file.replace(/'/g, "''")}' WITH COPY_ONLY, INIT, CHECKSUM`);
+    } catch (error) {
+      const message = error instanceof Error ? (error.message.split('\n').filter(Boolean).pop() ?? '') : String(error);
+      throw new InternalServerErrorException(`O SQL Server nao conseguiu criar o backup: ${message.slice(0, 300)}`);
+    }
+    if (!existsSync(file)) {
+      throw new InternalServerErrorException('O SQL Server gravou o backup no computador dele: a pasta de backups tem de estar no servidor da base de dados');
+    }
     const info = await stat(file);
     return { name, size: info.size, createdAt: info.mtime };
   }

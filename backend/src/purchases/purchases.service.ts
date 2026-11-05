@@ -26,6 +26,7 @@ import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { sumMoney, toMoney } from '../common/money';
 import { MailService } from '../mail/mail.service';
 import { purchaseOrderEmail } from '../mail/templates';
+import { forUpdate, lockHint } from '../prisma/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { Report } from '../reports/report-model';
 import { ReportRenderService } from '../reports/report-render.service';
@@ -253,12 +254,12 @@ export class PurchasesService {
     await this.findOne(id, user);
     return this.prisma.$transaction(async (tx) => {
       const [locked] = await tx.$queryRaw<{ status: PurchaseStatus; warehouseId: number; supplierRef: string | null }[]>`
-        SELECT status, warehouseId, supplierRef FROM purchases WHERE id = ${id} FOR UPDATE`;
+        SELECT status, warehouseId, supplierRef FROM purchases ${lockHint()} WHERE id = ${id} ${forUpdate()}`;
       if (locked.status !== PurchaseStatus.DRAFT && locked.status !== PurchaseStatus.PARTIAL) {
         throw new ConflictException('Esta compra ja foi recebida ou cancelada');
       }
       const lines = await tx.$queryRaw<{ id: number; productId: number; quantity: Prisma.Decimal; receivedQuantity: Prisma.Decimal; unitCost: Prisma.Decimal }[]>`
-        SELECT id, productId, quantity, receivedQuantity, unitCost FROM purchase_items WHERE purchaseId = ${id} ORDER BY id FOR UPDATE`;
+        SELECT id, productId, quantity, receivedQuantity, unitCost FROM purchase_items ${lockHint()} WHERE purchaseId = ${id} ORDER BY id ${forUpdate()}`;
       const requested = new Map((dto.items ?? []).map((item) => [item.itemId, item]));
       if ([...requested.keys()].some((itemId) => !lines.some((line) => line.id === itemId))) {
         throw new BadRequestException('Linha de compra invalida');
@@ -278,7 +279,7 @@ export class PurchasesService {
         throw new BadRequestException('Indica as quantidades recebidas');
       }
       const productIds = [...new Set(receipts.map(({ line }) => line.productId))];
-      await tx.$queryRaw`SELECT id FROM products WHERE id IN (${Prisma.join(productIds)}) FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM products ${lockHint()} WHERE id IN (${Prisma.join(productIds)}) ${forUpdate()}`;
       const complete = lines.every((line) => {
         const receipt = receipts.find((r) => r.line.id === line.id);
         return new Prisma.Decimal(line.quantity).sub(line.receivedQuantity).sub(receipt?.quantity ?? 0).isZero();

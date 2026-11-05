@@ -2,6 +2,9 @@
 param(
   [switch]$Instalar,
   [switch]$ComDominio,
+  [ValidateSet('MySQL', 'SQLServer')]
+  [string]$BaseDados = 'MySQL',
+  [string]$SqlInstancia = '',
   [string]$DbHost = 'localhost',
   [int]$DbPort = 3306,
   [string]$DbAdminUser = 'root',
@@ -11,6 +14,12 @@ param(
 . (Join-Path $PSScriptRoot 'comum.ps1')
 
 if (-not $DbAdminPassword -and $env:MAVIE_DB_ADMIN_PASSWORD) { $DbAdminPassword = $env:MAVIE_DB_ADMIN_PASSWORD }
+if ($BaseDados -eq 'SQLServer') {
+  if (-not $PSBoundParameters.ContainsKey('DbAdminUser') -or $DbAdminUser -eq 'root') { $DbAdminUser = '' }
+  if (-not $PSBoundParameters.ContainsKey('DbPort') -or $DbPort -eq 3306) { $DbPort = 0 }
+}
+$SqlExpressUrl = 'https://go.microsoft.com/fwlink/?linkid=2215160'
+$SqlInstanciaNova = 'MAVIE'
 
 $NodeMajor = 22
 $WindowsBuildMinimo = 14393
@@ -116,6 +125,74 @@ function Test-IisProxy {
   return ($proxy -match 'enabled="true"') -and ($variables -match 'HTTP_X_FORWARDED_PROTO')
 }
 
+function Get-SqlServerTarget {
+  $instance = $null
+  if (Test-LocalDbHost) { $instance = Get-SqlServerInstance $SqlInstancia }
+  $port = $DbPort
+  if (-not $port -and $instance) { $port = $instance.Port }
+  return [pscustomobject]@{ Instance = $instance; Port = $port }
+}
+
+function Resolve-SqlServerPort {
+  $target = Get-SqlServerTarget
+  if (-not $target.Port) { throw 'Nao foi possivel saber a porta TCP do SQL Server: ativa o TCP na instancia ou indica -DbPort.' }
+  return [int]$target.Port
+}
+
+function Test-SqlServerAdmin([int]$Port) {
+  $node = Find-Node
+  if (-not $node) { return [pscustomobject]@{ Ok = $false; Detail = 'Precisa do Node.js' } }
+  try {
+    $row = @(Invoke-SqlServer $node (New-SqlServerUrl $DbHost $Port 'master' $DbAdminUser $DbAdminPassword) "SELECT IS_SRVROLEMEMBER('sysadmin') AS sysadmin, CAST(SERVERPROPERTY('ProductVersion') AS NVARCHAR(40)) AS version, CAST(SERVERPROPERTY('Edition') AS NVARCHAR(80)) AS edition" -Consulta)[0]
+  } catch {
+    return [pscustomobject]@{ Ok = $false; Detail = "$($_.Exception.Message)".Replace('SQL Server: ', '') }
+  }
+  $parts = "$row".Split("`t")
+  $who = 'Windows (' + [Security.Principal.WindowsIdentity]::GetCurrent().Name + ')'
+  if ($DbAdminUser) { $who = $DbAdminUser }
+  if ($parts[0] -ne '1') { return [pscustomobject]@{ Ok = $false; Detail = "$who entra mas nao e sysadmin" } }
+  return [pscustomobject]@{ Ok = $true; Detail = "$who, SQL Server $($parts[1]) $($parts[2])" }
+}
+
+function Get-SqlServerRequirements {
+  $list = @()
+  $target = Get-SqlServerTarget
+  $local = Test-LocalDbHost
+  $instance = $target.Instance
+  if ($local) {
+    $ok = [bool]($instance -and $instance.Running)
+    $detail = U 'Nenhuma inst\u00e2ncia neste computador (instala o SQL Server 2022 Express)'
+    if ($instance -and -not $instance.Running) { $detail = (U 'Inst\u00e2ncia ') + "$($instance.Name)" + (U ': servi\u00e7o parado') }
+    if ($ok) { $detail = (U 'Inst\u00e2ncia ') + "$($instance.Name) (" + (U 'servi\u00e7o ') + "$($instance.Service))" }
+    $list += New-Requirement 'sql-instancia' 'SQL Server' $ok $detail $true
+
+    $configOk = [bool]($ok -and $instance.TcpEnabled -and $instance.StaticPort -and $instance.Port -and $instance.MixedMode)
+    $missing = @()
+    if ($instance -and -not $instance.TcpEnabled) { $missing += 'TCP desligado' }
+    if ($instance -and $instance.TcpEnabled -and -not $instance.StaticPort) { $missing += 'porta TCP din' + (U '\u00e2') + 'mica' }
+    if ($instance -and -not $instance.MixedMode) { $missing += (U 's\u00f3 aceita contas Windows') }
+    $detail = "TCP na porta $($target.Port), " + (U 'autentica\u00e7\u00e3o SQL ativa')
+    if (-not $configOk) { $detail = 'Por configurar' }
+    if ($missing.Count) { $detail = ($missing -join ', ') + (U ' (corrigir reinicia o servi\u00e7o do SQL Server)') }
+    $list += New-Requirement 'sql-config' (U 'SQL Server com TCP fixo e autentica\u00e7\u00e3o SQL') $configOk $detail $true
+  } else {
+    $ok = [bool]($target.Port -and (Test-TcpPort $DbHost $target.Port))
+    $detail = "A responder em ${DbHost}:$($target.Port)"
+    if (-not $target.Port) { $detail = (U 'Indique a porta do SQL Server remoto') }
+    elseif (-not $ok) { $detail = "Sem resposta de ${DbHost}:$($target.Port) (servidor remoto)" }
+    $list += New-Requirement 'sql-instancia' 'SQL Server (remoto)' $ok $detail $false
+  }
+  return $list
+}
+
+function Get-SqlServerAdminRequirement {
+  $target = Get-SqlServerTarget
+  $ready = [bool]($target.Port -and (Test-TcpPort $DbHost $target.Port) -and (Test-Path (Join-Path $Backend 'node_modules\.prisma\client-sqlserver')))
+  $result = [pscustomobject]@{ Ok = $false; Detail = 'Depende do SQL Server e da compila' + (U '\u00e7\u00e3o') }
+  if ($ready) { $result = Test-SqlServerAdmin $target.Port }
+  return New-Requirement 'sql-admin' (U 'Acesso de administrador ao SQL Server') $result.Ok $result.Detail $false
+}
+
 function New-Requirement([string]$Id, [string]$Nome, [bool]$Ok, [string]$Detalhe, [bool]$Instalavel) {
   return [pscustomobject]@{ Id = $Id; Nome = $Nome; Ok = $Ok; Detalhe = $Detalhe; Instalavel = $Instalavel }
 }
@@ -148,6 +225,36 @@ function Get-Requirements([switch]$Dominio) {
   if ($nodeOk) { $detail = $version }
   $list += New-Requirement 'node' "Node.js $NodeMajor ou superior" $nodeOk $detail $true
 
+  if ($BaseDados -eq 'SQLServer') {
+    $list += Get-SqlServerRequirements
+  } else {
+    $list += Get-MySqlRequirements
+  }
+
+  $buildOk = (Test-Path $MainJs) -and (Test-Path (Join-Path $Frontend 'dist\index.html')) -and (Test-Path (Join-Path $Backend 'node_modules\.prisma\client')) -and (Test-Path (Join-Path $Backend 'node_modules\.prisma\client-sqlserver'))
+  $detail = 'Pronto'
+  if (-not $buildOk) { $detail = U 'Falta instalar as depend\u00eancias e compilar' }
+  $list += New-Requirement 'compilacao' 'MAVIE-HGest compilado' $buildOk $detail $true
+
+  if ($BaseDados -eq 'SQLServer') { $list += Get-SqlServerAdminRequirement }
+
+  if ($Dominio) {
+    $iisOk = Test-IisInstalled
+    $list += New-Requirement 'iis' 'IIS (servidor web)' $iisOk (Get-InstalledText $iisOk) $true
+    $rewriteOk = Test-Path (Join-Path $env:windir 'system32\inetsrv\rewrite.dll')
+    $list += New-Requirement 'iis-rewrite' 'IIS URL Rewrite' $rewriteOk (Get-InstalledText $rewriteOk) $true
+    $arrOk = Test-Path (Join-Path $env:ProgramFiles 'IIS\Application Request Routing\requestRouter.dll')
+    $list += New-Requirement 'iis-arr' 'IIS Application Request Routing' $arrOk (Get-InstalledText $arrOk) $true
+    $proxyOk = [bool]($iisOk -and $rewriteOk -and $arrOk -and (Test-IisProxy))
+    $detail = 'Por ativar'
+    if ($proxyOk) { $detail = 'Ativo' }
+    $list += New-Requirement 'iis-proxy' 'IIS configurado como proxy' $proxyOk $detail $true
+  }
+  return $list
+}
+
+function Get-MySqlRequirements {
+  $list = @()
   $serverOk = Test-TcpPort $DbHost $DbPort
   $detail = "A responder em ${DbHost}:$DbPort"
   if (-not $serverOk) {
@@ -178,24 +285,6 @@ function Get-Requirements([switch]$Dominio) {
   }
   if (-not ($serverOk -and $clientOk)) { $detail = 'Depende do servidor e das ferramentas acima' }
   $list += New-Requirement 'db-login' (U 'Acesso de administrador \u00e0 base de dados') $loginOk $detail $false
-
-  $buildOk = (Test-Path $MainJs) -and (Test-Path (Join-Path $Frontend 'dist\index.html')) -and (Test-Path (Join-Path $Backend 'node_modules\.prisma\client'))
-  $detail = 'Pronto'
-  if (-not $buildOk) { $detail = U 'Falta instalar as depend\u00eancias e compilar' }
-  $list += New-Requirement 'compilacao' 'MAVIE-HGest compilado' $buildOk $detail $true
-
-  if ($Dominio) {
-    $iisOk = Test-IisInstalled
-    $list += New-Requirement 'iis' 'IIS (servidor web)' $iisOk (Get-InstalledText $iisOk) $true
-    $rewriteOk = Test-Path (Join-Path $env:windir 'system32\inetsrv\rewrite.dll')
-    $list += New-Requirement 'iis-rewrite' 'IIS URL Rewrite' $rewriteOk (Get-InstalledText $rewriteOk) $true
-    $arrOk = Test-Path (Join-Path $env:ProgramFiles 'IIS\Application Request Routing\requestRouter.dll')
-    $list += New-Requirement 'iis-arr' 'IIS Application Request Routing' $arrOk (Get-InstalledText $arrOk) $true
-    $proxyOk = [bool]($iisOk -and $rewriteOk -and $arrOk -and (Test-IisProxy))
-    $detail = 'Por ativar'
-    if ($proxyOk) { $detail = 'Ativo' }
-    $list += New-Requirement 'iis-proxy' 'IIS configurado como proxy' $proxyOk $detail $true
-  }
   return $list
 }
 
@@ -345,8 +434,83 @@ function Enable-IisProxy {
   Write-Ok 'Proxy ativo'
 }
 
+function Get-FreeSqlPort {
+  foreach ($candidate in @(1433) + (1434..1499)) {
+    if (-not (Get-NetTCPConnection -State Listen -LocalPort $candidate -ErrorAction SilentlyContinue)) { return $candidate }
+  }
+  throw 'Nao ha portas livres entre 1433 e 1499 para o SQL Server.'
+}
+
+function Wait-SqlServerPort([int]$Port) {
+  $deadline = (Get-Date).AddSeconds(90)
+  while (-not (Test-TcpPort $DbHost $Port) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
+  if (-not (Test-TcpPort $DbHost $Port)) { throw "O SQL Server continua sem responder na porta $Port." }
+}
+
+function Install-SqlServerExpress {
+  if (-not (Test-LocalDbHost)) { throw "O SQL Server $DbHost e remoto: tem de ser instalado nesse servidor." }
+  $name = $SqlInstancia
+  if (-not $name -or $name -match '^(\.|localhost|\(local\))$') { $name = $SqlInstanciaNova }
+  if ($name -match '\\(.+)$') { $name = $Matches[1] }
+  Write-Step "Instalar SQL Server 2022 Express (instancia $name)"
+  $bootstrap = Save-Installer $SqlExpressUrl 'SQL2022-SSEI-Expr.exe'
+  Assert-MicrosoftSignature $bootstrap
+  $media = Join-Path $Instaladores 'sqlexpress'
+  New-Item -ItemType Directory -Force $media | Out-Null
+  Write-Ok 'A transferir o pacote do SQL Server (pode demorar)'
+  $process = Start-Process -FilePath $bootstrap -ArgumentList @('/ACTION=Download', "/MEDIAPATH=`"$media`"", '/MEDIATYPE=Core', '/QUIET') -Wait -PassThru
+  if ($process.ExitCode -ne 0) { throw "A transferencia do SQL Server falhou (codigo $($process.ExitCode))." }
+  $package = Get-ChildItem $media -Filter 'SQLEXPR*.exe' | Sort-Object Length -Descending | Select-Object -First 1
+  if (-not $package) { throw "Pacote do SQL Server nao encontrado em $media." }
+  Assert-MicrosoftSignature $package.FullName
+  $extracted = Join-Path $media 'setup'
+  $process = Start-Process -FilePath $package.FullName -ArgumentList @('/q', "/x:`"$extracted`"") -Wait -PassThru
+  if ($process.ExitCode -ne 0) { throw "Nao foi possivel extrair o SQL Server (codigo $($process.ExitCode))." }
+  $setup = Join-Path $extracted 'SETUP.EXE'
+  Assert-MicrosoftSignature $setup
+  $saPassword = $DbAdminPassword
+  if (-not $DbAdminUser -or $saPassword.Length -lt 8) { $saPassword = 'Sa-' + [Guid]::NewGuid().ToString('N') + 'X9' }
+  $arguments = @(
+    '/Q', '/ACTION=Install', '/FEATURES=SQLENGINE', "/INSTANCENAME=$name",
+    "/SQLSVCACCOUNT=`"NT Service\MSSQL`$$name`"", '/SQLSYSADMINACCOUNTS="BUILTIN\Administrators"',
+    '/SECURITYMODE=SQL', "/SAPWD=`"$saPassword`"", '/TCPENABLED=1', '/NPENABLED=0',
+    '/UPDATEENABLED=0', '/IACCEPTSQLSERVERLICENSETERMS', '/SUPPRESSPRIVACYSTATEMENTNOTICE'
+  )
+  Write-Ok 'A instalar o SQL Server (pode demorar varios minutos)'
+  $process = Start-Process -FilePath $setup -ArgumentList $arguments -Wait -PassThru
+  if ($process.ExitCode -notin @(0, 3010)) { throw "A instalacao do SQL Server falhou (codigo $($process.ExitCode)). Registo: $env:ProgramFiles\Microsoft SQL Server\160\Setup Bootstrap\Log" }
+  $script:SqlInstancia = $name
+  Write-Ok "SQL Server Express instalado (instancia $name; administradores do Windows sao sysadmin)"
+  Set-SqlServerConfig
+}
+
+function Set-SqlServerConfig {
+  $instance = Get-SqlServerInstance $SqlInstancia
+  if (-not $instance) { throw 'Instancia do SQL Server nao encontrada.' }
+  Write-Step "Configurar a instancia $($instance.Name): TCP, porta fixa e autenticacao SQL"
+  $port = $instance.Port
+  if (-not $port) { $port = Get-FreeSqlPort }
+  Set-ItemProperty "$($instance.Root)\SuperSocketNetLib\Tcp" -Name Enabled -Value 1
+  Set-SqlServerStaticPort ([pscustomobject]@{ Root = $instance.Root; Port = $port })
+  Set-ItemProperty $instance.Root -Name LoginMode -Value 2
+  Restart-Service -Name $instance.Service -Force
+  Wait-SqlServerPort $port
+  Write-Ok "SQL Server a responder na porta fixa $port, com autenticacao SQL"
+}
+
+function Start-SqlServerOrInstall {
+  $instance = Get-SqlServerInstance $SqlInstancia
+  if (-not $instance) { Install-SqlServerExpress; return }
+  Write-Step "Arrancar o SQL Server ($($instance.Service))"
+  Set-Service -Name $instance.Service -StartupType Automatic
+  Start-Service -Name $instance.Service
+  Write-Ok 'SQL Server a correr'
+}
+
 function Install-Requirement([string]$Id) {
   switch ($Id) {
+    'sql-instancia' { Start-SqlServerOrInstall }
+    'sql-config' { Set-SqlServerConfig }
     'node' { Install-NodeJs }
     'energia' { Set-NoSleep }
     'db-servidor' { Install-DbServer }
@@ -369,7 +533,7 @@ function Write-Requirements($List) {
 
 function Install-MissingRequirements([switch]$Dominio) {
   if (-not (Test-Administrator)) { throw 'Abre o PowerShell como Administrador para instalar os requisitos.' }
-  foreach ($id in @('energia', 'node', 'db-servidor', 'db-cliente', 'db-gestor', 'compilacao', 'iis', 'iis-rewrite', 'iis-arr', 'iis-proxy')) {
+  foreach ($id in @('energia', 'node', 'db-servidor', 'db-cliente', 'db-gestor', 'sql-instancia', 'sql-config', 'compilacao', 'iis', 'iis-rewrite', 'iis-arr', 'iis-proxy')) {
     $item = Get-Requirements -Dominio:$Dominio | Where-Object { $_.Id -eq $id }
     if ($item -and -not $item.Ok -and $item.Instalavel) { Install-Requirement $id }
   }
@@ -391,7 +555,7 @@ if ($Instalar) {
   Write-Step 'Requisitos'
   Write-Requirements $list
   if (@($list | Where-Object { -not $_.Ok }).Count) {
-    Write-Note 'Para instalar o que falta: requisitos.ps1 -Instalar (com -ComDominio se o hotel tiver dominio)'
+    Write-Note 'Para instalar o que falta: requisitos.ps1 -Instalar (com -ComDominio se o hotel tiver dominio; com -BaseDados SQLServer para SQL Server)'
     exit 1
   }
 }

@@ -10,6 +10,7 @@ import { canAccessHotel } from '../common/hotel-scope';
 import { toMoney } from '../common/money';
 import { MailService } from '../mail/mail.service';
 import { depositConfirmedEmail, mailLang } from '../mail/templates';
+import { forUpdate, lockHint } from '../prisma/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadsService } from '../uploads/uploads';
 
@@ -143,7 +144,7 @@ export class DepositService {
     const current = await this.find(id, user);
     await this.prisma.$transaction(async (tx) => {
       const [locked] = await tx.$queryRaw<{ status: ReservationStatus; depositPaymentId: number | null; depositAmount: Prisma.Decimal | null; totalAmount: Prisma.Decimal }[]>`
-        SELECT status, depositPaymentId, depositAmount, totalAmount FROM reservations WHERE id = ${id} FOR UPDATE`;
+        SELECT status, depositPaymentId, depositAmount, totalAmount FROM reservations ${lockHint()} WHERE id = ${id} ${forUpdate()}`;
       if (locked.depositPaymentId) {
         throw new ConflictException('O sinal desta reserva ja foi confirmado');
       }

@@ -8,6 +8,7 @@ import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { sumMoney, toMoney } from '../common/money';
 import { MailService } from '../mail/mail.service';
 import { bookingConfirmedEmail, mailLang, StaySummary } from '../mail/templates';
+import { forUpdate, lockHint } from '../prisma/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { CompanionDto, companionData } from './dto/companion.dto';
 import { CreateReservationDto } from './dto/create-reservation.dto';
@@ -644,7 +645,7 @@ export class ReservationsService {
   }
 
   private async lockRoom(tx: Prisma.TransactionClient, roomId: number, hotelId: number) {
-    const locked = await tx.$queryRaw<{ id: number }[]>`SELECT id FROM rooms WHERE id = ${roomId} AND hotelId = ${hotelId} FOR UPDATE`;
+    const locked = await tx.$queryRaw<{ id: number }[]>`SELECT id FROM rooms ${lockHint()} WHERE id = ${roomId} AND hotelId = ${hotelId} ${forUpdate()}`;
     if (!locked.length) {
       throw new NotFoundException('Quarto nao encontrado neste hotel');
     }

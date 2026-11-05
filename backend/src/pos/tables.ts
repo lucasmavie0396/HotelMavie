@@ -7,6 +7,7 @@ import { Roles, SalesAccess } from '../common/decorators/roles.decorator';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { sumMoney } from '../common/money';
+import { forUpdate, lockHint } from '../prisma/database';
 import { PrismaService } from '../prisma/prisma.service';
 
 export const MAX_TABLES_PER_OUTLET = 200;
@@ -108,7 +109,7 @@ export class TablesController {
     const hotelId = resolveHotelScope(user, dto.hotelId);
     if (!hotelId) throw new BadRequestException('hotelId e obrigatorio');
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM hotels WHERE id = ${hotelId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM hotels ${lockHint()} WHERE id = ${hotelId} ${forUpdate()}`;
       const existing = await tx.diningTable.findMany({ where: { hotelId, outlet: dto.outlet }, select: { number: true } });
       if (existing.length + dto.count > MAX_TABLES_PER_OUTLET) {
         throw new BadRequestException(`Cada ponto de venda pode ter ate ${MAX_TABLES_PER_OUTLET} mesas`);

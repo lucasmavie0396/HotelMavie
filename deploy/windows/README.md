@@ -13,7 +13,7 @@ Postos da receção / bar / cozinha ──► http://servidor:8080 ──► Nod
 |---|---|
 | Sistema | Windows 10 ou 11 (Pro ou Home) ou Windows Server 2016, 2019, 2022 ou 2025, sempre de 64 bits |
 | Node.js | 22 LTS, instalador MSI de https://nodejs.org (marcar "Add to PATH") |
-| Base de dados | MySQL 8.4 ou MariaDB 10.4+ (pode ser o do XAMPP), no próprio servidor ou noutro |
+| Base de dados | MySQL 8.4 ou MariaDB 10.4+ (pode ser o do XAMPP) **ou SQL Server 2017 a 2022** (Express serve), no próprio servidor ou noutro — ver secção 12 |
 | Hardware | 2 CPU, 4 GB RAM, 20 GB de disco livres (indicativo, para 1 a 3 hotéis) |
 | Git | opcional, só para atualizar com `-GitPull` |
 
@@ -289,7 +289,37 @@ Para mudar o SMTP ou outra configuração de um hotel, edita `dados\hoteis\<codi
 
 Para passar um hotel para outro servidor, copia a pasta `dados\hoteis\<codigo>` e a chave AT, restaura o backup na base de dados nova, corrige `DATABASE_URL` no `hotel.env` e arranca-o com `executar.cmd "<pasta logs>" "<node.exe>" "<hotel.env>"`.
 
-## 12. Resolução de problemas
+## 12. SQL Server em vez de MySQL/MariaDB
+
+O mesmo código funciona com SQL Server. A escolha é por hotel e faz-se só pela `DATABASE_URL`: `mysql://…` ou `sqlserver://…`. Não há uma versão separada do sistema.
+
+**No assistente:** em "Base de dados", escolhe **SQL Server**. A instância pode ficar vazia (usa a deste computador) ou ter o nome, por exemplo `SQLEXPRESS`. O utilizador vazio usa a conta do Windows de quem corre o assistente, que tem de ser administrador da instância. Para usar uma conta SQL (por exemplo `sa`), escreve-a com a password.
+
+**Pela linha de comandos:**
+
+```powershell
+.\requisitos.ps1 -BaseDados SQLServer -SqlInstancia SQLEXPRESS              # só verificar
+.\hoteis.ps1 -Acao novo -BaseDados SQLServer -SqlInstancia SQLEXPRESS -Codigo hotelmar -Nome "Hotel Mar" -AdminEmail admin@hotelmar.pt
+.\hoteis.ps1 -Acao novo -BaseDados SQLServer -DbHost sql01 -DbPort 1433 -DbAdminUser sa ...   # SQL Server noutro servidor
+```
+
+| Requisito (SQL Server) | Se faltar |
+|---|---|
+| SQL Server neste computador | Se a instância estiver parada, arranca-a. Se não houver nenhuma, transfere o SQL Server 2022 Express da Microsoft (assinatura verificada) e instala a instância `MAVIE`, com os administradores do Windows como sysadmin |
+| TCP numa porta fixa e autenticação SQL | Liga o TCP, fixa a porta atual (ou 1433) e ativa a autenticação SQL Server e Windows. **Reinicia o serviço do SQL Server**: se a instância for usada por outros programas, faz isto fora de horas |
+| Acesso de administrador ao SQL Server | Não se instala: a conta indicada (ou a do Windows) tem de ser sysadmin |
+
+Cada hotel fica com a sua base `mavie_<codigo>` e um login SQL `mavie_<codigo>` (password gerada, só `db_owner` dessa base), guardados no `hotel.env`. O serviço do SQL Server recebe permissão para gravar na pasta `backups` do hotel.
+
+**Backups:** em SQL Server, o painel (Utilizadores → Backups) e `hoteis.ps1 -Acao backup` fazem `BACKUP DATABASE` para um ficheiro `.bak`, em vez do `.sql` do mysqldump. Para restaurar, usa o SQL Server Management Studio (Restore Database) ou `RESTORE DATABASE [mavie_<codigo>] FROM DISK = N'…\diario-AAAAMMDD-HHMMSS.bak' WITH REPLACE`, com o hotel parado. Com o SQL Server noutro computador, a pasta de backups tem de estar nesse servidor.
+
+**Diferenças a ter em conta:**
+- Apagar um hotel inteiro pelo painel só funciona se não tiver dados. O SQL Server não aceita algumas cascatas que o MySQL aceita, por isso o sistema recusa em vez de apagar em cadeia.
+- As atualizações (`hoteis.ps1 -Acao atualizar`) migram cada base com as migrações do tipo certo (`backend\prisma\sqlserver\migrations` para SQL Server).
+
+**Para quem desenvolve:** o schema principal continua a ser `backend\prisma\schema.prisma`. Depois de o alterar e criar a migração MySQL, corre `npm run db:sqlserver:migracao -- <nome>` no `backend`. Isso gera `prisma\sqlserver\schema.prisma` e a migração SQL Server. Os índices únicos em colunas opcionais são criados como índices filtrados, para aceitarem vários vazios como no MySQL. Um teste unitário falha se este passo for esquecido. Para correr os testes e2e em SQL Server: `TEST_DATABASE_URL="sqlserver://localhost:1433;database=mavie_test;integratedSecurity=true;trustServerCertificate=true" npm run test:e2e`.
+
+## 13. Resolução de problemas
 
 | Sintoma | Verificar |
 |---|---|

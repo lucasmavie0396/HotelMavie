@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { AuditService } from '../audit/audit';
 import { JwtPayload } from '../auth/jwt-payload';
+import { jsonValue } from '../prisma/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -64,7 +65,7 @@ export class UsersService {
   async resetTwoFactor(id: number, actor: JwtPayload) {
     const user = await this.prisma.user.update({
       where: { id },
-      data: { totpEnabled: false, totpSecret: null, totpLastStep: null, totpRecoveryCodes: [] },
+      data: { totpEnabled: false, totpSecret: null, totpLastStep: null, totpRecoveryCodes: jsonValue([]) },
       select: publicUserSelect,
     });
     await this.prisma.userSession.deleteMany({ where: { userId: id } });

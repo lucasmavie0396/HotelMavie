@@ -8,6 +8,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { addDays, parseDate } from '../common/dates';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { resolveHotelScope } from '../common/hotel-scope';
+import { jsonRead, jsonValue } from '../prisma/database';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface AuditEntry {
@@ -76,7 +77,7 @@ export class AuditService {
           entity: entry.entity,
           entityId: entry.entityId ?? null,
           summary: entry.summary.slice(0, 255),
-          data: entry.data,
+          data: jsonValue(entry.data),
         },
       });
     } catch (error) {
@@ -97,11 +98,11 @@ export class AuditController {
   }
 
   @Get()
-  list(@Query() query: AuditQueryDto, @CurrentUser() user: JwtPayload) {
+  async list(@Query() query: AuditQueryDto, @CurrentUser() user: JwtPayload) {
     const hotelId = resolveHotelScope(user, query.hotelId);
     const scope: Prisma.AuditLogWhereInput =
       user.role === UserRole.ADMIN ? (hotelId ? { OR: [{ hotelId }, { hotelId: null }] } : {}) : { hotelId };
-    return this.prisma.auditLog.findMany({
+    const logs = await this.prisma.auditLog.findMany({
       where: {
         ...scope,
         action: query.action,
@@ -115,6 +116,7 @@ export class AuditController {
       orderBy: { createdAt: 'desc' },
       take: 500,
     });
+    return logs.map((log) => ({ ...log, data: jsonRead<Prisma.JsonValue>(log.data) }));
   }
 }
 

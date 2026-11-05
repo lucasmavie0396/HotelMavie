@@ -8,6 +8,7 @@ import { Ticket } from '../billing/ticket-pdf.service';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { sumMoney } from '../common/money';
+import { jsonRead, jsonValue } from '../prisma/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { Report } from '../reports/report-model';
 import { ReportRenderService } from '../reports/report-render.service';
@@ -167,7 +168,7 @@ export class PayrollService {
     if (!run || !canAccessHotel(user, run.hotelId)) {
       throw new NotFoundException('Processamento nao encontrado');
     }
-    return run;
+    return { ...run, payslips: run.payslips.map((slip) => ({ ...slip, extraLines: jsonRead<Prisma.JsonValue>(slip.extraLines) })) };
   }
 
   async createRun(dto: CreateRunDto, user: JwtPayload) {
@@ -209,10 +210,11 @@ export class PayrollService {
       },
       { ...rates, employeeSsRate: slip.employeeSsRate, employerSsRate: slip.employerSsRate },
     );
-    return this.prisma.payslip.update({
+    const updated = await this.prisma.payslip.update({
       where: { id },
-      data: { ...values, extraLines: lines as unknown as Prisma.InputJsonValue, notes: dto.notes ?? slip.notes, manual: true },
+      data: { ...values, extraLines: jsonValue(lines as unknown as Prisma.InputJsonValue), notes: dto.notes ?? slip.notes, manual: true },
     });
+    return { ...updated, extraLines: jsonRead<Prisma.JsonValue>(updated.extraLines) };
   }
 
   async close(id: number, user: JwtPayload) {
@@ -416,7 +418,8 @@ export class PayrollService {
   }
 
   private lines(slip: Pick<Slip, 'extraLines'>): ExtraLine[] {
-    return Array.isArray(slip.extraLines) ? (slip.extraLines as unknown as ExtraLine[]) : [];
+    const lines = jsonRead(slip.extraLines);
+    return Array.isArray(lines) ? (lines as unknown as ExtraLine[]) : [];
   }
 
   private async rates(hotelId: number): Promise<PayrollRates> {

@@ -8,6 +8,7 @@ import { Ticket } from '../billing/ticket-pdf.service';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { sumMoney, toMoney } from '../common/money';
+import { forUpdate, lockHint } from '../prisma/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { Report, ReportSection } from '../reports/report-model';
 import { ReportRenderService } from '../reports/report-render.service';
@@ -196,18 +197,18 @@ export class StockDocumentsService {
         throw new ConflictException('Este documento ja foi lancado ou cancelado');
       }
       const [series] = await tx.$queryRaw<{ id: number; nextNumber: number }[]>`
-        SELECT id, nextNumber FROM stock_document_series
-        WHERE hotelId = ${document.hotelId} AND type = ${document.type} AND year = ${year} FOR UPDATE`;
+        SELECT id, nextNumber FROM stock_document_series ${lockHint()}
+        WHERE hotelId = ${document.hotelId} AND type = ${document.type} AND year = ${year} ${forUpdate()}`;
       await tx.stockDocumentSeries.update({ where: { id: series.id }, data: { nextNumber: { increment: 1 } } });
       await tx.stockDocument.update({ where: { id }, data: { year, number: series.nextNumber } });
       const number = stockDocumentNumber({ ...document, year, number: series.nextNumber });
 
       const items = await tx.stockDocumentItem.findMany({ where: { documentId: id }, orderBy: { id: 'asc' } });
       const productIds = [...new Set(items.map((item) => item.productId))];
-      await tx.$queryRaw`SELECT id FROM products WHERE id IN (${Prisma.join(productIds)}) FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM products ${lockHint()} WHERE id IN (${Prisma.join(productIds)}) ${forUpdate()}`;
       const levels = await tx.$queryRaw<{ productId: number; quantity: Prisma.Decimal }[]>`
-        SELECT productId, quantity FROM stock_levels
-        WHERE warehouseId = ${document.warehouseId} AND productId IN (${Prisma.join(productIds)}) FOR UPDATE`;
+        SELECT productId, quantity FROM stock_levels ${lockHint()}
+        WHERE warehouseId = ${document.warehouseId} AND productId IN (${Prisma.join(productIds)}) ${forUpdate()}`;
       const onHand = new Map(levels.map((level) => [level.productId, new Prisma.Decimal(level.quantity)]));
       const names = new Map(document.items.map((item) => [item.productId, item.product.name]));
       const withReason = (label: string) => [label, document.reason].filter(Boolean).join(': ').slice(0, 200);

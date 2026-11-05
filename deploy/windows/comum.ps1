@@ -175,7 +175,100 @@ function Initialize-AtKey([string]$Node, [string]$KeyPath) {
   }
 }
 
+function Test-SqlServerUrl([string]$Url) {
+  return [bool]$Url -and $Url.StartsWith('sqlserver:')
+}
+
+function Format-SqlServerValue([string]$Value) {
+  if ($Value -match '[;={}]') { return '{' + $Value.Replace('}', '}}') + '}' }
+  return $Value
+}
+
+function New-SqlServerUrl([string]$TargetHost, [int]$TargetPort, [string]$Database, [string]$User = '', [string]$Password = '') {
+  $url = "sqlserver://${TargetHost}:$TargetPort;database=$Database"
+  if ($User) {
+    $url += ";user=$(Format-SqlServerValue $User);password=$(Format-SqlServerValue $Password)"
+  } else {
+    $url += ';integratedSecurity=true'
+  }
+  return "$url;trustServerCertificate=true;connectTimeout=30"
+}
+
+function Get-SqlServerDatabase([string]$Url) {
+  if ($Url -match '(^|;)database=([^;]+)') { return $Matches[2] }
+  return ''
+}
+
+function Invoke-SqlServer([string]$Node, [string]$Url, [string]$Sql, [switch]$Consulta) {
+  $runner = Join-Path $Backend 'prisma\sqlserver\executar-sql.mjs'
+  $arguments = @($runner)
+  if ($Consulta) { $arguments += '--consulta' }
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  $env:MAVIE_SQL_URL = $Url
+  $env:MAVIE_SQL = $Sql
+  try {
+    $output = & $Node @arguments 2>&1
+    $code = $LASTEXITCODE
+  } finally {
+    Remove-Item Env:\MAVIE_SQL_URL, Env:\MAVIE_SQL -ErrorAction SilentlyContinue
+    $ErrorActionPreference = $previous
+  }
+  $errors = @($output | Where-Object { $_ -is [Management.Automation.ErrorRecord] } | ForEach-Object { "$_" })
+  $lines = @($output | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] } | ForEach-Object { "$_" })
+  if ($code -ne 0) { throw "SQL Server: $(($errors + $lines) -join ' ')" }
+  return $lines
+}
+
+function Get-SqlServerInstance([string]$Name = '') {
+  $names = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL' -ErrorAction SilentlyContinue
+  if (-not $names) { return $null }
+  $instances = @($names.PSObject.Properties | Where-Object { $_.Name -notlike 'PS*' })
+  if (-not $instances) { return $null }
+  $wanted = $Name
+  if ($wanted -match '\\(.+)$') { $wanted = $Matches[1] }
+  if (-not $wanted -or $wanted -in @('.', 'localhost', '(local)', $env:COMPUTERNAME)) { $wanted = '' }
+  $chosen = $instances | Where-Object { -not $wanted -or $_.Name -ieq $wanted } | Select-Object -First 1
+  if (-not $chosen) { return $null }
+  $root = "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\$($chosen.Value)\MSSQLServer"
+  $tcp = Get-ItemProperty "$root\SuperSocketNetLib\Tcp" -ErrorAction SilentlyContinue
+  $ipAll = Get-ItemProperty "$root\SuperSocketNetLib\Tcp\IPAll" -ErrorAction SilentlyContinue
+  $static = "$($ipAll.TcpPort)".Trim()
+  $dynamic = "$($ipAll.TcpDynamicPorts)".Trim()
+  $port = 0
+  if ($static) { $port = [int]($static.Split(',')[0]) } elseif ($dynamic -and $dynamic -ne '0') { $port = [int]($dynamic.Split(',')[0]) }
+  $serviceName = 'MSSQLSERVER'
+  if ($chosen.Name -ne 'MSSQLSERVER') { $serviceName = "MSSQL`$$($chosen.Name)" }
+  $service = Get-CimInstance Win32_Service -Filter "Name = '$serviceName'" -ErrorAction SilentlyContinue
+  $login = Get-ItemProperty $root -Name LoginMode -ErrorAction SilentlyContinue
+  return [pscustomobject]@{
+    Name = $chosen.Name
+    Key = $chosen.Value
+    Root = $root
+    Service = $serviceName
+    Running = [bool]($service -and $service.State -eq 'Running')
+    Account = $(if ($service) { $service.StartName } else { '' })
+    TcpEnabled = [bool]($tcp -and $tcp.Enabled -eq 1)
+    Port = $port
+    StaticPort = [bool]$static
+    MixedMode = [bool]($login -and $login.LoginMode -eq 2)
+  }
+}
+
+function Set-SqlServerStaticPort($Instance) {
+  Set-ItemProperty "$($Instance.Root)\SuperSocketNetLib\Tcp\IPAll" -Name TcpPort -Value "$($Instance.Port)"
+  Set-ItemProperty "$($Instance.Root)\SuperSocketNetLib\Tcp\IPAll" -Name TcpDynamicPorts -Value ''
+}
+
+function Grant-SqlServerFolder($Instance, [string]$Path) {
+  if (-not $Instance -or -not $Instance.Account) { return }
+  $account = "NT Service\$($Instance.Service)"
+  if ($Instance.Account -notmatch '^NT Service\\') { $account = $Instance.Account }
+  Invoke-Native 'icacls.exe' @($Path, '/grant', "${account}:(OI)(CI)M", '/Q') $Raiz
+}
+
 function Backup-Database([hashtable]$Env, [string]$Prefix) {
+  if (Test-SqlServerUrl $Env['DATABASE_URL']) { return Backup-SqlServerDatabase $Env $Prefix }
   $dump = $Env['MYSQLDUMP_PATH']
   if (-not $dump -or -not (Test-Path $dump)) { $dump = Find-Mysqldump }
   if (-not $dump) { throw 'mysqldump nao encontrado: define MYSQLDUMP_PATH no backend\.env ou usa -SemBackup.' }
@@ -191,6 +284,22 @@ function Backup-Database([hashtable]$Env, [string]$Prefix) {
   } finally {
     Remove-Item Env:\MYSQL_PWD -ErrorAction SilentlyContinue
   }
+  Write-Ok "Backup: $file ($([math]::Round((Get-Item $file).Length / 1KB)) KB)"
+  return $file
+}
+
+function Backup-SqlServerDatabase([hashtable]$Env, [string]$Prefix) {
+  $url = $Env['DATABASE_URL']
+  $database = Get-SqlServerDatabase $url
+  if ($database -notmatch '^[A-Za-z0-9_]+$') { throw "Nome de base de dados invalido no DATABASE_URL: $database" }
+  $dir = $Env['BACKUP_DIR']
+  if (-not $dir) { $dir = Join-Path $Backend 'backups' }
+  if (-not [IO.Path]::IsPathRooted($dir)) { $dir = Join-Path $Backend $dir }
+  New-Item -ItemType Directory -Force $dir | Out-Null
+  $file = Join-Path $dir ('{0}-{1}.bak' -f $Prefix, (Get-Date -Format 'yyyyMMdd-HHmmss'))
+  $target = $file.Replace("'", "''")
+  Invoke-SqlServer (Get-NodePath) $url "BACKUP DATABASE [$database] TO DISK = N'$target' WITH COPY_ONLY, INIT, CHECKSUM" | Out-Null
+  if (-not (Test-Path $file)) { throw "O SQL Server gravou o backup no computador dele ($file): a pasta de backups tem de estar no servidor da base de dados." }
   Write-Ok "Backup: $file ($([math]::Round((Get-Item $file).Length / 1KB)) KB)"
   return $file
 }
@@ -245,8 +354,10 @@ function Get-Npm([string]$Node) {
 function Invoke-Migrate([string]$Node, [string]$DatabaseUrl) {
   $previous = $env:DATABASE_URL
   $env:DATABASE_URL = $DatabaseUrl
+  $arguments = @('exec', '--', 'prisma', 'migrate', 'deploy')
+  if (Test-SqlServerUrl $DatabaseUrl) { $arguments += @('--schema', 'prisma\sqlserver\schema.prisma') }
   try {
-    Invoke-Native (Get-Npm $Node) @('exec', '--', 'prisma', 'migrate', 'deploy') $Backend
+    Invoke-Native (Get-Npm $Node) $arguments $Backend
   } finally {
     if ($null -eq $previous) { Remove-Item Env:\DATABASE_URL -ErrorAction SilentlyContinue } else { $env:DATABASE_URL = $previous }
   }
@@ -256,11 +367,11 @@ function Invoke-Build([string]$Node, [switch]$SemMigrar) {
   $npm = Get-Npm $Node
   Write-Step 'Dependencias do backend'
   Invoke-Native $npm @('ci', '--no-audit', '--no-fund') $Backend
-  Write-Step 'Prisma generate'
-  Invoke-Native $npm @('exec', '--', 'prisma', 'generate') $Backend
+  Write-Step 'Prisma generate (MySQL/MariaDB e SQL Server)'
+  Invoke-Native $npm @('run', 'prisma:generate') $Backend
   if (-not $SemMigrar) {
     Write-Step 'Base de dados (migrate deploy)'
-    Invoke-Native $npm @('exec', '--', 'prisma', 'migrate', 'deploy') $Backend
+    Invoke-Migrate $Node (Read-EnvFile)['DATABASE_URL']
   }
   Write-Step 'Compilar o backend'
   Invoke-Native $npm @('run', 'build') $Backend

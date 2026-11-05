@@ -64,10 +64,13 @@ export class PaymentTypesService {
   async ensureDefaults(hotelId: number) {
     const count = await this.prisma.paymentType.count({ where: { hotelId } });
     if (!count) {
-      await this.prisma.paymentType.createMany({
-        data: DEFAULTS.map((type, index) => ({ ...type, hotelId, mechanism: PAYMENT_MECHANISM[type.kind], sortOrder: index + 1 })),
-        skipDuplicates: true,
-      });
+      try {
+        await this.prisma.paymentType.createMany({
+          data: DEFAULTS.map((type, index) => ({ ...type, hotelId, mechanism: PAYMENT_MECHANISM[type.kind], sortOrder: index + 1 })),
+        });
+      } catch (error) {
+        if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') throw error;
+      }
     }
   }
 

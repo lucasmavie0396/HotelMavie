@@ -7,6 +7,9 @@ param(
   [string]$AdminEmail,
   [string]$Dominio,
   [int]$Port,
+  [ValidateSet('MySQL', 'SQLServer')]
+  [string]$BaseDados = 'MySQL',
+  [string]$SqlInstancia = '',
   [string]$DbHost = 'localhost',
   [int]$DbPort = 3306,
   [string]$DbAdminUser = 'root',
@@ -23,6 +26,10 @@ param(
 . (Join-Path $PSScriptRoot 'comum.ps1')
 
 if (-not $DbAdminPassword -and $env:MAVIE_DB_ADMIN_PASSWORD) { $DbAdminPassword = $env:MAVIE_DB_ADMIN_PASSWORD }
+if ($BaseDados -eq 'SQLServer') {
+  if (-not $PSBoundParameters.ContainsKey('DbAdminUser')) { $DbAdminUser = '' }
+  if (-not $PSBoundParameters.ContainsKey('DbPort')) { $DbPort = 0 }
+}
 
 function Assert-Admin {
   if (-not (Test-Administrator)) { throw 'Abre o PowerShell como Administrador.' }
@@ -74,7 +81,24 @@ function Invoke-MysqlAdmin([string]$Mysql, [string]$Sql) {
 
 function Remove-OldBackups([string]$Dir) {
   $limit = (Get-Date).AddDays(-$DiasBackup)
-  Get-ChildItem -Path $Dir -Filter 'diario-*.sql' -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -lt $limit } | Remove-Item -Force
+  Get-ChildItem -Path $Dir -Filter 'diario-*' -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in @('.sql', '.bak') -and $_.LastWriteTime -lt $limit } | Remove-Item -Force
+}
+
+function New-SqlServerHotelDatabase([string]$Node, [string]$DbName, [string]$DbUser) {
+  $port = Resolve-SqlServerPort
+  $admin = New-SqlServerUrl $DbHost $port 'master' $DbAdminUser $DbAdminPassword
+  $exists = Invoke-SqlServer $Node $admin "SELECT COUNT(*) AS total FROM sys.databases WHERE name = N'$DbName'" -Consulta
+  if ("$exists".Trim() -ne '0') { throw "A base de dados $DbName ja existe no SQL Server. Escolhe outro codigo ou remove-a a mao." }
+  Write-Ok "Base de dados $DbName no SQL Server ${DbHost}:$port"
+
+  Write-Step 'Criar a base de dados e o login proprio (SQL Server)'
+  $password = 'Mv-' + (New-Secret $Node 18) + 'Z9'
+  Invoke-SqlServer $Node $admin "CREATE DATABASE [$DbName]" | Out-Null
+  Invoke-SqlServer $Node $admin ("IF SUSER_ID(N'$DbUser') IS NULL CREATE LOGIN [$DbUser] WITH PASSWORD = N'$password', CHECK_POLICY = ON, DEFAULT_DATABASE = [$DbName] " +
+    "ELSE ALTER LOGIN [$DbUser] WITH PASSWORD = N'$password', DEFAULT_DATABASE = [$DbName]") | Out-Null
+  Invoke-SqlServer $Node (New-SqlServerUrl $DbHost $port $DbName $DbAdminUser $DbAdminPassword) "CREATE USER [$DbUser] FOR LOGIN [$DbUser]; ALTER ROLE db_owner ADD MEMBER [$DbUser];" | Out-Null
+  Write-Ok "Login $DbUser so com acesso a $DbName (password gerada, guardada no hotel.env)"
+  return New-SqlServerUrl $DbHost $port $DbName $DbUser $password
 }
 
 function New-Hotel {
@@ -87,27 +111,33 @@ function New-Hotel {
 
   Write-Host "MAVIE-HGest - novo hotel '$Nome' ($code)" -ForegroundColor White
   Write-Step 'Verificar e instalar requisitos'
-  . (Join-Path $PSScriptRoot 'requisitos.ps1') -DbHost $DbHost -DbPort $DbPort -DbAdminUser $DbAdminUser -DbAdminPassword $DbAdminPassword
+  . (Join-Path $PSScriptRoot 'requisitos.ps1') -BaseDados $BaseDados -SqlInstancia $SqlInstancia -DbHost $DbHost -DbPort $DbPort -DbAdminUser $DbAdminUser -DbAdminPassword $DbAdminPassword
   Install-MissingRequirements -Dominio:([bool]$Dominio)
   $node = Assert-Node
-  $mysql = Find-MysqlTool 'mysql.exe'
-  $dump = Find-Mysqldump
   $dbName = "mavie_$code"
   $dbUser = "mavie_$code"
-  $exists = Invoke-MysqlAdmin $mysql "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = '$dbName'"
-  if ("$exists".Trim() -ne '0') { throw "A base de dados $dbName ja existe. Escolhe outro codigo ou remove-a a mao." }
   if (-not $Port) { $Port = Get-FreePort }
-  Write-Ok "Base de dados $dbName, porta $Port"
+  $dump = ''
+  if ($BaseDados -eq 'SQLServer') {
+    $databaseUrl = New-SqlServerHotelDatabase $node $dbName $dbUser
+  } else {
+    $mysql = Find-MysqlTool 'mysql.exe'
+    $dump = Find-Mysqldump
+    $exists = Invoke-MysqlAdmin $mysql "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = '$dbName'"
+    if ("$exists".Trim() -ne '0') { throw "A base de dados $dbName ja existe. Escolhe outro codigo ou remove-a a mao." }
+    Write-Ok "Base de dados $dbName, porta $Port"
 
-  Write-Step 'Criar a base de dados e o utilizador proprio'
-  $dbPassword = New-Secret $node 24
-  $userHost = 'localhost'
-  if ($DbHost -notin @('localhost', '127.0.0.1')) { $userHost = '%' }
-  Invoke-MysqlAdmin $mysql ("CREATE DATABASE ``$dbName`` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; " +
-    "CREATE USER IF NOT EXISTS '$dbUser'@'$userHost' IDENTIFIED BY '$dbPassword'; " +
-    "ALTER USER '$dbUser'@'$userHost' IDENTIFIED BY '$dbPassword'; " +
-    "GRANT ALL PRIVILEGES ON ``$dbName``.* TO '$dbUser'@'$userHost'; FLUSH PRIVILEGES;") | Out-Null
-  Write-Ok "Utilizador $dbUser so com acesso a $dbName (password gerada, guardada no hotel.env)"
+    Write-Step 'Criar a base de dados e o utilizador proprio'
+    $dbPassword = New-Secret $node 24
+    $userHost = 'localhost'
+    if ($DbHost -notin @('localhost', '127.0.0.1')) { $userHost = '%' }
+    Invoke-MysqlAdmin $mysql ("CREATE DATABASE ``$dbName`` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; " +
+      "CREATE USER IF NOT EXISTS '$dbUser'@'$userHost' IDENTIFIED BY '$dbPassword'; " +
+      "ALTER USER '$dbUser'@'$userHost' IDENTIFIED BY '$dbPassword'; " +
+      "GRANT ALL PRIVILEGES ON ``$dbName``.* TO '$dbUser'@'$userHost'; FLUSH PRIVILEGES;") | Out-Null
+    Write-Ok "Utilizador $dbUser so com acesso a $dbName (password gerada, guardada no hotel.env)"
+    $databaseUrl = "mysql://${dbUser}:$dbPassword@${DbHost}:$DbPort/$dbName"
+  }
 
   $paths = @{
     Uploads = Join-Path $dir 'uploads'
@@ -116,6 +146,10 @@ function New-Hotel {
     Iis = Join-Path $dir 'iis'
   }
   foreach ($path in $paths.Values) { New-Item -ItemType Directory -Force $path | Out-Null }
+  if ($BaseDados -eq 'SQLServer' -and (Test-LocalDbHost)) {
+    Grant-SqlServerFolder (Get-SqlServerInstance $SqlInstancia) $paths.Backups
+    Write-Ok 'O servico do SQL Server pode gravar backups na pasta do hotel'
+  }
 
   Write-Step 'Chave de assinatura AT (partilhada por todos os hoteis)'
   Initialize-AtKey $node $ChaveAtPartilhada
@@ -128,7 +162,6 @@ function New-Hotel {
     $hostLine = '127.0.0.1'
     $trust = 'loopback'
   }
-  $databaseUrl = "mysql://${dbUser}:$dbPassword@${DbHost}:$DbPort/$dbName"
   $envPath = Join-Path $dir 'hotel.env'
   Write-Utf8File $envPath (New-EnvContent @{
     DatabaseUrl = $databaseUrl

@@ -1,0 +1,1075 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../node_modules/.prisma/client-sqlserver"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+model Hotel {
+  id                     Int               @id @default(autoincrement())
+  name                   String            @db.NVarChar(150)
+  publicSlug             String?           @unique @db.NVarChar(100)
+  publicEnabled          Boolean           @default(false)
+  customDomain           String?           @unique @db.NVarChar(253)
+  email                  String?           @db.NVarChar(150)
+  phone                  String?           @db.NVarChar(30)
+  address                String?           @db.NVarChar(255)
+  currency               String            @default("EUR") @db.NVarChar(3)
+  city                   String?           @db.NVarChar(100)
+  postalCode             String?           @db.NVarChar(20)
+  country                String            @default("PT") @db.NVarChar(2)
+  legalName              String?           @db.NVarChar(200)
+  taxId                  String?           @db.NVarChar(30)
+  invoiceFooter          String?           @db.NVarChar(Max)
+  ticketFooter           String?           @db.NVarChar(255)
+  logoFile               String?           @db.NVarChar(100)
+  publicDescription      String?           @db.NVarChar(Max)
+  publicDescriptionEn    String?           @db.NVarChar(Max)
+  depositPercent         Decimal           @default(60) @db.Decimal(5, 2)
+  paymentInstructions    String?           @db.NVarChar(Max)
+  paymentInstructionsEn  String?           @db.NVarChar(Max)
+  accommodationTaxRateId Int?
+  accommodationTaxRate   TaxRate?          @relation("AccommodationTaxRate", fields: [accommodationTaxRateId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+  users                  User[]
+  rooms                  Room[]
+  guests                 Guest[]
+  reservations           Reservation[]
+  reservationGroups      ReservationGroup[]
+  taxRates               TaxRate[]
+  charges                Charge[]
+  payments               Payment[]
+  invoiceSeries          InvoiceSeries[]
+  invoices               Invoice[]
+  cashRegisters          CashRegister[]
+  productCategories      ProductCategory[]
+  products               Product[]
+  orders                 Order[]
+  suppliers              Supplier[]
+  warehouses             Warehouse[]
+  emailLogs              EmailLog[]
+  receipts               Receipt[]
+  purchases              Purchase[]
+  stockDocuments         StockDocument[]
+  stockDocumentSeries    StockDocumentSeries[]
+  auditLogs              AuditLog[]
+  payrollSettings        PayrollSettings?
+  payrollRuns            PayrollRun[]
+  employees              Employee[]
+  shifts                 Shift[]
+  timeEntries            TimeEntry[]
+  printers               Printer[]
+  paymentTypes           PaymentType[]
+  diningTables           DiningTable[]
+
+  @@map("hotels")
+}
+
+model User {
+  id                Int             @id @default(autoincrement())
+  name              String          @db.NVarChar(150)
+  email             String          @unique @db.NVarChar(150)
+  passwordHash      String          @db.NVarChar(255)
+  role              String          @default("RECEPTION") @db.NVarChar(40)
+  active            Boolean         @default(true)
+  hotelId           Int?
+  hotel             Hotel?          @relation(fields: [hotelId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  totpSecret        String?         @db.NVarChar(255)
+  totpEnabled       Boolean         @default(false)
+  totpLastStep      Int?
+  totpRecoveryCodes String? @db.NVarChar(Max)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  sessions          UserSession[]
+  passwordResets    PasswordReset[]
+  auditLogs         AuditLog[]
+  payrollRuns       PayrollRun[]    @relation("PayrollRunCreatedBy")
+  reservations      Reservation[]
+  charges           Charge[]
+  payments          Payment[]
+  invoices          Invoice[]
+  openedSessions    CashSession[]   @relation("OpenedBy")
+  closedSessions    CashSession[]   @relation("ClosedBy")
+  cashMovements     CashMovement[]
+  receipts          Receipt[]
+  orders            Order[]
+  stockMovements    StockMovement[]
+  purchases         Purchase[]
+  stockDocuments    StockDocument[]
+  employee          Employee?
+  timeEntriesEdited TimeEntry[]     @relation("TimeEntryEditedBy")
+  voidedOrderItems  OrderItem[]     @relation("OrderItemVoidedBy")
+  depositsConfirmed Reservation[]   @relation("DepositConfirmedBy")
+
+  @@index([hotelId])
+  @@map("users")
+}
+
+model PasswordReset {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tokenHash String    @unique @db.NVarChar(64)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("password_resets")
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  hotelId   Int?
+  hotel     Hotel?   @relation(fields: [hotelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  userId    Int?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  action    String   @db.NVarChar(60)
+  entity    String   @db.NVarChar(40)
+  entityId  Int?
+  summary   String   @db.NVarChar(255)
+  data      String? @db.NVarChar(Max)
+  createdAt DateTime @default(now())
+
+  @@index([hotelId, createdAt])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+model Room {
+  id            Int           @id @default(autoincrement())
+  hotelId       Int
+  hotel         Hotel         @relation(fields: [hotelId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  number        String        @db.NVarChar(20)
+  type          String        @db.NVarChar(60)
+  capacity      Int           @default(2)
+  pricePerNight Decimal       @db.Decimal(10, 2)
+  status        String        @default("AVAILABLE") @db.NVarChar(40)
+  floor         Int?
+  description   String?       @db.NVarChar(Max)
+  descriptionEn String?       @db.NVarChar(Max)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  reservations  Reservation[]
+  images        RoomImage[]
+
+  @@unique([hotelId, number])
+  @@map("rooms")
+}
+
+model RoomImage {
+  id        Int      @id @default(autoincrement())
+  roomId    Int
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  file      String   @db.NVarChar(100)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([roomId])
+  @@map("room_images")
+}
+
+model Guest {
+  id             Int           @id @default(autoincrement())
+  hotelId        Int
+  hotel          Hotel         @relation(fields: [hotelId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  firstName      String        @db.NVarChar(100)
+  lastName       String        @db.NVarChar(100)
+  email          String?       @db.NVarChar(150)
+  phone          String?       @db.NVarChar(30)
+  documentType   String?       @db.NVarChar(30)
+  documentNumber String?       @db.NVarChar(50)
+  nationality    String?       @db.NVarChar(60)
+  birthDate      DateTime?     @db.Date
+  address        String?       @db.NVarChar(255)
+  taxId          String?       @db.NVarChar(30)
+  notes          String?       @db.NVarChar(Max)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  reservations   Reservation[]
+
+  @@index([hotelId, lastName])
+  @@index([hotelId, email])
+  @@map("guests")
+}
+
+model ReservationGroup {
+  id             Int           @id @default(autoincrement())
+  code           String        @unique @db.NVarChar(20)
+  hotelId        Int
+  hotel          Hotel         @relation(fields: [hotelId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  kind           String        @default("INDIVIDUAL") @db.NVarChar(40)
+  companyName    String?       @db.NVarChar(200)
+  companyTaxId   String?       @db.NVarChar(30)
+  companyAddress String?       @db.NVarChar(255)
+  companyEmail   String?       @db.NVarChar(150)
+  companyPhone   String?       @db.NVarChar(30)
+  contactName    String?       @db.NVarChar(150)
+  notes          String?       @db.NVarChar(Max)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  reservations   Reservation[]
+
+  @@index([hotelId, companyTaxId])
+  @@map("reservation_groups")
+}
+
+model Reservation {
+  id                   Int                    @id @default(autoincrement())
+  code                 String                 @unique @db.NVarChar(20)
+  hotelId              Int
+  hotel                Hotel                  @relation(fields: [hotelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  groupId              Int?
+  group                ReservationGroup?      @relation(fields: [groupId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  guestId              Int
+  guest                Guest                  @relation(fields: [guestId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  roomId               Int
+  room                 Room                   @relation(fields: [roomId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  checkIn              DateTime               @db.Date
+  checkOut             DateTime               @db.Date
+  adults               Int                    @default(1)
+  children             Int                    @default(0)
+  status               String                 @default("PENDING") @db.NVarChar(40)
+  source               String                 @default("DESK") @db.NVarChar(40)
+  pricePerNight        Decimal                @db.Decimal(10, 2)
+  totalAmount          Decimal                @db.Decimal(12, 2)
+  notes                String?                @db.NVarChar(Max)
+  locale               String                 @default("pt") @db.NVarChar(5)
+  checkedInAt          DateTime?
+  checkedOutAt         DateTime?
+  cancelledAt          DateTime?
+  depositAmount        Decimal?               @db.Decimal(12, 2)
+  depositReference     String?                @db.NVarChar(100)
+  depositPaymentTypeId Int?
+  depositPaymentType   PaymentType?           @relation(fields: [depositPaymentTypeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  depositPaymentId     Int?                   @unique
+  depositPayment       Payment?               @relation("DepositPayment", fields: [depositPaymentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  depositConfirmedAt   DateTime?
+  depositConfirmedById Int?
+  depositConfirmedBy   User?                  @relation("DepositConfirmedBy", fields: [depositConfirmedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdById          Int?
+  createdBy            User?                  @relation(fields: [createdById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  charges              Charge[]
+  payments             Payment[]
+  orders               Order[]
+  invoices             Invoice[]
+  companions           ReservationCompanion[]
+
+  @@index([hotelId, checkIn])
+  @@index([hotelId, checkOut])
+  @@index([roomId, checkIn, checkOut])
+  @@index([guestId])
+  @@index([groupId])
+  @@map("reservations")
+}
+
+model ReservationCompanion {
+  id             Int         @id @default(autoincrement())
+  reservationId  Int
+  reservation    Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  firstName      String      @db.NVarChar(100)
+  lastName       String      @db.NVarChar(100)
+  isChild        Boolean     @default(false)
+  birthDate      DateTime?   @db.Date
+  nationality    String?     @db.NVarChar(60)
+  documentType   String?     @db.NVarChar(30)
+  documentNumber String?     @db.NVarChar(50)
+  createdAt      DateTime    @default(now())
+
+  @@index([reservationId])
+  @@map("reservation_companions")
+}
+
+model TaxRate {
+  id                  Int         @id @default(autoincrement())
+  hotelId             Int
+  hotel               Hotel       @relation(fields: [hotelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  name                String      @db.NVarChar(60)
+  rate                Decimal     @db.Decimal(5, 2)
+  atCategory          String      @default("NOR") @db.NVarChar(40)
+  exemptionCode       String?     @db.NVarChar(3)
+  exemptionReason     String?     @db.NVarChar(255)
+  active              Boolean     @default(true)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  accommodationHotels Hotel[]     @relation("AccommodationTaxRate")
+  products            Product[]
+  orderItems          OrderItem[]
+  charges             Charge[]
+
+  @@index([hotelId])
+  @@map("tax_rates")
+}
+
+model Charge {
+  id            Int          @id @default(autoincrement())
+  hotelId       Int
+  hotel         Hotel        @relation(fields: [hotelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  reservationId Int?
+  reservation   Reservation? @relation(fields: [reservationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  type          String       @default("EXTRA") @db.NVarChar(40)
+  description   String       @db.NVarChar(200)
+  quantity      Decimal      @db.Decimal(10, 3)
+  unitPrice     Decimal      @db.Decimal(12, 2)
+  taxRateId     Int?
+  taxRateRef    TaxRate?     @relation(fields: [taxRateId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  taxRate       Decimal      @db.Decimal(5, 2)
+  total         Decimal      @db.Decimal(12, 2)
+  invoiceId     Int?
+  invoice       Invoice?     @relation(fields: [invoiceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  sourceRef     String?      @db.NVarChar(60)
+  productCode   String?      @db.NVarChar(60)
+  orderId       Int?
+  order         Order?       @relation(fields: [orderId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  createdById   Int?
+  createdBy     User?        @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdAt     DateTime     @default(now())
+
+  @@index([reservationId])
+  @@index([invoiceId])
+  @@index([hotelId, createdAt])
+  @@map("charges")
+}
+
+model Payment {
+  id            Int           @id @default(autoincrement())
+  hotelId       Int
+  hotel         Hotel         @relation(fields: [hotelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  reservationId Int?
+  reservation   Reservation?  @relation(fields: [reservationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  invoiceId     Int?
+  invoice       Invoice?      @relation(fields: [invoiceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  cashSessionId Int?
+  cashSession   CashSession?  @relation(fields: [cashSessionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  receiptId     Int?
+  receipt       Receipt?      @relation(fields: [receiptId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orderId       Int?
+  order         Order?        @relation(fields: [orderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  amount        Decimal       @db.Decimal(12, 2)
+  method        String        @db.NVarChar(40)
+  paymentTypeId Int?
+  paymentType   PaymentType?  @relation(fields: [paymentTypeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  reference     String?       @db.NVarChar(100)
+  notes         String?       @db.NVarChar(255)
+  createdById   Int?
+  createdBy     User?         @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdAt     DateTime      @default(now())
+  depositOf     Reservation?  @relation("DepositPayment")
+
+  @@index([reservationId])
+  @@index([cashSessionId])
+  @@index([hotelId, createdAt])
+  @@map("payments")
+}
+
+model InvoiceSeries {
+  id               Int         @id @default(autoincrement())
+  hotelId          Int
+  hotel            Hotel       @relation(fields: [hotelId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  type             String      @db.NVarChar(40)
+  code             String      @db.NVarChar(20)
+  nextNumber       Int         @default(1)
+  atValidationCode String?     @db.NVarChar(20)
+  lastHash         String?     @db.NVarChar(255)
+  active           Boolean     @default(true)
+  createdAt        DateTime    @default(now())
+  receipts         Receipt[]
+  invoices         Invoice[]
+
+  @@unique([hotelId, type, code])
+  @@map("invoice_series")
+}
+
+model Invoice {
+  id              Int           @id @default(autoincrement())
+  hotelId         Int
+  hotel           Hotel         @relation(fields: [hotelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  seriesId        Int
+  series          InvoiceSeries @relation(fields: [seriesId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  type            String      @db.NVarChar(40)
+  number          Int
+  fullNumber      String        @db.NVarChar(40)
+  status          String        @default("ISSUED") @db.NVarChar(40)
+  issuedAt        DateTime      @default(now())
+  reservationId   Int?
+  reservation     Reservation?  @relation(fields: [reservationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  creditOfId      Int?
+  creditOf        Invoice?      @relation("CreditNotes", fields: [creditOfId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  creditNotes     Invoice[]     @relation("CreditNotes")
+  reason          String?       @db.NVarChar(255)
+  customerName    String        @db.NVarChar(200)
+  customerTaxId   String?       @db.NVarChar(30)
+  customerAddress String?       @db.NVarChar(255)
+  customerEmail   String?       @db.NVarChar(150)
+  currency        String        @db.NVarChar(3)
+  netTotal        Decimal       @db.Decimal(12, 2)
+  taxTotal        Decimal       @db.Decimal(12, 2)
+  grossTotal      Decimal       @db.Decimal(12, 2)
+  previousHash    String?       @db.NVarChar(255)
+  hash            String        @db.NVarChar(255)
+  atcud           String?       @db.NVarChar(80)
+  keyVersion      Int           @default(1)
+  createdById     Int?
+  createdBy       User?         @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lines           InvoiceLine[]
+  charges         Charge[]
+  payments        Payment[]
+  receiptLines    ReceiptLine[]
+
+  @@unique([seriesId, number])
+  @@index([hotelId, issuedAt])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id              Int         @id @default(autoincrement())
+  invoiceId       Int
+  invoice         Invoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  description     String      @db.NVarChar(200)
+  quantity        Decimal     @db.Decimal(10, 3)
+  unitPrice       Decimal     @db.Decimal(12, 2)
+  taxRate         Decimal     @db.Decimal(5, 2)
+  productCode     String      @default("GERAL") @db.NVarChar(60)
+  taxCategory     String      @default("NOR") @db.NVarChar(40)
+  exemptionCode   String?     @db.NVarChar(3)
+  exemptionReason String?     @db.NVarChar(255)
+  netAmount       Decimal     @db.Decimal(12, 2)
+  taxAmount       Decimal     @db.Decimal(12, 2)
+  grossAmount     Decimal     @db.Decimal(12, 2)
+
+  @@index([invoiceId])
+  @@map("invoice_lines")
+}
+
+model CashRegister {
+  id        Int           @id @default(autoincrement())
+  hotelId   Int
+  hotel     Hotel         @relation(fields: [hotelId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  name      String        @db.NVarChar(60)
+  active    Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  sessions  CashSession[]
+
+  @@unique([hotelId, name])
+  @@map("cash_registers")
+}
+
+model CashSession {
+  id             Int            @id @default(autoincrement())
+  registerId     Int
+  register       CashRegister   @relation(fields: [registerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  openedById     Int?
+  openedBy       User?          @relation("OpenedBy", fields: [openedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  openedAt       DateTime       @default(now())
+  openingAmount  Decimal        @db.Decimal(12, 2)
+  closedById     Int?
+  closedBy       User?          @relation("ClosedBy", fields: [closedById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  closedAt       DateTime?
+  expectedAmount Decimal?       @db.Decimal(12, 2)
+  countedAmount  Decimal?       @db.Decimal(12, 2)
+  difference     Decimal?       @db.Decimal(12, 2)
+  notes          String?        @db.NVarChar(Max)
+  payments       Payment[]
+  movements      CashMovement[]
+
+  @@index([registerId, closedAt])
+  @@map("cash_sessions")
+}
+
+model CashMovement {
+  id          Int              @id @default(autoincrement())
+  sessionId   Int
+  session     CashSession      @relation(fields: [sessionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  type        String           @db.NVarChar(40)
+  amount      Decimal          @db.Decimal(12, 2)
+  description String           @db.NVarChar(200)
+  createdById Int?
+  createdBy   User?            @relation(fields: [createdById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  createdAt   DateTime         @default(now())
+
+  @@index([sessionId])
+  @@map("cash_movements")
+}
+
+model ProductCategory {
+  id          Int         @id @default(autoincrement())
+  hotelId     Int
+  hotel       Hotel       @relation(fields: [hotelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  name        String      @db.NVarChar(80)
+  outlet      String? @db.NVarChar(40)
+  prepStation String      @default("KITCHEN") @db.NVarChar(40)
+  printerId   Int?
+  printer     Printer?    @relation(fields: [printerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  sortOrder   Int         @default(0)
+  products    Product[]
+
+  @@unique([hotelId, name])
+  @@map("product_categories")
+}
+
+model Product {
+  id             Int              @id @default(autoincrement())
+  hotelId        Int
+  hotel          Hotel            @relation(fields: [hotelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  categoryId     Int?
+  category       ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  name           String           @db.NVarChar(120)
+  sku            String?          @db.NVarChar(40)
+  unit           String           @default("un") @db.NVarChar(10)
+  price          Decimal          @default(0) @db.Decimal(12, 2)
+  cost           Decimal          @default(0) @db.Decimal(12, 4)
+  taxRateId      Int?
+  taxRate        TaxRate?         @relation(fields: [taxRateId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  sellable       Boolean          @default(true)
+  trackStock     Boolean          @default(false)
+  trackExpiry    Boolean          @default(false)
+  minStock       Decimal          @default(0) @db.Decimal(12, 3)
+  imageFile      String?          @db.NVarChar(100)
+  active         Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  orderItems     OrderItem[]
+  stockLevels    StockLevel[]
+  stockMovements StockMovement[]
+  purchaseItems  PurchaseItem[]
+  stockDocItems  StockDocumentItem[]
+  stockLots      StockLot[]
+  recipeItems    RecipeItem[]     @relation("RecipeDish")
+  usedIn         RecipeItem[]     @relation("RecipeIngredient")
+
+  @@unique([hotelId, sku])
+  @@index([hotelId, categoryId])
+  @@map("products")
+}
+
+model Order {
+  id             Int             @id @default(autoincrement())
+  hotelId        Int
+  hotel          Hotel           @relation(fields: [hotelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  outlet         String @db.NVarChar(40)
+  tableLabel     String?         @db.NVarChar(30)
+  tableId        Int?
+  table          DiningTable?    @relation(fields: [tableId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  status         String          @default("OPEN") @db.NVarChar(40)
+  reservationId  Int?
+  reservation    Reservation?    @relation(fields: [reservationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  total          Decimal         @default(0) @db.Decimal(12, 2)
+  notes          String?         @db.NVarChar(255)
+  openedById     Int?
+  openedBy       User?           @relation(fields: [openedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  openedAt       DateTime        @default(now())
+  closedAt       DateTime?
+  items          OrderItem[]
+  charges        Charge[]
+  payments       Payment[]
+  stockMovements StockMovement[]
+
+  @@index([hotelId, status])
+  @@index([hotelId, openedAt])
+  @@index([tableId, status])
+  @@map("orders")
+}
+
+model DiningTable {
+  id        Int      @id @default(autoincrement())
+  hotelId   Int
+  hotel     Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  outlet    String @db.NVarChar(40)
+  number    Int
+  name      String?  @db.NVarChar(40)
+  seats     Int      @default(4)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  orders    Order[]
+
+  @@unique([hotelId, outlet, number])
+  @@map("dining_tables")
+}
+
+model OrderItem {
+  id          Int       @id @default(autoincrement())
+  orderId     Int
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  productId   Int
+  product     Product   @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  description String    @db.NVarChar(120)
+  quantity    Decimal   @db.Decimal(10, 3)
+  unitPrice   Decimal   @db.Decimal(12, 2)
+  taxRateId   Int?
+  taxRateRef  TaxRate?  @relation(fields: [taxRateId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  total       Decimal   @db.Decimal(12, 2)
+  notes       String?   @db.NVarChar(255)
+  sentAt      DateTime?
+  readyAt     DateTime?
+  voidedAt    DateTime?
+  voidReason  String?   @db.NVarChar(200)
+  voidedById  Int?
+  voidedBy    User?     @relation("OrderItemVoidedBy", fields: [voidedById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  createdAt   DateTime  @default(now())
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model Supplier {
+  id        Int        @id @default(autoincrement())
+  hotelId   Int
+  hotel     Hotel      @relation(fields: [hotelId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  name      String     @db.NVarChar(150)
+  taxId     String?    @db.NVarChar(30)
+  email     String?    @db.NVarChar(150)
+  phone     String?    @db.NVarChar(30)
+  address   String?    @db.NVarChar(255)
+  notes     String?    @db.NVarChar(Max)
+  active    Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  purchases Purchase[]
+  returns   StockDocument[]
+
+  @@index([hotelId])
+  @@map("suppliers")
+}
+
+model Warehouse {
+  id             Int             @id @default(autoincrement())
+  hotelId        Int
+  hotel          Hotel           @relation(fields: [hotelId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  name           String          @db.NVarChar(80)
+  isDefault      Boolean         @default(false)
+  active         Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  stockLevels    StockLevel[]
+  stockMovements StockMovement[]
+  purchases      Purchase[]
+  stockDocuments StockDocument[] @relation("StockDocumentFrom")
+  transfersIn    StockDocument[] @relation("StockDocumentTo")
+  stockLots      StockLot[]
+
+  @@unique([hotelId, name])
+  @@map("warehouses")
+}
+
+model StockLevel {
+  id          Int       @id @default(autoincrement())
+  warehouseId Int
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  productId   Int
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  quantity    Decimal   @default(0) @db.Decimal(12, 3)
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([warehouseId, productId])
+  @@map("stock_levels")
+}
+
+model StockMovement {
+  id          Int               @id @default(autoincrement())
+  warehouseId Int
+  warehouse   Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  productId   Int
+  product     Product           @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  type        String            @db.NVarChar(40)
+  quantity    Decimal           @db.Decimal(12, 3)
+  unitCost    Decimal?          @db.Decimal(12, 4)
+  balance     Decimal           @db.Decimal(12, 3)
+  reason      String?           @db.NVarChar(200)
+  orderId     Int?
+  order       Order?            @relation(fields: [orderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  purchaseId  Int?
+  purchase    Purchase?         @relation(fields: [purchaseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  documentId  Int?
+  document    StockDocument?    @relation(fields: [documentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdById Int?
+  createdBy   User?             @relation(fields: [createdById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  createdAt   DateTime          @default(now())
+
+  @@index([warehouseId, productId, createdAt])
+  @@map("stock_movements")
+}
+
+model Purchase {
+  id             Int             @id @default(autoincrement())
+  hotelId        Int
+  hotel          Hotel           @relation(fields: [hotelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  supplierId     Int
+  supplier       Supplier        @relation(fields: [supplierId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  warehouseId    Int
+  warehouse      Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  status         String          @default("DRAFT") @db.NVarChar(40)
+  supplierRef    String?         @db.NVarChar(60)
+  total          Decimal         @default(0) @db.Decimal(12, 2)
+  notes          String?         @db.NVarChar(Max)
+  orderedAt      DateTime        @default(now())
+  sentAt         DateTime?
+  receivedAt     DateTime?
+  createdById    Int?
+  createdBy      User?           @relation(fields: [createdById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  items          PurchaseItem[]
+  stockMovements StockMovement[]
+
+  @@index([hotelId, status])
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id         Int      @id @default(autoincrement())
+  purchaseId Int
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  productId  Int
+  product    Product  @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  quantity         Decimal  @db.Decimal(12, 3)
+  receivedQuantity Decimal  @default(0) @db.Decimal(12, 3)
+  unitCost         Decimal  @db.Decimal(12, 4)
+  total            Decimal  @db.Decimal(12, 2)
+
+  @@index([purchaseId])
+  @@map("purchase_items")
+}
+
+model StockDocument {
+  id             Int                 @id @default(autoincrement())
+  hotelId        Int
+  hotel          Hotel               @relation(fields: [hotelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  type           String            @db.NVarChar(40)
+  status         String              @default("DRAFT") @db.NVarChar(40)
+  year           Int?
+  number         Int?
+  warehouseId    Int
+  warehouse      Warehouse           @relation("StockDocumentFrom", fields: [warehouseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  toWarehouseId  Int?
+  toWarehouse    Warehouse?          @relation("StockDocumentTo", fields: [toWarehouseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  supplierId     Int?
+  supplier       Supplier?           @relation(fields: [supplierId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  reason         String?             @db.NVarChar(200)
+  createdById    Int?
+  createdBy      User?               @relation(fields: [createdById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  createdAt      DateTime            @default(now())
+  postedAt       DateTime?
+  items          StockDocumentItem[]
+  stockMovements StockMovement[]
+
+  @@unique([hotelId, type, year, number])
+  @@index([hotelId, type, status])
+  @@index([warehouseId])
+  @@map("stock_documents")
+}
+
+model StockDocumentSeries {
+  id         Int               @id @default(autoincrement())
+  hotelId    Int
+  hotel      Hotel             @relation(fields: [hotelId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  type       String            @db.NVarChar(40)
+  year       Int
+  nextNumber Int               @default(1)
+
+  @@unique([hotelId, type, year])
+  @@map("stock_document_series")
+}
+
+model StockLot {
+  id          Int       @id @default(autoincrement())
+  warehouseId Int
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  productId   Int
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  code        String?   @db.NVarChar(40)
+  expiryDate  DateTime? @db.Date
+  quantity    Decimal   @db.Decimal(12, 3)
+  createdAt   DateTime  @default(now())
+
+  @@index([warehouseId, productId])
+  @@index([expiryDate])
+  @@map("stock_lots")
+}
+
+model StockDocumentItem {
+  id               Int           @id @default(autoincrement())
+  documentId       Int
+  document         StockDocument @relation(fields: [documentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  productId        Int
+  product          Product       @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  quantity         Decimal       @db.Decimal(12, 3)
+  previousQuantity Decimal?      @db.Decimal(12, 3)
+
+  @@index([documentId])
+  @@map("stock_document_items")
+}
+
+model UserSession {
+  id                Int       @id @default(autoincrement())
+  userId            Int
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tokenHash         String    @unique @db.NVarChar(64)
+  previousTokenHash String?   @db.NVarChar(64)
+  rotatedAt         DateTime?
+  expiresAt         DateTime
+  userAgent         String?   @db.NVarChar(255)
+  createdAt         DateTime  @default(now())
+  lastUsedAt        DateTime  @default(now())
+
+  @@index([userId])
+  @@index([previousTokenHash])
+  @@map("user_sessions")
+}
+
+model RecipeItem {
+  id           Int     @id @default(autoincrement())
+  productId    Int
+  product      Product @relation("RecipeDish", fields: [productId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ingredientId Int
+  ingredient   Product @relation("RecipeIngredient", fields: [ingredientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  quantity     Decimal @db.Decimal(12, 3)
+
+  @@unique([productId, ingredientId])
+  @@index([ingredientId])
+  @@map("recipe_items")
+}
+
+model EmailLog {
+  id        Int         @id @default(autoincrement())
+  hotelId   Int?
+  hotel     Hotel?      @relation(fields: [hotelId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  kind      String      @db.NVarChar(40)
+  recipient String      @db.NVarChar(255)
+  subject   String      @db.NVarChar(255)
+  status    String      @db.NVarChar(40)
+  error     String?     @db.NVarChar(Max)
+  relatedId Int?
+  createdAt DateTime    @default(now())
+
+  @@index([hotelId, createdAt])
+  @@map("email_logs")
+}
+
+model Receipt {
+  id            Int           @id @default(autoincrement())
+  hotelId       Int
+  hotel         Hotel         @relation(fields: [hotelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  seriesId      Int
+  series        InvoiceSeries @relation(fields: [seriesId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  number        Int
+  fullNumber    String        @db.NVarChar(40)
+  atcud         String?       @db.NVarChar(80)
+  status        String        @default("ISSUED") @db.NVarChar(40)
+  issuedAt      DateTime      @default(now())
+  customerName  String        @db.NVarChar(200)
+  customerTaxId String?       @db.NVarChar(30)
+  amount        Decimal       @db.Decimal(12, 2)
+  method        String        @db.NVarChar(40)
+  paymentTypeId Int?
+  paymentType   PaymentType?  @relation(fields: [paymentTypeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  reference     String?       @db.NVarChar(100)
+  cancelledAt   DateTime?
+  cancelReason  String?       @db.NVarChar(255)
+  createdById   Int?
+  createdBy     User?         @relation(fields: [createdById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  lines         ReceiptLine[]
+  payments      Payment[]
+
+  @@unique([seriesId, number])
+  @@index([hotelId, issuedAt])
+  @@map("receipts")
+}
+
+model ReceiptLine {
+  id        Int     @id @default(autoincrement())
+  receiptId Int
+  receipt   Receipt @relation(fields: [receiptId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  invoiceId Int
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  amount    Decimal @db.Decimal(12, 2)
+
+  @@index([receiptId])
+  @@index([invoiceId])
+  @@map("receipt_lines")
+}
+
+model Employee {
+  id                   Int          @id @default(autoincrement())
+  hotelId              Int
+  hotel                Hotel        @relation(fields: [hotelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  userId               Int?         @unique
+  user                 User?        @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  fullName             String       @db.NVarChar(150)
+  jobTitle             String       @db.NVarChar(80)
+  department           String?      @db.NVarChar(60)
+  email                String?      @db.NVarChar(150)
+  phone                String?      @db.NVarChar(30)
+  taxId                String?      @db.NVarChar(30)
+  socialSecurityNumber String?      @db.NVarChar(30)
+  iban                 String?      @db.NVarChar(40)
+  contractType         String       @default("PERMANENT") @db.NVarChar(40)
+  startDate            DateTime     @db.Date
+  endDate              DateTime?    @db.Date
+  weeklyHours          Decimal      @default(40) @db.Decimal(5, 2)
+  baseSalary           Decimal?     @db.Decimal(12, 2)
+  irsRate              Decimal      @default(0) @db.Decimal(5, 2)
+  active               Boolean      @default(true)
+  notes                String?      @db.NVarChar(Max)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  shifts               Shift[]
+  timeEntries          TimeEntry[]
+  payslips             Payslip[]
+
+  @@index([hotelId, active])
+  @@map("employees")
+}
+
+model PayrollSettings {
+  id                  Int     @id @default(autoincrement())
+  hotelId             Int     @unique
+  hotel               Hotel   @relation(fields: [hotelId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  employeeSsRate      Decimal @default(11) @db.Decimal(5, 2)
+  employerSsRate      Decimal @default(23.75) @db.Decimal(5, 2)
+  overtimeMultiplier  Decimal @default(1.25) @db.Decimal(4, 2)
+  subsidiesInTwelfths Boolean @default(false)
+  holidayPayMonth     Int     @default(6)
+  christmasPayMonth   Int     @default(12)
+
+  @@map("payroll_settings")
+}
+
+model PayrollRun {
+  id          Int           @id @default(autoincrement())
+  hotelId     Int
+  hotel       Hotel         @relation(fields: [hotelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  year        Int
+  month       Int
+  status      String        @default("DRAFT") @db.NVarChar(40)
+  createdById Int?
+  createdBy   User?         @relation("PayrollRunCreatedBy", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  createdAt   DateTime      @default(now())
+  closedAt    DateTime?
+  payslips    Payslip[]
+
+  @@unique([hotelId, year, month])
+  @@map("payroll_runs")
+}
+
+model Payslip {
+  id                   Int        @id @default(autoincrement())
+  runId                Int
+  run                  PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  employeeId           Int
+  employee             Employee   @relation(fields: [employeeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  fullName             String     @db.NVarChar(150)
+  jobTitle             String     @db.NVarChar(80)
+  taxId                String?    @db.NVarChar(30)
+  socialSecurityNumber String?    @db.NVarChar(30)
+  iban                 String?    @db.NVarChar(40)
+  weeklyHours          Decimal    @db.Decimal(5, 2)
+  baseSalary           Decimal    @db.Decimal(12, 2)
+  hourlyRate           Decimal    @db.Decimal(12, 4)
+  scheduledHours       Decimal    @default(0) @db.Decimal(8, 2)
+  workedHours          Decimal    @default(0) @db.Decimal(8, 2)
+  absenceHours         Decimal    @default(0) @db.Decimal(8, 2)
+  absenceDeduction     Decimal    @default(0) @db.Decimal(12, 2)
+  overtimeHours        Decimal    @default(0) @db.Decimal(8, 2)
+  overtimePay          Decimal    @default(0) @db.Decimal(12, 2)
+  holidayPay           Decimal    @default(0) @db.Decimal(12, 2)
+  christmasPay         Decimal    @default(0) @db.Decimal(12, 2)
+  otherEarnings        Decimal    @default(0) @db.Decimal(12, 2)
+  grossPay             Decimal    @default(0) @db.Decimal(12, 2)
+  ssBase               Decimal    @default(0) @db.Decimal(12, 2)
+  employeeSsRate       Decimal    @db.Decimal(5, 2)
+  employeeSs           Decimal    @default(0) @db.Decimal(12, 2)
+  irsRate              Decimal    @db.Decimal(5, 2)
+  irsWithholding       Decimal    @default(0) @db.Decimal(12, 2)
+  otherDeductions      Decimal    @default(0) @db.Decimal(12, 2)
+  netPay               Decimal    @default(0) @db.Decimal(12, 2)
+  employerSsRate       Decimal    @db.Decimal(5, 2)
+  employerSs           Decimal    @default(0) @db.Decimal(12, 2)
+  extraLines           String? @db.NVarChar(Max)
+  notes                String?    @db.NVarChar(255)
+  manual               Boolean    @default(false)
+
+  @@unique([runId, employeeId])
+  @@map("payslips")
+}
+
+model Shift {
+  id           Int      @id @default(autoincrement())
+  hotelId      Int
+  hotel        Hotel    @relation(fields: [hotelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  employeeId   Int
+  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  date         DateTime @db.Date
+  startTime    String   @db.NVarChar(5)
+  endTime      String   @db.NVarChar(5)
+  breakMinutes Int      @default(0)
+  notes        String?  @db.NVarChar(200)
+  createdAt    DateTime @default(now())
+
+  @@index([hotelId, date])
+  @@index([employeeId, date])
+  @@map("shifts")
+}
+
+model TimeEntry {
+  id         Int             @id @default(autoincrement())
+  hotelId    Int
+  hotel      Hotel           @relation(fields: [hotelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  employeeId Int
+  employee   Employee        @relation(fields: [employeeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  clockIn    DateTime
+  clockOut   DateTime?
+  source     String          @default("SELF") @db.NVarChar(40)
+  notes      String?         @db.NVarChar(200)
+  editedById Int?
+  editedBy   User?           @relation("TimeEntryEditedBy", fields: [editedById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  editedAt   DateTime?
+  createdAt  DateTime        @default(now())
+
+  @@index([employeeId, clockIn])
+  @@index([hotelId, clockIn])
+  @@map("time_entries")
+}
+
+model Printer {
+  id         Int               @id @default(autoincrement())
+  hotelId    Int
+  hotel      Hotel             @relation(fields: [hotelId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  name       String            @db.NVarChar(60)
+  purpose    String         @db.NVarChar(40)
+  connection String            @default("BROWSER") @db.NVarChar(40)
+  host       String?           @db.NVarChar(100)
+  port       Int               @default(9100)
+  localName  String?           @db.NVarChar(200)
+  paperWidth String            @default("MM80") @db.NVarChar(40)
+  output     String            @default("DIRECT") @db.NVarChar(40)
+  copies     Int               @default(1)
+  isDefault  Boolean           @default(false)
+  active     Boolean           @default(true)
+  createdAt  DateTime          @default(now())
+  categories ProductCategory[]
+
+  @@unique([hotelId, name])
+  @@index([hotelId, purpose])
+  @@map("printers")
+}
+
+model PaymentType {
+  id                Int           @id @default(autoincrement())
+  hotelId           Int
+  hotel             Hotel         @relation(fields: [hotelId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  name              String        @db.NVarChar(60)
+  kind              String        @db.NVarChar(40)
+  mechanism         String?       @db.NVarChar(2)
+  requiresReference Boolean       @default(false)
+  active            Boolean       @default(true)
+  sortOrder         Int           @default(0)
+  createdAt         DateTime      @default(now())
+  payments          Payment[]
+  receipts          Receipt[]
+  deposits          Reservation[]
+
+  @@unique([hotelId, name])
+  @@map("payment_types")
+}
