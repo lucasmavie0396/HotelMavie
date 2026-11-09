@@ -1,10 +1,8 @@
 export const financeViews = {
   pt: {
     invoices: {
-      subtitle: 'Faturas, faturas-recibo, notas de credito e SAF-T',
-      notCertified:
-        'Software nao certificado pela Autoridade Tributaria: os documentos tem numeracao sequencial e encadeamento por hash, mas nao tem validade fiscal ate o software ser certificado.',
-      search: 'Numero, cliente ou NIF',
+      subtitle: 'Faturas, recibos, notas de credito e SAF-T',
+      search: 'Numero, cliente ou NUIT',
       issued: 'Faturado',
       credited: 'Notas de credito',
       net: 'Liquido',
@@ -54,7 +52,7 @@ export const financeViews = {
     accounts: {
       subtitle: 'Faturas a pagar e recibos',
       totalOpen: 'Total em divida',
-      hint: 'As faturas "a pagar" (FT) ficam aqui ate serem liquidadas com recibo. As faturas-recibo (FR) ja estao pagas.',
+      hint: 'As faturas "a pagar" (FT) ficam aqui ate serem liquidadas com recibo. Os recibos (FR) ja estao pagos.',
       invoices: 'Faturas',
       oldest: 'Mais antiga',
       open: 'Em divida',
@@ -85,9 +83,7 @@ export const financeViews = {
   },
   en: {
     invoices: {
-      subtitle: 'Invoices, invoice-receipts, credit notes and SAF-T',
-      notCertified:
-        'Software not certified by the Portuguese Tax Authority: documents have sequential numbering and hash chaining, but have no tax validity until the software is certified.',
+      subtitle: 'Invoices, receipts, credit notes and SAF-T',
       search: 'Number, customer or tax no.',
       issued: 'Invoiced',
       credited: 'Credit notes',
@@ -138,7 +134,7 @@ export const financeViews = {
     accounts: {
       subtitle: 'Invoices to collect and receipts',
       totalOpen: 'Total outstanding',
-      hint: 'Invoices "to pay" (FT) stay here until settled with a receipt. Invoice-receipts (FR) are already paid.',
+      hint: 'Invoices "to pay" (FT) stay here until settled with a receipt. Receipts (FR) are already paid.',
       invoices: 'Invoices',
       oldest: 'Oldest',
       open: 'Outstanding',

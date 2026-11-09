@@ -211,7 +211,6 @@ export class PrintService {
         ticket.rule();
         ticket.text('Acentos: acao, cafe, pao (sem acentos na termica)', { size: 8 });
         ticket.cols('Valor de exemplo', ticket.money(1234.5), { bold: true });
-        ticket.qr('MAVIE-HGest teste de impressora', 90);
         return { ticket, hotelId: printer.hotelId, purpose: printer.purpose, printerId: printer.id, name: 'teste' };
       }
     }

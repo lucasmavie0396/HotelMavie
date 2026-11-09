@@ -188,6 +188,7 @@ const orderInclude = {
     include: {
       product: { select: { category: { select: { prepStation: true, printerId: true } } } },
       voidedBy: { select: { name: true } },
+      taxRateRef: { select: { rate: true } },
     },
   },
   reservation: { select: { id: true, code: true, room: { select: { number: true } } } },
@@ -403,7 +404,7 @@ export class PosService {
     ticket.text(`${order.tableLabel ?? `Pedido #${order.id}`} · ${Ticket.when(new Date())}`, { size: 8, align: 'center' });
     if (order.reservation) ticket.text(`Lancado no quarto ${order.reservation.room.number}`, { size: 8, align: 'center' });
     ticket.rule();
-    ticket.lines(items.map((item) => ({ quantity: item.quantity, description: item.description, unitPrice: item.unitPrice, total: item.total })));
+    ticket.lines(items.map((item) => ({ quantity: item.quantity, description: `${item.description}${item.taxRateRef ? ` (${Number(item.taxRateRef.rate)}%)` : ''}`, unitPrice: item.unitPrice, total: item.total })));
     ticket.rule();
     ticket.cols(`${items.reduce((sum, item) => sum + Number(item.quantity), 0)} artigos`, '', { size: 8 });
     ticket.cols('TOTAL (IVA incluido)', ticket.money(order.total), { bold: true, size: 13 });

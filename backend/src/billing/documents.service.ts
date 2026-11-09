@@ -11,7 +11,7 @@ import { Ticket } from './ticket-pdf.service';
 
 const DOC_TITLES: Record<InvoiceType, string> = {
   INVOICE: 'FATURA',
-  INVOICE_RECEIPT: 'FATURA-RECIBO',
+  INVOICE_RECEIPT: 'RECIBO',
   CREDIT_NOTE: 'NOTA DE CREDITO',
   RECEIPT: 'RECIBO',
 };
@@ -60,11 +60,10 @@ export class DocumentsService {
     const ticket = new Ticket(invoice.currency).header(invoice.hotel);
     ticket.text(`${DOC_TITLES[invoice.type]} ${invoice.fullNumber}`, { bold: true, align: 'center' });
     ticket.text(Ticket.when(invoice.issuedAt), { align: 'center', size: 8 });
-    ticket.text(`ATCUD: ${invoice.atcud ?? '0'}`, { align: 'center', size: 8 });
     if (invoice.creditOf) ticket.text(`Referente a ${invoice.creditOf.fullNumber}: ${invoice.reason ?? ''}`, { align: 'center', size: 8 });
     ticket.rule();
     ticket.text(`Cliente: ${invoice.customerName}`, { size: 8 });
-    ticket.text(`NIF: ${invoice.customerTaxId ?? 'Consumidor final'}`, { size: 8 });
+    ticket.text(`NUIT: ${invoice.customerTaxId ?? 'Consumidor final'}`, { size: 8 });
     if (invoice.customerAddress) ticket.text(invoice.customerAddress, { size: 8 });
     ticket.rule();
     ticket.lines(
@@ -97,7 +96,7 @@ export class DocumentsService {
       }
     }
     ticket.space();
-    ticket.text(this.certification(printedHash(invoice.hash)), { size: 7, align: 'center' });
+    this.certification(ticket, printedHash(invoice.hash));
     if (invoice.type === InvoiceType.INVOICE) ticket.text('Este documento nao serve de recibo.', { size: 7, align: 'center' });
     ticket.footer(invoice.hotel, invoice.createdBy?.name);
     return { ticket, hotelId: invoice.hotelId };
@@ -119,11 +118,10 @@ export class DocumentsService {
     const ticket = new Ticket(receipt.hotel.currency).header(receipt.hotel);
     ticket.text(`RECIBO ${receipt.fullNumber}`, { bold: true, align: 'center' });
     ticket.text(Ticket.when(receipt.issuedAt), { align: 'center', size: 8 });
-    ticket.text(`ATCUD: ${receipt.atcud ?? '0'}`, { align: 'center', size: 8 });
     if (receipt.status === 'CANCELLED') ticket.text(`ANULADO: ${receipt.cancelReason ?? ''}`, { bold: true, align: 'center' });
     ticket.rule();
     ticket.text(`Cliente: ${receipt.customerName}`, { size: 8 });
-    ticket.text(`NIF: ${receipt.customerTaxId ?? 'Consumidor final'}`, { size: 8 });
+    ticket.text(`NUIT: ${receipt.customerTaxId ?? 'Consumidor final'}`, { size: 8 });
     ticket.rule();
     for (const line of receipt.lines) {
       ticket.cols(`${line.invoice.fullNumber} de ${Ticket.day(line.invoice.issuedAt)}`, ticket.money(line.amount), { size: 9 });
@@ -133,7 +131,7 @@ export class DocumentsService {
     ticket.cols(`Pago: ${paymentLabel(receipt)}${receipt.reference ? ` (${receipt.reference})` : ''}`, '', { size: 8 });
     ticket.cols('TOTAL RECEBIDO', ticket.money(receipt.amount), { bold: true, size: 13 });
     ticket.space();
-    ticket.text(this.certification(), { size: 7, align: 'center' });
+    this.certification(ticket);
     ticket.footer(receipt.hotel, receipt.createdBy?.name);
     return { ticket, hotelId: receipt.hotelId };
   }
@@ -155,7 +153,7 @@ export class DocumentsService {
     ticket.text(`Emitida em ${Ticket.when(new Date())}`, { align: 'center', size: 8 });
     ticket.rule();
     ticket.text(`${reservation.guest.firstName} ${reservation.guest.lastName}`, { bold: true });
-    if (reservation.guest.taxId) ticket.text(`NIF: ${reservation.guest.taxId}`, { size: 8 });
+    if (reservation.guest.taxId) ticket.text(`NUIT: ${reservation.guest.taxId}`, { size: 8 });
     ticket.cols('Reserva', reservation.code, { size: 8 });
     ticket.cols('Entrada / saida', `${Ticket.day(reservation.checkIn)} - ${Ticket.day(reservation.checkOut)}`, { size: 8 });
     ticket.cols('Noites / pessoas', `${nightsBetween(reservation.checkIn, reservation.checkOut)} / ${reservation.adults + reservation.children}`, { size: 8 });
@@ -166,7 +164,8 @@ export class DocumentsService {
 
     const byType = new Map<ChargeType, number>();
     for (const charge of folio.charges) {
-      ticket.cols(`${Ticket.day(charge.createdAt).slice(0, 5)} ${Number(charge.quantity)} x ${charge.description}`, ticket.money(charge.total), { size: 8 });
+      const rate = charge.taxRateId !== null || Number(charge.taxRate) > 0 ? ` (${Number(charge.taxRate)}%)` : '';
+      ticket.cols(`${Ticket.day(charge.createdAt).slice(0, 5)} ${Number(charge.quantity)} x ${charge.description}${rate}`, ticket.money(charge.total), { size: 8 });
       if (Number(charge.quantity) !== 1) ticket.text(`   ${Number(charge.quantity)} x ${ticket.money(charge.unitPrice)}`, { size: 7 });
       if (charge.invoice) ticket.text(`   ${charge.onCustomerAccount ? 'faturado a pagar' : 'faturado'}: ${charge.invoice.fullNumber}`, { size: 7 });
       byType.set(charge.type, (byType.get(charge.type) ?? 0) + Number(charge.total));
@@ -238,10 +237,8 @@ export class DocumentsService {
     return { ticket, hotelId: payment.hotelId };
   }
 
-  private certification(hash?: string) {
-    const prefix = hash ? `${hash}-` : '';
-    return this.signing.certified
-      ? `${prefix}Processado por programa certificado n.o ${this.signing.certificateNumber}/AT`
-      : `${prefix}Software nao certificado pela AT. Sem validade fiscal.`;
+  private certification(ticket: Ticket, hash?: string) {
+    if (!this.signing.certified) return;
+    ticket.text(`${hash ? `${hash}-` : ''}Processado por programa certificado n.o ${this.signing.certificateNumber}/AT`, { size: 7, align: 'center' });
   }
 }

@@ -23,7 +23,7 @@ import { Ticket } from '../billing/ticket-pdf.service';
 import { parseDate } from '../common/dates';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
-import { sumMoney, toMoney } from '../common/money';
+import { formatCurrency, sumMoney, toMoney } from '../common/money';
 import { MailService } from '../mail/mail.service';
 import { purchaseOrderEmail } from '../mail/templates';
 import { forUpdate, lockHint } from '../prisma/database';
@@ -154,7 +154,7 @@ export class PurchaseQueryDto extends HotelQueryDto {
 const purchaseInclude = {
   supplier: { select: { id: true, name: true, email: true } },
   warehouse: { select: { id: true, name: true } },
-  items: { include: { product: { select: { id: true, name: true, unit: true, trackExpiry: true } } }, orderBy: { id: 'asc' } },
+  items: { include: { product: { select: { id: true, name: true, unit: true, trackExpiry: true, taxRate: { select: { rate: true } } } } }, orderBy: { id: 'asc' } },
 } satisfies Prisma.PurchaseInclude;
 
 export function purchaseNumber(purchase: { id: number; orderedAt: Date }) {
@@ -332,7 +332,7 @@ export class PurchasesService {
       this.prisma.user.findUnique({ where: { id: user.sub }, select: { name: true } }),
       this.prisma.supplier.findUniqueOrThrow({ where: { id: purchase.supplier.id } }),
     ]);
-    const money = (value: Prisma.Decimal.Value) => new Intl.NumberFormat('pt-PT', { style: 'currency', currency: hotel.currency }).format(Number(value.toString()));
+    const money = (value: Prisma.Decimal.Value) => formatCurrency(value, hotel.currency);
     const qty = (value: Prisma.Decimal.Value) => Number(value.toString()).toLocaleString('pt-PT', { maximumFractionDigits: 3 });
     const partial = purchase.items.some((item) => item.receivedQuantity.greaterThan(0));
     const report: Report = {
@@ -347,7 +347,7 @@ export class PurchasesService {
           title: 'Fornecedor',
           kpis: [
             { label: 'Fornecedor', value: supplier.name },
-            { label: 'NIF', value: supplier.taxId ?? '-' },
+            { label: 'NUIT', value: supplier.taxId ?? '-' },
             { label: 'Entregar em', value: purchase.warehouse.name },
             { label: 'Data', value: Ticket.day(purchase.orderedAt) },
           ],
@@ -361,6 +361,7 @@ export class PurchasesService {
               { label: 'Quantidade', align: 'right', weight: 1 },
               ...(partial ? [{ label: 'Recebido', align: 'right' as const, weight: 1 }] : []),
               { label: 'Preco unit.', align: 'right', weight: 1 },
+              { label: 'IVA', align: 'right', weight: 0.6 },
               { label: 'Total', align: 'right', weight: 1 },
             ],
             rows: purchase.items.map((item) => [
@@ -369,9 +370,10 @@ export class PurchasesService {
               qty(item.quantity),
               ...(partial ? [qty(item.receivedQuantity)] : []),
               money(item.unitCost),
+              item.product.taxRate ? `${Number(item.product.taxRate.rate)}%` : '-',
               money(item.total),
             ]),
-            totals: ['Total', '', '', ...(partial ? [''] : []), '', money(purchase.total)],
+            totals: ['Total', '', '', ...(partial ? [''] : []), '', '', money(purchase.total)],
           },
           note: [purchase.supplierRef ? `Referencia: ${purchase.supplierRef}` : null, purchase.notes].filter(Boolean).join(' · ') || undefined,
         },

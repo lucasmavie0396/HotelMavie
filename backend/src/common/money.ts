@@ -2,6 +2,17 @@ import { Prisma } from '@prisma/client';
 
 export type DecimalLike = Prisma.Decimal | number | string;
 
+export function currencySymbol(currency: string) {
+  return currency === 'MZN' ? 'MT' : currency;
+}
+
+export function formatCurrency(value: { toString(): string } | number, currency: string, locale = 'pt-PT') {
+  return new Intl.NumberFormat(locale, { style: 'currency', currency })
+    .formatToParts(Number(value.toString()))
+    .map((part) => (part.type === 'currency' && currency === 'MZN' ? 'MT' : part.value))
+    .join('');
+}
+
 export function toMoney(value: DecimalLike) {
   return new Prisma.Decimal(value).toDecimalPlaces(2);
 }

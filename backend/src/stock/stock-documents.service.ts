@@ -7,7 +7,7 @@ import { JwtPayload } from '../auth/jwt-payload';
 import { Ticket } from '../billing/ticket-pdf.service';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
-import { sumMoney, toMoney } from '../common/money';
+import { formatCurrency, sumMoney, toMoney } from '../common/money';
 import { forUpdate, lockHint } from '../prisma/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { Report, ReportSection } from '../reports/report-model';
@@ -83,7 +83,7 @@ const documentInclude = {
   toWarehouse: { select: { id: true, name: true } },
   supplier: { select: { id: true, name: true } },
   createdBy: { select: { name: true } },
-  items: { include: { product: { select: { id: true, name: true, unit: true, cost: true } } }, orderBy: { id: 'asc' } },
+  items: { include: { product: { select: { id: true, name: true, unit: true, cost: true, taxRate: { select: { rate: true } } } } }, orderBy: { id: 'asc' } },
 } satisfies Prisma.StockDocumentInclude;
 
 type FullDocument = Prisma.StockDocumentGetPayload<{ include: typeof documentInclude }>;
@@ -319,7 +319,8 @@ export class StockDocumentsService {
 
   private async report(document: FullDocument, user: JwtPayload): Promise<Report> {
     const [hotel, operator] = await Promise.all([this.prisma.hotel.findUniqueOrThrow({ where: { id: document.hotelId } }), this.operator(user)]);
-    const money = (value: Prisma.Decimal.Value) => new Intl.NumberFormat('pt-PT', { style: 'currency', currency: hotel.currency }).format(Number(value.toString()));
+    const money = (value: Prisma.Decimal.Value) => formatCurrency(value, hotel.currency);
+    const vat = (item: FullDocument['items'][number]) => (item.product.taxRate ? `${Number(item.product.taxRate.rate)}%` : '-');
     const status = { DRAFT: 'Rascunho', POSTED: 'Lancado', CANCELLED: 'Cancelado' }[document.status];
     const kpis = [
       { label: 'Armazem', value: document.warehouse.name },
@@ -341,6 +342,7 @@ export class StockDocumentsService {
           { label: 'Antes', align: 'right', weight: 0.9 },
           { label: 'Contado', align: 'right', weight: 0.9 },
           { label: 'Diferenca', align: 'right', weight: 0.9 },
+          { label: 'IVA', align: 'right', weight: 0.6 },
           { label: 'Valor', align: 'right', weight: 1 },
         ],
         rows: lines.map(({ item, difference, value }) => [
@@ -349,9 +351,10 @@ export class StockDocumentsService {
           item.previousQuantity === null ? '-' : qty(item.previousQuantity),
           qty(item.quantity),
           difference === null ? '-' : qty(difference),
+          vat(item),
           difference === null ? '-' : money(value),
         ]),
-        totals: ['Total', '', '', '', '', money(sumMoney(lines.map((line) => line.value)))],
+        totals: ['Total', '', '', '', '', '', money(sumMoney(lines.map((line) => line.value)))],
       };
     } else {
       const values = document.items.map((item) => toMoney(item.quantity.mul(item.product.cost)));
@@ -361,10 +364,11 @@ export class StockDocumentsService {
           { label: 'Unid.', weight: 0.6 },
           { label: 'Quantidade', align: 'right', weight: 1 },
           { label: 'Custo medio', align: 'right', weight: 1 },
+          { label: 'IVA', align: 'right', weight: 0.6 },
           { label: 'Valor', align: 'right', weight: 1 },
         ],
-        rows: document.items.map((item, index) => [item.product.name, item.product.unit, qty(item.quantity), money(item.product.cost), money(values[index])]),
-        totals: ['Total', '', qty(document.items.reduce((sum, item) => sum.add(item.quantity), new Prisma.Decimal(0))), '', money(sumMoney(values))],
+        rows: document.items.map((item, index) => [item.product.name, item.product.unit, qty(item.quantity), money(item.product.cost), vat(item), money(values[index])]),
+        totals: ['Total', '', qty(document.items.reduce((sum, item) => sum.add(item.quantity), new Prisma.Decimal(0))), '', '', money(sumMoney(values))],
       };
     }
     const sections: ReportSection[] = [

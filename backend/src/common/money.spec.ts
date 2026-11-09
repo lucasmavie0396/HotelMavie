@@ -1,4 +1,4 @@
-import { splitGross, sumMoney, toMoney } from './money';
+import { currencySymbol, formatCurrency, splitGross, sumMoney, toMoney } from './money';
 
 describe('money', () => {
   it('separa base e IVA de um preco com IVA incluido', () => {
@@ -23,5 +23,15 @@ describe('money', () => {
   it('soma valores sem erros de virgula flutuante', () => {
     expect(sumMoney(['0.1', '0.2']).toString()).toBe('0.3');
     expect(sumMoney([]).toString()).toBe('0');
+  });
+});
+
+describe('formatCurrency', () => {
+  it('mostra o metical como MT e mantem as outras moedas', () => {
+    expect(formatCurrency(1234.5, 'MZN')).toMatch(/^1234,50\sMT$/);
+    expect(formatCurrency(1234.5, 'MZN', 'en-GB')).toMatch(/^MT\s?1,234\.50$/);
+    expect(formatCurrency(10, 'EUR')).toMatch(/^10,00\s€$/);
+    expect(currencySymbol('MZN')).toBe('MT');
+    expect(currencySymbol('EUR')).toBe('EUR');
   });
 });

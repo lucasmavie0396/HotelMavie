@@ -159,7 +159,7 @@ const EXACT: Record<string, string> = {
   'Picagem nao encontrada': 'Time entry not found',
   'Preenche a morada, a localidade e o codigo postal (0000-000) do hotel antes de exportar o SAF-T':
     'Fill in the hotel address, town and postcode (0000-000) before exporting the SAF-T',
-  'Preenche o NIF do hotel em Configuracao antes de exportar o SAF-T': 'Fill in the hotel tax number in Settings before exporting the SAF-T',
+  'Preenche o NUIT do hotel em Configuracao antes de exportar o SAF-T': 'Fill in the hotel tax number in Settings before exporting the SAF-T',
   'Processamento nao encontrado': 'Payroll not found',
   'Produto indisponivel': 'Product unavailable',
   'Produto nao encontrado': 'Product not found',

@@ -1,6 +1,8 @@
 import { Hotel } from '@prisma/client';
 import { UploadsService } from '../uploads/uploads';
 
+export const PROCESSED_BY = 'Processado por Computador';
+
 export const A4 = { width: 595.28, height: 841.89, margin: 45 };
 
 export const COLORS = {
@@ -73,7 +75,7 @@ export function drawHeader(doc: Doc, { hotel, logo, title, meta = [], alert, mar
   const together = contacts.join(' · ');
   const details = [
     hotel.legalName && hotel.legalName !== hotel.name ? hotel.legalName : null,
-    hotel.taxId ? `NIF: ${hotel.taxId}` : null,
+    hotel.taxId ? `NUIT: ${hotel.taxId}` : null,
     hotelPlace(hotel) || null,
     ...(doc.widthOfString(together) <= infoWidth ? [together || null] : contacts),
   ].filter((line): line is string => Boolean(line));
@@ -120,6 +122,7 @@ export function drawFooter(doc: Doc, left: string, right = '', margin = A4.margi
   doc.fillColor(COLORS.muted).font('Helvetica').fontSize(7.5);
   doc.text(left, margin, y + 7, { width: right ? width - 90 : width, lineBreak: false, ellipsis: true, align: right ? 'left' : 'center' });
   if (right) doc.text(right, margin + width - 90, y + 7, { width: 90, align: 'right', lineBreak: false });
+  doc.text(PROCESSED_BY, margin, y + 17, { width, align: 'center', lineBreak: false });
   band(doc, 0, doc.page.height - 6, doc.page.width, 6);
   doc.page.margins.bottom = bottom;
 }

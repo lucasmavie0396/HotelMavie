@@ -7,7 +7,7 @@ import { A4, COLORS, Column, drawFooter, drawHeader, infoCard, sectionTitle, tab
 import { FolioService } from '../billing/folio.service';
 import { nightsBetween } from '../common/dates';
 import { canAccessHotel } from '../common/hotel-scope';
-import { toMoney } from '../common/money';
+import { formatCurrency, toMoney } from '../common/money';
 import { MailService } from '../mail/mail.service';
 import { depositConfirmedEmail, mailLang } from '../mail/templates';
 import { forUpdate, lockHint } from '../prisma/database';
@@ -49,7 +49,7 @@ const TEXT = {
     name: 'Nome',
     email: 'Email',
     phone: 'Telefone',
-    taxId: 'NIF',
+    taxId: 'NUIT',
     document: 'Documento',
     stay: 'Estadia',
     code: 'Codigo',
@@ -259,7 +259,7 @@ export class DepositService {
     const logo = hotel.logoFile ? await this.uploads.readForPdf(hotel.logoFile).catch(() => null) : null;
     const timeZone = process.env.AT_TIMEZONE ?? 'Europe/Lisbon';
     const money = (value: { toString(): string } | number) =>
-      new Intl.NumberFormat(lang === 'en' ? 'en-GB' : 'pt-PT', { style: 'currency', currency: hotel.currency }).format(Number(value.toString()));
+      formatCurrency(value, hotel.currency, lang === 'en' ? 'en-GB' : 'pt-PT');
     const total = toMoney(reservation.totalAmount);
     const deposit = toMoney(reservation.depositAmount ?? 0);
     const remaining = total.sub(deposit);

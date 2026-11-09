@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Hotel, PaperWidth } from '@prisma/client';
 import PDFDocument from 'pdfkit';
-import QRCode from 'qrcode';
+import { formatCurrency } from '../common/money';
 import { UploadsService } from '../uploads/uploads';
-import { band, COLORS, drawFooter, loadLogo } from './a4-layout';
+import { band, COLORS, drawFooter, loadLogo, PROCESSED_BY } from './a4-layout';
 
 const PAPER: Record<PaperWidth, { width: number; margin: number; right: number; chars: number }> = {
   MM58: { width: 164.41, margin: 6, right: 52, chars: 32 },
@@ -19,7 +19,6 @@ type Row =
   | { kind: 'cols'; left: string; right: string; size?: number; bold?: boolean }
   | { kind: 'rule' }
   | { kind: 'space'; height?: number }
-  | { kind: 'qr'; data: string; size: number }
   | { kind: 'image'; data: Buffer; width: number };
 
 export interface TicketLine {
@@ -38,7 +37,7 @@ export class Ticket {
   constructor(readonly currency = 'EUR') {}
 
   money(value: { toString(): string } | number) {
-    return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: this.currency }).format(Number(value.toString()));
+    return formatCurrency(value, this.currency);
   }
 
   text(text: string, options: { size?: number; bold?: boolean; align?: 'left' | 'center' | 'right' } = {}) {
@@ -61,11 +60,6 @@ export class Ticket {
     return this;
   }
 
-  qr(data: string, size = 110) {
-    this.rows.push({ kind: 'qr', data, size });
-    return this;
-  }
-
   image(data: Buffer, width = 90) {
     this.rows.push({ kind: 'image', data, width });
     return this;
@@ -75,7 +69,7 @@ export class Ticket {
     this.hotel = hotel;
     this.text(hotel.name, { bold: true, size: 12, align: 'center' });
     if (hotel.legalName && hotel.legalName !== hotel.name) this.text(hotel.legalName, { align: 'center', size: 8 });
-    if (hotel.taxId) this.text(`NIF ${hotel.taxId}`, { align: 'center', size: 8 });
+    if (hotel.taxId) this.text(`NUIT ${hotel.taxId}`, { align: 'center', size: 8 });
     const address = [hotel.address, [hotel.postalCode, hotel.city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
     if (address) this.text(address, { align: 'center', size: 8 });
     const contacts = [hotel.phone && `Tel. ${hotel.phone}`, hotel.email].filter(Boolean).join(' · ');
@@ -87,7 +81,11 @@ export class Ticket {
     this.space();
     if (operator) this.text(`Atendido por: ${operator}`, { size: 8, align: 'center' });
     this.text(hotel.ticketFooter || 'Obrigado pela preferencia', { size: 8, align: 'center' });
-    return this;
+    return this.processed();
+  }
+
+  processed() {
+    return this.text(PROCESSED_BY, { size: 8, align: 'center' });
   }
 
   lines(items: TicketLine[], withPrices = true) {
@@ -151,12 +149,9 @@ export class TicketPdfService {
   async render(ticket: Ticket, paper: PaperWidth = PaperWidth.MM80) {
     const spec = PAPER[paper];
     const a4 = paper === PaperWidth.A4;
-    const logo = a4 && ticket.hotel && !ticket.rows.some((row) => row.kind === 'image') ? await loadLogo(this.uploads, ticket.hotel) : null;
-    const rows: Row[] = logo ? [{ kind: 'image', data: logo, width: 120 }, { kind: 'space', height: 8 }, ...ticket.rows] : ticket.rows;
-    const qrImages = new Map<Row, Buffer>();
-    for (const row of rows) {
-      if (row.kind === 'qr') qrImages.set(row, await QRCode.toBuffer(row.data, { errorCorrectionLevel: 'M', margin: 0, width: 300 }));
-    }
+    const content = a4 ? ticket.rows.filter((row) => row.kind !== 'text' || row.text !== PROCESSED_BY) : ticket.rows;
+    const logo = a4 && ticket.hotel && !content.some((row) => row.kind === 'image') ? await loadLogo(this.uploads, ticket.hotel) : null;
+    const rows: Row[] = logo ? [{ kind: 'image', data: logo, width: 120 }, { kind: 'space', height: 8 }, ...content] : content;
     const inner = a4 ? A4_COLUMN : spec.width - spec.margin * 2;
     const left = a4 ? (spec.width - inner) / 2 : spec.margin;
     const top = a4 ? 42 : spec.margin;
@@ -188,7 +183,7 @@ export class TicketPdfService {
           decorate();
           y = top;
         }
-        this.drawRow(doc, row, y, left, inner, right, scale, a4, qrImages.get(row));
+        this.drawRow(doc, row, y, left, inner, right, scale, a4);
         y += heights[index];
       });
       doc.end();
@@ -235,23 +230,20 @@ export class TicketPdfService {
           break;
         case 'image':
           break;
-        case 'qr': {
-          const data = Buffer.from(row.data, 'utf8');
-          const length = data.length + 3;
-          push(0x1b, 0x61, 1);
-          push(0x1d, 0x28, 0x6b, 4, 0, 0x31, 0x41, 0x32, 0);
-          push(0x1d, 0x28, 0x6b, 3, 0, 0x31, 0x43, paper === PaperWidth.MM58 ? 4 : 5);
-          push(0x1d, 0x28, 0x6b, 3, 0, 0x31, 0x45, 0x31);
-          push(0x1d, 0x28, 0x6b, length & 0xff, length >> 8, 0x31, 0x50, 0x30, ...data);
-          push(0x1d, 0x28, 0x6b, 3, 0, 0x31, 0x51, 0x30);
-          push(0x0a);
-          break;
-        }
       }
     }
     push(0x1b, 0x61, 0, 0x1d, 0x21, 0, 0x1b, 0x45, 0);
     push(0x0a, 0x0a, 0x0a, 0x1d, 0x56, 0x42, 0x00);
     return Buffer.from(out);
+  }
+
+  private rightWidth(doc: PDFKit.PDFDocument, text: string, inner: number, right: number) {
+    return Math.min(Math.max(right, Math.ceil(doc.widthOfString(text)) + 2), inner - 30);
+  }
+
+  private colsHeight(doc: PDFKit.PDFDocument, row: { left: string; right: string }, inner: number, right: number) {
+    const width = this.rightWidth(doc, row.right, inner, right);
+    return Math.max(doc.heightOfString(row.left, { width: inner - width }), doc.heightOfString(row.right, { width })) + 2;
   }
 
   private rowHeight(doc: PDFKit.PDFDocument, row: Row, inner: number, right: number, scale: number) {
@@ -260,8 +252,6 @@ export class TicketPdfService {
         return 8;
       case 'space':
         return row.height ?? 6;
-      case 'qr':
-        return row.size + 2;
       case 'image': {
         const image = (doc as unknown as { openImage(data: Buffer): { width: number; height: number } }).openImage(row.data);
         return Math.round((Math.min(row.width, inner) * image.height) / image.width) + 6;
@@ -271,11 +261,11 @@ export class TicketPdfService {
         return doc.heightOfString(row.text, { width: inner }) + 2;
       case 'cols':
         doc.font(row.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize((row.size ?? 9) * scale);
-        return Math.max(doc.heightOfString(row.left, { width: inner - right }), doc.heightOfString(row.right, { width: right })) + 2;
+        return this.colsHeight(doc, row, inner, right);
     }
   }
 
-  private drawRow(doc: PDFKit.PDFDocument, row: Row, y: number, margin: number, inner: number, right: number, scale: number, a4: boolean, image?: Buffer) {
+  private drawRow(doc: PDFKit.PDFDocument, row: Row, y: number, margin: number, inner: number, right: number, scale: number, a4: boolean) {
     if (a4 && (row.kind === 'text' || row.kind === 'cols')) {
       doc.fillColor(row.bold && (row.size ?? 9) >= 10 ? COLORS.accent : row.bold ? COLORS.ink : COLORS.text);
     } else {
@@ -286,9 +276,6 @@ export class TicketPdfService {
         if (a4) doc.moveTo(margin, y + 3).lineTo(margin + inner, y + 3).lineWidth(0.6).stroke(COLORS.line);
         else doc.moveTo(margin, y + 3).lineTo(margin + inner, y + 3).dash(2, { space: 2 }).stroke('#000000').undash();
         break;
-      case 'qr':
-        if (image) doc.image(image, margin + (inner - row.size) / 2, y, { width: row.size });
-        break;
       case 'image': {
         const width = Math.min(row.width, inner);
         doc.image(row.data, margin + (inner - width) / 2, y, { width });
@@ -298,11 +285,13 @@ export class TicketPdfService {
         doc.font(row.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize((row.size ?? 9) * scale);
         doc.text(row.text, margin, y, { width: inner, align: row.align ?? 'left' });
         break;
-      case 'cols':
+      case 'cols': {
         doc.font(row.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize((row.size ?? 9) * scale);
-        doc.text(row.left, margin, y, { width: inner - right });
-        doc.text(row.right, margin + inner - right, y, { width: right, align: 'right' });
+        const width = this.rightWidth(doc, row.right, inner, right);
+        doc.text(row.left, margin, y, { width: inner - width });
+        doc.text(row.right, margin + inner - width, y, { width, align: 'right' });
         break;
+      }
       case 'space':
         break;
     }

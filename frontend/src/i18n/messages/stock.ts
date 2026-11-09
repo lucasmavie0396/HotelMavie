@@ -85,7 +85,7 @@ export const stockViews = {
       receiveRest: 'Receber resto',
       complete: 'Concluir',
       empty: 'Sem compras',
-      taxId: 'NIF',
+      taxId: 'NUIT',
       contact: 'Contacto',
       addSupplier: 'Adicionar fornecedor',
       deactivate: 'Desativar',

@@ -99,17 +99,35 @@ describe('Preparacao AT', () => {
     expect((xml.match(/<Invoice>/g) ?? []).length).toBe(3);
   });
 
-  it('o PDF tem QR code e o SAF-T exige NIF do hotel', async () => {
+  it('o PDF nao tem QR code e o SAF-T exige NUIT do hotel', async () => {
     const { hotel, rooms } = await createHotel(ctx.prisma);
     const id = await invoiceFor(hotel.id, rooms[0].id);
     const invoice = await ctx.http().post(`/api/reservations/${id}/invoices`).set(auth).send({ type: 'INVOICE' }).expect(201);
     const pdf = await ctx.http().get(`/api/invoices/${invoice.body.id}/pdf`).set(auth).responseType('blob').expect(200);
     expect(pdf.body.length).toBeGreaterThan(3000);
     expect((pdf.body.toString('latin1').match(/\/Type \/Page\b/g) ?? []).length).toBe(1);
-    expect(pdf.body.toString('latin1')).toContain('/Subtype /Image');
+    expect(pdf.body.toString('latin1')).not.toContain('/Subtype /Image');
     const ticket = await ctx.http().get('/api/print/pdf').query({ document: 'INVOICE', invoiceId: invoice.body.id, paper: 'MM80' }).set(auth).buffer(true).expect(200);
     expect((ticket.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
     expect((ticket.body as Buffer).toString('latin1')).not.toContain('/Subtype /Image');
     await ctx.http().get(`/api/saft?hotelId=${hotel.id}&from=${day(0)}&to=${day(0)}`).set(auth).expect(400);
+  });
+
+  it('o documento impresso segue o formato de Mocambique', async () => {
+    const { hotel, rooms } = await fiscalHotel();
+    await ctx.prisma.hotel.update({ where: { id: hotel.id }, data: { currency: 'MZN' } });
+    const id = await invoiceFor(hotel.id, rooms[0].id);
+    const invoice = await ctx.http().post(`/api/reservations/${id}/invoices`).set(auth).send({ type: 'INVOICE_RECEIPT' }).expect(201);
+    await ctx.http().post('/api/printers').set(auth).send({ hotelId: hotel.id, name: 'Rececao', purpose: 'RECEIPT', connection: 'LOCAL', localName: 'POS-80', paperWidth: 'MM80' }).expect(201);
+    const printed = await ctx.http().post('/api/print').set(auth).send({ document: 'INVOICE', invoiceId: invoice.body.id }).expect(200);
+    const bytes = Buffer.from(printed.body.data, 'base64');
+    const text = bytes.toString('latin1');
+    expect(text).toContain(`RECIBO ${invoice.body.fullNumber}`);
+    expect(text).toContain('NUIT 500100200');
+    expect(text).toMatch(/\(6%\)/);
+    expect(text).toMatch(/\d,\d{2} MT/);
+    expect(text.indexOf('Processado por Computador')).toBeGreaterThan(text.indexOf('Obrigado pela preferencia'));
+    expect(text).not.toMatch(/ATCUD|FATURA-RECIBO|NIF|MZN|nao certificado|validade fiscal/);
+    expect(bytes.includes(Buffer.from([0x1d, 0x28, 0x6b]))).toBe(false);
   });
 });

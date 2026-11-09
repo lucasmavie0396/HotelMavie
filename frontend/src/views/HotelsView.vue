@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
 import type { Hotel } from '@/types';
+import { currencySymbol } from '@/utils/format';
 
 interface DomainCheck {
   domain: string;
@@ -195,7 +196,7 @@ async function verify(hotel: Hotel) {
         <tbody>
           <tr v-for="hotel in hotels.hotels" :key="hotel.id" class="border-b border-slate-100 last:border-0">
             <td class="px-4 py-3 font-medium">{{ hotel.name }}</td>
-            <td class="px-4 py-3">{{ hotel.currency }}</td>
+            <td class="px-4 py-3">{{ currencySymbol(hotel.currency) }}</td>
             <td class="px-4 py-3">
               <RouterLink
                 v-if="hotel.publicSlug && hotel.publicEnabled"

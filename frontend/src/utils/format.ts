@@ -3,6 +3,10 @@ import type { ChargeType, InvoiceType, PaymentMethod, ReservationSource, Reserva
 
 const formatters = new Map<string, Intl.NumberFormat>();
 
+export function currencySymbol(currency: string) {
+  return currency === 'MZN' ? 'MT' : currency;
+}
+
 export function formatMoney(value: string | number, currency = import.meta.env.VITE_CURRENCY || 'EUR') {
   const key = `${localeTag()}:${currency}`;
   let formatter = formatters.get(key);
@@ -10,7 +14,10 @@ export function formatMoney(value: string | number, currency = import.meta.env.V
     formatter = new Intl.NumberFormat(localeTag(), { style: 'currency', currency });
     formatters.set(key, formatter);
   }
-  return formatter.format(Number(value));
+  return formatter
+    .formatToParts(Number(value))
+    .map((part) => (part.type === 'currency' && currency === 'MZN' ? 'MT' : part.value))
+    .join('');
 }
 
 export function formatDate(value: string) {

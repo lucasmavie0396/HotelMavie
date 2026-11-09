@@ -7,7 +7,7 @@ import { JwtPayload } from '../auth/jwt-payload';
 import { Ticket } from '../billing/ticket-pdf.service';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
-import { sumMoney } from '../common/money';
+import { formatCurrency, sumMoney } from '../common/money';
 import { jsonRead, jsonValue } from '../prisma/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { Report } from '../reports/report-model';
@@ -251,7 +251,7 @@ export class PayrollService {
     }
     const hotel = await this.prisma.hotel.findUniqueOrThrow({ where: { id: slip.run.hotelId } });
     const operator = (await this.prisma.user.findUnique({ where: { id: user.sub }, select: { name: true } }))?.name ?? '-';
-    const money = (value: Prisma.Decimal.Value) => new Intl.NumberFormat('pt-PT', { style: 'currency', currency: hotel.currency }).format(Number(value.toString()));
+    const money = (value: Prisma.Decimal.Value) => formatCurrency(value, hotel.currency);
     const hours = (value: Prisma.Decimal.Value) => `${Number(value.toString()).toLocaleString('pt-PT', { maximumFractionDigits: 2 })} h`;
     const pct = (value: Prisma.Decimal.Value) => `${Number(value.toString()).toLocaleString('pt-PT', { maximumFractionDigits: 2 })}%`;
     const lines = this.lines(slip);
@@ -284,7 +284,7 @@ export class PayrollService {
           kpis: [
             { label: 'Nome', value: slip.fullName },
             { label: 'Funcao', value: slip.jobTitle },
-            { label: 'NIF', value: slip.taxId ?? '-' },
+            { label: 'NUIT', value: slip.taxId ?? '-' },
             { label: 'N.o Seg. Social', value: slip.socialSecurityNumber ?? '-' },
           ],
         },
@@ -322,7 +322,7 @@ export class PayrollService {
     const run = await this.findRun(id, user);
     const hotel = await this.prisma.hotel.findUniqueOrThrow({ where: { id: run.hotelId } });
     const operator = (await this.prisma.user.findUnique({ where: { id: user.sub }, select: { name: true } }))?.name ?? '-';
-    const money = (value: Prisma.Decimal.Value) => new Intl.NumberFormat('pt-PT', { style: 'currency', currency: hotel.currency }).format(Number(value.toString()));
+    const money = (value: Prisma.Decimal.Value) => formatCurrency(value, hotel.currency);
     const total = (key: 'grossPay' | 'employeeSs' | 'irsWithholding' | 'netPay' | 'employerSs') => money(sumMoney(run.payslips.map((slip) => slip[key])));
     const report: Report = {
       key: 'payroll',

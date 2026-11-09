@@ -39,7 +39,7 @@ export class ReportRenderService {
       ticket.rule();
     }
     ticket.text(`Gerado em ${report.generatedAt} por ${report.generatedBy}`, { size: 7, align: 'center' });
-    return ticket;
+    return ticket.processed();
   }
 
   private ticketTable(ticket: Ticket, table: ReportTable) {

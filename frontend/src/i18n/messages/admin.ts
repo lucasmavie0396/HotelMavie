@@ -21,7 +21,7 @@ export const adminViews = {
       rateOn: 'Taxa ativada',
       fiscal: 'Dados fiscais',
       legalName: 'Denominacao social',
-      taxId: 'NIF do hotel',
+      taxId: 'NUIT do hotel',
       lodgingVat: 'IVA do alojamento',
       city: 'Localidade',
       postalCode: 'Codigo postal',

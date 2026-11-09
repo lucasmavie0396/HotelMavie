@@ -24,7 +24,7 @@ import { Ticket } from '../billing/ticket-pdf.service';
 import { addDays, nightsBetween, parseDate, todayUtc } from '../common/dates';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
-import { sumMoney, toMoney } from '../common/money';
+import { formatCurrency, sumMoney, toMoney } from '../common/money';
 import { PrismaService } from '../prisma/prisma.service';
 import { Report, ReportDefinition, ReportSection } from './report-model';
 import { reportPeriod, SOLD_STATUSES, summaryData } from './report-summary';
@@ -80,7 +80,7 @@ export const REPORTS: ReportDefinition[] = [
 
 const CHARGE_LABELS: Record<ChargeType, string> = { ACCOMMODATION: 'Alojamento', RESTAURANT: 'Restaurante', BAR: 'Bar', EXTRA: 'Extras' };
 const METHOD_LABELS: Record<PaymentMethod, string> = { CASH: 'Numerario', CARD: 'Cartao', TRANSFER: 'Transferencia', MOBILE: 'Pagamento movel', OTHER: 'Outro' };
-const DOC_LABELS: Record<InvoiceType, string> = { INVOICE: 'Fatura (FT)', INVOICE_RECEIPT: 'Fatura-recibo (FR)', CREDIT_NOTE: 'Nota de credito (NC)', RECEIPT: 'Recibo' };
+const DOC_LABELS: Record<InvoiceType, string> = { INVOICE: 'Fatura (FT)', INVOICE_RECEIPT: 'Recibo (FR)', CREDIT_NOTE: 'Nota de credito (NC)', RECEIPT: 'Recibo' };
 const DOC_SHORT: Record<InvoiceType, string> = { INVOICE: 'FT', INVOICE_RECEIPT: 'FR', CREDIT_NOTE: 'NC', RECEIPT: 'RG' };
 const STATUS_LABELS: Record<ReservationStatus, string> = {
   PENDING: 'Pendente',
@@ -148,7 +148,7 @@ export class ReportBuilderService {
     if (!hotel || !canAccessHotel(user, hotel.id)) {
       throw new NotFoundException('Hotel nao encontrado');
     }
-    const money = (value: Money) => new Intl.NumberFormat('pt-PT', { style: 'currency', currency: hotel.currency }).format(Number(value.toString()));
+    const money = (value: Money) => formatCurrency(value, hotel.currency);
     const context = { hotel, money };
 
     let period: string;
@@ -655,7 +655,7 @@ export class ReportBuilderService {
             { label: 'Documento', weight: 1.4 },
             { label: 'Data', weight: 0.9 },
             { label: 'Cliente', weight: 2 },
-            { label: 'NIF', weight: 1 },
+            { label: 'NUIT', weight: 1 },
             { label: 'Base', align: 'right', weight: 1 },
             { label: 'IVA', align: 'right', weight: 0.9 },
             { label: 'Total', align: 'right', weight: 1 },
@@ -753,7 +753,7 @@ export class ReportBuilderService {
           totals: ['Total', '', '', String(lines.length), money(net), money(tax), money(gross)],
           empty: 'Sem documentos no periodo',
         },
-        note: 'Inclui faturas, faturas-recibo e notas de credito (deduzidas). Os recibos nao tem IVA proprio.',
+        note: 'Inclui faturas, recibos (FR) e notas de credito (deduzidas). Os recibos de liquidacao (RG) nao tem IVA proprio.',
       },
     ];
   }
@@ -948,7 +948,7 @@ export class ReportBuilderService {
         table: {
           columns: [
             { label: 'Cliente', weight: 2.2 },
-            { label: 'NIF', weight: 1 },
+            { label: 'NUIT', weight: 1 },
             { label: '0-30 dias', align: 'right' },
             { label: '31-60', align: 'right' },
             { label: '61-90', align: 'right' },

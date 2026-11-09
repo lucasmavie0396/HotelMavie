@@ -1,10 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Hotel, Invoice, InvoiceLine, InvoiceType, Prisma, Receipt } from '@prisma/client';
 import PDFDocument from 'pdfkit';
-import QRCode from 'qrcode';
-import { printedHash, qrCodeContent, receiptQrContent } from '../at/at-format';
+import { printedHash } from '../at/at-format';
 import { AtSigningService } from '../at/at-signing.service';
-import { sumMoney } from '../common/money';
+import { currencySymbol, formatCurrency, sumMoney } from '../common/money';
 import { MailLang } from '../mail/templates';
 import { UploadsService } from '../uploads/uploads';
 import { A4, COLORS, Column, drawFooter, drawHeader, drawSmallHeader, infoCard, loadLogo, rowHeight, sectionTitle, tableHeader, tableRow, totalsBox } from './a4-layout';
@@ -15,15 +14,14 @@ type FullReceipt = Receipt & { lines: { amount: Prisma.Decimal; invoice: { fullN
 
 const LABELS = {
   pt: {
-    titles: { INVOICE: 'Fatura', INVOICE_RECEIPT: 'Fatura-Recibo', CREDIT_NOTE: 'Nota de Credito', RECEIPT: 'Recibo' } as Record<InvoiceType, string>,
+    titles: { INVOICE: 'Fatura', INVOICE_RECEIPT: 'Recibo', CREDIT_NOTE: 'Nota de Credito', RECEIPT: 'Recibo' } as Record<InvoiceType, string>,
     methods: { CASH: 'Numerario', CARD: 'Cartao', TRANSFER: 'Transferencia', MOBILE: 'Pagamento movel', OTHER: 'Outro' } as Record<string, string>,
     number: 'N.o',
     date: 'Data',
-    pendingSeries: '0 (serie por comunicar a AT)',
     cancelled: 'ANULADO',
     customer: 'Cliente',
     name: 'Nome',
-    taxId: 'NIF',
+    taxId: 'NUIT',
     finalConsumer: 'Consumidor final',
     address: 'Morada',
     payment: 'Pagamento',
@@ -54,11 +52,10 @@ const LABELS = {
     page: (index: number, count: number) => `Pagina ${index} de ${count}`,
   },
   en: {
-    titles: { INVOICE: 'Fatura / Invoice', INVOICE_RECEIPT: 'Fatura-Recibo / Invoice-Receipt', CREDIT_NOTE: 'Nota de Credito / Credit Note', RECEIPT: 'Recibo / Receipt' } as Record<InvoiceType, string>,
+    titles: { INVOICE: 'Fatura / Invoice', INVOICE_RECEIPT: 'Recibo / Receipt', CREDIT_NOTE: 'Nota de Credito / Credit Note', RECEIPT: 'Recibo / Receipt' } as Record<InvoiceType, string>,
     methods: { CASH: 'Cash', CARD: 'Card', TRANSFER: 'Bank transfer', MOBILE: 'Mobile payment', OTHER: 'Other' } as Record<string, string>,
     number: 'No.',
     date: 'Date',
-    pendingSeries: '0 (series not yet registered with the AT)',
     cancelled: 'CANCELLED',
     customer: 'Customer',
     name: 'Name',
@@ -114,16 +111,19 @@ export class InvoicePdfService {
     return { doc, done };
   }
 
-  private fiscalBlock(doc: PDFKit.PDFDocument, qr: Buffer, lines: { text: string; strong?: boolean }[]) {
+  private fiscalBlock(doc: PDFKit.PDFDocument, lines: { text: string; strong?: boolean }[]) {
+    if (!lines.length) return;
     const left = A4.margin;
     const width = doc.page.width - A4.margin * 2;
-    const top = doc.page.height - FISCAL_AREA + 10;
-    doc.roundedRect(left, top, width, 100, 8).fill(COLORS.zebra);
-    doc.image(qr, left + 10, top + 10, { width: 80 });
-    let y = top + 12;
+    const inner = width - 24;
+    const fontOf = (line: { strong?: boolean }) => doc.font(line.strong ? 'Helvetica-Bold' : 'Helvetica').fontSize(7.5);
+    const height = lines.reduce((sum, line) => sum + fontOf(line).heightOfString(line.text, { width: inner }) + 3, 20);
+    const top = doc.page.height - 44 - height;
+    doc.roundedRect(left, top, width, height, 8).fill(COLORS.zebra);
+    let y = top + 11;
     for (const line of lines) {
-      doc.fillColor(line.strong ? COLORS.ink : COLORS.muted).font(line.strong ? 'Helvetica-Bold' : 'Helvetica').fontSize(7.5);
-      doc.text(line.text, left + 104, y, { width: width - 116 });
+      fontOf(line).fillColor(line.strong ? COLORS.ink : COLORS.muted);
+      doc.text(line.text, left + 12, y, { width: inner });
       y = doc.y + 3;
     }
   }
@@ -140,25 +140,12 @@ export class InvoicePdfService {
     const tag = lang === 'en' ? 'en-GB' : 'pt-PT';
     return {
       tag,
-      money: (value: { toString(): string }) => new Intl.NumberFormat(tag, { style: 'currency', currency }).format(Number(value.toString())),
+      money: (value: { toString(): string }) => formatCurrency(value, currency, tag),
     };
   }
 
   async renderReceipt(receipt: FullReceipt, hotel: Hotel, lang: MailLang = 'pt') {
     const text = LABELS[lang];
-    const qr = await QRCode.toBuffer(
-      receiptQrContent({
-        issuerTaxId: hotel.taxId,
-        customerTaxId: receipt.customerTaxId,
-        issuedAt: receipt.issuedAt,
-        receiptNo: receipt.fullNumber,
-        atcud: receipt.atcud,
-        amount: receipt.amount,
-        certificateNumber: this.signing.certificateNumber,
-        cancelled: receipt.status === 'CANCELLED',
-      }),
-      { errorCorrectionLevel: 'M', margin: 0, width: 240 },
-    );
     const certified = this.signing.certified;
     const certificate = this.signing.certificateNumber;
     const timeZone = process.env.AT_TIMEZONE ?? 'Europe/Lisbon';
@@ -174,7 +161,7 @@ export class InvoicePdfService {
       hotel,
       logo,
       title,
-      meta: [`${text.number} ${receipt.fullNumber}`, `${text.date}: ${receipt.issuedAt.toLocaleString(tag, { timeZone })}`, `ATCUD: ${receipt.atcud ?? text.pendingSeries}`],
+      meta: [`${text.number} ${receipt.fullNumber}`, `${text.date}: ${receipt.issuedAt.toLocaleString(tag, { timeZone })}`],
       alert: receipt.status === 'CANCELLED' ? `${text.cancelled}: ${receipt.cancelReason ?? ''}` : null,
     });
 
@@ -215,12 +202,7 @@ export class InvoicePdfService {
     }
     totalsBox(doc, left + width - 230, y, 230, [{ label: text.totalReceived, value: money(receipt.amount), strong: true }]);
 
-    this.fiscalBlock(doc, qr, [
-      {
-        text: certified ? `Processado por programa certificado n.o ${certificate}/AT` : 'Documento emitido por software nao certificado pela Autoridade Tributaria. Sem validade fiscal.',
-        strong: true,
-      },
-    ]);
+    this.fiscalBlock(doc, certified ? [{ text: `Processado por programa certificado n.o ${certificate}/AT`, strong: true }] : []);
     this.footers(doc, hotel, lang);
     doc.end();
     return done;
@@ -228,20 +210,6 @@ export class InvoicePdfService {
 
   async render(invoice: FullInvoice, hotel: Hotel, lang: MailLang = 'pt') {
     const text = LABELS[lang];
-    const qrContent = qrCodeContent({
-      issuerTaxId: hotel.taxId,
-      customerTaxId: invoice.customerTaxId,
-      type: invoice.type,
-      issuedAt: invoice.issuedAt,
-      invoiceNo: invoice.fullNumber,
-      atcud: invoice.atcud,
-      lines: invoice.lines,
-      taxTotal: invoice.taxTotal,
-      grossTotal: invoice.grossTotal,
-      signature: invoice.hash,
-      certificateNumber: this.signing.certificateNumber,
-    });
-    const qr = await QRCode.toBuffer(qrContent, { errorCorrectionLevel: 'M', margin: 0, width: 240 });
     const hashMark = printedHash(invoice.hash);
     const certified = this.signing.certified;
     const certificate = this.signing.certificateNumber;
@@ -254,7 +222,7 @@ export class InvoicePdfService {
     const left = A4.margin;
     const width = doc.page.width - A4.margin * 2;
 
-    const meta = [`${text.number} ${invoice.fullNumber}`, `${text.date}: ${invoice.issuedAt.toLocaleString(tag, { timeZone })}`, `ATCUD: ${invoice.atcud ?? text.pendingSeries}`];
+    const meta = [`${text.number} ${invoice.fullNumber}`, `${text.date}: ${invoice.issuedAt.toLocaleString(tag, { timeZone })}`];
     if (invoice.creditOf) meta.push(`${text.creditOf}: ${invoice.creditOf.fullNumber}`);
     let y = drawHeader(doc, { hotel, logo, title, meta });
 
@@ -265,7 +233,7 @@ export class InvoicePdfService {
     if (invoice.customerAddress) customerRows.push([text.address, invoice.customerAddress]);
     const documentRows: [string, string][] = [
       [text.document, `${title} ${invoice.fullNumber}`],
-      [text.currency, invoice.currency],
+      [text.currency, currencySymbol(invoice.currency)],
     ];
     if (invoice.creditOf) documentRows.push([text.creditOf, invoice.creditOf.fullNumber]);
     if (invoice.reason) documentRows.push([text.reason, invoice.reason]);
@@ -332,14 +300,9 @@ export class InvoicePdfService {
 
     const fiscal: { text: string; strong?: boolean }[] = [];
     if (hotel.invoiceFooter) fiscal.push({ text: hotel.invoiceFooter });
-    fiscal.push({
-      text: certified
-        ? `${hashMark}-Processado por programa certificado n.o ${certificate}/AT`
-        : `${hashMark}-Documento emitido por software nao certificado pela Autoridade Tributaria. Sem validade fiscal.`,
-      strong: true,
-    });
+    if (certified) fiscal.push({ text: `${hashMark}-Processado por programa certificado n.o ${certificate}/AT`, strong: true });
     if (invoice.type === 'INVOICE') fiscal.push({ text: lang === 'en' ? 'Este documento nao serve de recibo. / This document is not a receipt.' : 'Este documento nao serve de recibo.' });
-    this.fiscalBlock(doc, qr, fiscal);
+    this.fiscalBlock(doc, fiscal);
     this.footers(doc, hotel, lang);
     doc.end();
     return done;

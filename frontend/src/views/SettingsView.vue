@@ -12,7 +12,7 @@ import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
 import type { InvoiceType, TaxRate } from '@/types';
-import { formatDateTime, INVOICE_TYPE_LABELS, todayIso } from '@/utils/format';
+import { currencySymbol, formatDateTime, INVOICE_TYPE_LABELS, todayIso } from '@/utils/format';
 
 const { t } = useI18n();
 const auth = useAuthStore();
@@ -216,7 +216,7 @@ onMounted(load);
       <label class="text-sm sm:col-span-2">
         {{ t('settings.currency') }}
         <select v-model="fiscal.currency" class="input">
-          <option v-for="code in currencies" :key="code" :value="code">{{ code }}</option>
+          <option v-for="code in currencies" :key="code" :value="code">{{ currencySymbol(code) }}</option>
         </select>
         <span class="mt-1 block text-xs text-slate-500">{{ t('settings.currencyHint') }}</span>
       </label>
@@ -268,11 +268,10 @@ onMounted(load);
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h2 class="font-semibold">{{ t('settings.tabs.at') }}</h2>
         <span
-          v-if="atStatus"
-          class="rounded-full px-2 py-0.5 text-xs font-medium"
-          :class="atStatus.certified ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
+          v-if="atStatus?.certified"
+          class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800"
         >
-          {{ atStatus.certified ? `Certificado n.o ${atStatus.certificateNumber}/AT` : 'Software nao certificado' }}
+          {{ `Certificado n.o ${atStatus.certificateNumber}/AT` }}
         </span>
       </div>
       <p class="text-sm text-slate-600">

@@ -77,10 +77,6 @@ onMounted(load);
   <section class="space-y-6">
     <PageHeader section="invoices" :subtitle="t('invoices.subtitle')" />
 
-    <p class="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-      {{ t('invoices.notCertified') }}
-    </p>
-
     <form class="card grid gap-3 sm:grid-cols-5" @submit.prevent="load">
       <input v-model="filters.q" class="input sm:col-span-2" :placeholder="t('invoices.search')" />
       <select v-model="filters.type" class="input">

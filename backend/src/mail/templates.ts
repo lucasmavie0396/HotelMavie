@@ -1,4 +1,5 @@
 import { Hotel } from '@prisma/client';
+import { formatCurrency } from '../common/money';
 
 const ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
@@ -19,7 +20,7 @@ export function mailLang(value?: string | null): MailLang {
 }
 
 export function formatMoney(value: { toString(): string } | number, currency: string, lang: MailLang = 'pt') {
-  return new Intl.NumberFormat(lang === 'en' ? 'en-GB' : 'pt-PT', { style: 'currency', currency }).format(Number(value.toString()));
+  return formatCurrency(value, currency, lang === 'en' ? 'en-GB' : 'pt-PT');
 }
 
 const GUEST_TEXT = {

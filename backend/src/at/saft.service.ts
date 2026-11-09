@@ -61,7 +61,7 @@ export class SaftService {
     }
     const hotel = await this.prisma.hotel.findUniqueOrThrow({ where: { id: hotelId } });
     if (!hotel.taxId) {
-      throw new BadRequestException('Preenche o NIF do hotel em Configuracao antes de exportar o SAF-T');
+      throw new BadRequestException('Preenche o NUIT do hotel em Configuracao antes de exportar o SAF-T');
     }
     if (!hotel.address || !hotel.city || (hotel.country === 'PT' && !/^\d{4}-\d{3}$/.test(hotel.postalCode ?? ''))) {
       throw new BadRequestException('Preenche a morada, a localidade e o codigo postal (0000-000) do hotel antes de exportar o SAF-T');
