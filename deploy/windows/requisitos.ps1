@@ -189,7 +189,11 @@ function Get-SqlServerAdminRequirement {
   $target = Get-SqlServerTarget
   $ready = [bool]($target.Port -and (Test-TcpPort $DbHost $target.Port) -and (Test-Path (Join-Path $Backend 'node_modules\.prisma\client-sqlserver')))
   $result = [pscustomobject]@{ Ok = $false; Detail = 'Depende do SQL Server e da compila' + (U '\u00e7\u00e3o') }
-  if ($ready) { $result = Test-SqlServerAdmin $target.Port }
+  if ($ready -and $DbAdminUser -and -not $DbAdminPassword) {
+    $result = [pscustomobject]@{ Ok = $false; Detail = "Escreva a password de $DbAdminUser" }
+  } elseif ($ready) {
+    $result = Test-SqlServerAdmin $target.Port
+  }
   return New-Requirement 'sql-admin' (U 'Acesso de administrador ao SQL Server') $result.Ok $result.Detail $false
 }
 

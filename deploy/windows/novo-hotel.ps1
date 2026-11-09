@@ -90,6 +90,8 @@ $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = 'FixedDialog'
 $form.MaximizeBox = $false
 $form.Font = $font
+$formIcon = Join-Path $PSScriptRoot 'lam-company.ico'
+if (Test-Path $formIcon) { $form.Icon = New-Object Drawing.Icon($formIcon) }
 
 function Add-Control($Control, [int]$X, [int]$Y, [int]$W, [int]$H, $Parent = $form) {
   $Control.Location = New-Object Drawing.Point($X, $Y)
@@ -165,13 +167,20 @@ function Update-DatabaseChoice {
   $instanceLabel.Enabled = $sql
   $sqlInstance.Enabled = $sql
   if ($sql) {
-    if ($dbUser.Text.Trim() -eq 'root') { $dbUser.Text = '' }
-    $dbHint.Text = U 'Utilizador vazio = conta do Windows. Inst\u00e2ncia vazia = a deste PC (ou instala o SQL Server Express).'
+    if ($dbUser.Text.Trim() -in @('', 'root')) { $dbUser.Text = 'sa' }
+    $found = Find-PreferredSqlServerInstance
+    if ($found -and -not $sqlInstance.Text.Trim()) { $sqlInstance.Text = $found.Name }
+    if ($found) {
+      $dbHint.Text = U 'Escreva a password do sa. Para usar a conta do Windows, deixe o utilizador vazio.'
+    } else {
+      $dbHint.Text = U 'Sem SQL Server neste PC: a password escrita fica a ser a do sa (8+ caracteres, mai\u00fasculas, min\u00fasculas e n\u00fameros).'
+    }
   } else {
-    if (-not $dbUser.Text.Trim()) { $dbUser.Text = 'root' }
+    if ($dbUser.Text.Trim() -in @('', 'sa')) { $dbUser.Text = 'root' }
     $dbHint.Text = U 'Vazio se o root n\u00e3o tiver password (ex.: XAMPP). Se o MariaDB for instalado, fica a ser a do root.'
   }
 }
+if (Find-PreferredSqlServerInstance) { $dbKind.SelectedIndex = 1 }
 Update-DatabaseChoice
 
 $reqGroup = New-Object Windows.Forms.GroupBox
@@ -271,7 +280,7 @@ function Update-Requirements {
     $reqStatus.Text = U 'Esta vers\u00e3o do Windows n\u00e3o \u00e9 suportada.'
   } elseif (@($missing | Where-Object { -not $_.Instalavel }).Count) {
     $reqStatus.ForeColor = [Drawing.Color]::Firebrick
-    $reqStatus.Text = U 'Corrija os dados do MySQL e verifique de novo.'
+    $reqStatus.Text = U 'Corrija os dados da base de dados e verifique de novo.'
   } else {
     $reqStatus.ForeColor = [Drawing.Color]::Firebrick
     $reqStatus.Text = U 'Instale o que falta para continuar.'
@@ -287,6 +296,7 @@ $dbUser.Add_Leave({ if (-not $script:busy) { Update-Requirements } })
 $dbPass.Add_Leave({ if (-not $script:busy) { Update-Requirements } })
 $sqlInstance.Add_Leave({ if (-not $script:busy) { Update-Requirements } })
 $dbKind.Add_SelectedIndexChanged({
+  $dbPass.Text = ''
   Update-DatabaseChoice
   if (-not $script:busy) { Update-Requirements }
 })
@@ -365,6 +375,11 @@ $install.Add_Click({
   $server = $missing | Where-Object { $_.Id -eq 'db-servidor' }
   if (-not (Test-SqlServerChoice) -and $server -and -not (Get-StoppedDbService) -and $dbPass.Text.Length -lt 8) {
     [Windows.Forms.MessageBox]::Show((U 'Vai ser instalado o MariaDB. Escreva primeiro, no campo Password do MySQL, a password que o utilizador root vai ter (m\u00ednimo 8 caracteres) e guarde-a num local seguro.'), 'MAVIE-HGest', 'OK', 'Warning') | Out-Null
+    return
+  }
+  $newSqlServer = (Test-SqlServerChoice) -and @($missing | Where-Object { $_.Id -eq 'sql-instancia' }).Count -and -not (Get-SqlServerInstance $sqlInstance.Text.Trim())
+  if ($newSqlServer -and $dbUser.Text.Trim() -and $dbPass.Text -cnotmatch '^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$') {
+    [Windows.Forms.MessageBox]::Show((U 'Vai ser instalado o SQL Server. Escreva primeiro, no campo Password, a password que o sa vai ter (m\u00ednimo 8 caracteres, com mai\u00fasculas, min\u00fasculas e n\u00fameros) e guarde-a num local seguro.'), 'MAVIE-HGest', 'OK', 'Warning') | Out-Null
     return
   }
   $question = (U 'Vai ser transferido e instalado:') + "`r`n`r`n- " + (($missing | ForEach-Object { $_.Nome }) -join "`r`n- ") + "`r`n`r`n" + (U 'Continuar?')

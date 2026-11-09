@@ -20,4 +20,10 @@ foreach ($process in @(Get-CimInstance Win32_Process -Filter "Name = 'node.exe'"
     Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
   }
 }
+$shortcuts = Join-Path $Raiz 'posto-atalhos.txt'
+if (Test-Path $shortcuts) {
+  foreach ($path in @([IO.File]::ReadAllLines($shortcuts) | Where-Object { $_ })) {
+    Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+  }
+}
 Write-Ok "Servicos do MAVIE-HGest em $Raiz parados e retirados. A pasta dados (bases, backups e chave AT) fica intacta."

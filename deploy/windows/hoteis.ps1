@@ -235,6 +235,10 @@ function New-Hotel {
   Write-Host "    Site publico:  $publicUrl/h/$code"
   Write-Host "    Administrador: $AdminEmail"
   Write-Host "    Dados:         $dir"
+  if (-not $Dominio) {
+    $addresses = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' -and $_.AddressState -eq 'Preferred' } | ForEach-Object { $_.IPAddress })
+    Write-Host "    Postos:        instalador em modo Posto, servidor $($addresses -join ' ou '), porta $Port"
+  }
   if ($Dominio) {
     Write-Host "    IIS:           cria um site para $Dominio com o ficheiro $(Join-Path $paths.Iis 'web.config') (README, seccao 11)"
   }

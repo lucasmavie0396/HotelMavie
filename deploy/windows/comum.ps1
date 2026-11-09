@@ -255,6 +255,16 @@ function Get-SqlServerInstance([string]$Name = '') {
   }
 }
 
+function Find-PreferredSqlServerInstance {
+  $names = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL' -ErrorAction SilentlyContinue
+  if (-not $names) { return $null }
+  $instances = @($names.PSObject.Properties | Where-Object { $_.Name -notlike 'PS*' } | ForEach-Object { Get-SqlServerInstance $_.Name })
+  $running = @($instances | Where-Object { $_.Running })
+  if ($running.Count) { return $running[0] }
+  if ($instances.Count) { return $instances[0] }
+  return $null
+}
+
 function Set-SqlServerStaticPort($Instance) {
   Set-ItemProperty "$($Instance.Root)\SuperSocketNetLib\Tcp\IPAll" -Name TcpPort -Value "$($Instance.Port)"
   Set-ItemProperty "$($Instance.Root)\SuperSocketNetLib\Tcp\IPAll" -Name TcpDynamicPorts -Value ''
@@ -399,7 +409,10 @@ function Get-PanelShortcutPath([string]$HotelName) {
 
 function New-PanelShortcut([string]$HotelName, [string]$Url) {
   $path = Get-PanelShortcutPath $HotelName
-  Write-Utf8File $path ("[InternetShortcut]`r`nURL=$Url`r`n")
+  $content = "[InternetShortcut]`r`nURL=$Url`r`n"
+  $icon = Join-Path $PSScriptRoot 'lam-company.ico'
+  if (Test-Path $icon) { $content += "IconIndex=0`r`nIconFile=$icon`r`n" }
+  Write-Utf8File $path $content
   return $path
 }
 

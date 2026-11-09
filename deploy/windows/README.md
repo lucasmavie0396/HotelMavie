@@ -23,9 +23,19 @@ Postos da receção / bar / cozinha ──► http://servidor:8080 ──► Nod
 
 1. Copia o `.exe` para o computador (pen, rede ou email) e faz duplo clique. O Windows pede permissão de administrador.
 2. Escolhe a pasta (por omissão `C:\MAVIE-HGest`) e, se quiseres, o atalho no ambiente de trabalho.
-3. No fim, o instalador abre o assistente **Novo hotel** (secção 11), que verifica os requisitos e cria o hotel.
+3. No fim, o instalador abre o assistente **Novo hotel** (secção 11), que verifica os requisitos e cria o hotel. Ao abrir, o assistente procura o SQL Server neste computador: se existir, escolhe SQL Server, preenche a instância e o utilizador `sa`, e só falta escrever a password. Se não existir, fica em MySQL/MariaDB. O tipo pode ser sempre mudado à mão.
 
 O ficheiro já leva o sistema compilado, as dependências, o Node.js 22 e o MariaDB 11.4 (verificados por SHA-256). Por isso, **com MySQL/MariaDB instala sem internet**. O SQL Server Express (secção 12) e os módulos do IIS (só com domínio) continuam a ser transferidos se forem precisos.
+
+**Instalar os postos (receção, bar, cozinha):** corre o mesmo `.exe` em cada computador e escolhe **Posto de trabalho**. Indica o IP do servidor e a porta do hotel, que aparecem no fim da criação do hotel (a do primeiro é 3101). O instalador confirma que o servidor responde, cria no ambiente de trabalho o atalho `MAVIE-HGest - <ip> (<porta>)` e, se deixares marcado "Imprimir talões neste posto", instala o agente de impressão, que arranca quando um utilizador entra no Windows e já fica autorizado para esse endereço. Depois escolhe a impressora em Configuração → Impressoras.
+
+Para instalar em vários postos sem perguntas, corre em cada um, como administrador (acrescenta `/TASKS=` para não instalar o agente de impressão):
+
+```bat
+MAVIE-HGest-Setup-0.1.0-AAAAMMDD.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TYPE=posto /COMPONENTS=posto /SERVIDOR=192.168.1.10 /PORTA=3101
+```
+
+Se algo falhar, o motivo fica em `C:\MAVIE-HGest\posto.log`. Para os postos chegarem ao servidor: o IP do servidor deve ser fixo (ou reservado no router), o hotel tem de ter a porta aberta na firewall (a opção do assistente, ligada por omissão) e a rede do servidor tem de estar como Privada. Um hotel criado com domínio só aceita ligações pelo IIS, por isso os postos usam o domínio em vez do IP. Para ligar um posto a outro hotel, corre o instalador outra vez com a outra porta: fica com os dois atalhos e o agente autorizado para ambos. Para desinstalar um posto, usa Definições → Aplicações → MAVIE-HGest.
 
 - **Atualizar:** corre o `.exe` novo por cima. Se já houver hotéis, o instalador para-os, substitui os ficheiros, faz backup e migra cada base (`hoteis.ps1 -Acao atualizar -SemCompilar`) e volta a arrancá-los. A pasta `dados` nunca é substituída.
 - **Desinstalar:** em Definições → Aplicações → MAVIE-HGest. Para os hotéis desta instalação e retira as tarefas, as regras de firewall e os atalhos. A pasta `dados` (bases, backups e chave AT) fica no disco: apaga-a à mão só depois de guardares o que for preciso.
