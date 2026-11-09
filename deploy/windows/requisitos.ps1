@@ -20,6 +20,7 @@ if ($BaseDados -eq 'SQLServer') {
 }
 $SqlExpressUrl = 'https://go.microsoft.com/fwlink/?linkid=2215160'
 $SqlInstanciaNova = 'MAVIE'
+$SqlServerMajorMinimo = 11
 
 $NodeMajor = 22
 $WindowsBuildMinimo = 14393
@@ -150,6 +151,7 @@ function Test-SqlServerAdmin([int]$Port) {
   $parts = "$row".Split("`t")
   $who = 'Windows (' + [Security.Principal.WindowsIdentity]::GetCurrent().Name + ')'
   if ($DbAdminUser) { $who = $DbAdminUser }
+  if ([int]$parts[1].Split('.')[0] -lt $SqlServerMajorMinimo) { return [pscustomobject]@{ Ok = $false; Detail = "SQL Server $($parts[1]): precisa da versao 2012 ou superior" } }
   if ($parts[0] -ne '1') { return [pscustomobject]@{ Ok = $false; Detail = "$who entra mas nao e sysadmin" } }
   return [pscustomobject]@{ Ok = $true; Detail = "$who, SQL Server $($parts[1]) $($parts[2])" }
 }
@@ -505,7 +507,9 @@ function Set-SqlServerConfig {
   Set-ItemProperty "$($instance.Root)\SuperSocketNetLib\Tcp" -Name Enabled -Value 1
   Set-SqlServerStaticPort ([pscustomobject]@{ Root = $instance.Root; Port = $port })
   Set-ItemProperty $instance.Root -Name LoginMode -Value 2
+  $dependents = @(Get-Service -Name $instance.Service -DependentServices | Where-Object { $_.Status -eq 'Running' })
   Restart-Service -Name $instance.Service -Force
+  foreach ($dependent in $dependents) { Start-Service -Name $dependent.Name -ErrorAction SilentlyContinue }
   Wait-SqlServerPort $port
   Write-Ok "SQL Server a responder na porta fixa $port, com autenticacao SQL"
 }

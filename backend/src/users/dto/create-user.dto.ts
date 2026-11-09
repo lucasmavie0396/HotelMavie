@@ -1,5 +1,5 @@
 import { UserRole } from '@prisma/client';
-import { IsBoolean, IsEmail, IsEnum, IsInt, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsEnum, IsInt, IsOptional, IsString, MaxLength, MinLength, ValidateIf } from 'class-validator';
 
 export class CreateUserDto {
   @IsString()
@@ -25,4 +25,8 @@ export class CreateUserDto {
   @IsOptional()
   @IsInt()
   hotelId?: number;
+
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsInt()
+  profileId?: number | null;
 }

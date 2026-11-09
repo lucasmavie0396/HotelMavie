@@ -404,21 +404,29 @@ function Register-ApiTask([string]$Node, [string]$LogDir, [string]$TaskName = $N
 
 function Get-PanelShortcutPath([string]$HotelName) {
   $safe = ($HotelName -replace '[\\/:*?"<>|]', '').Trim()
-  return Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) "MAVIE-HGest - $safe.url"
+  return Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) "MAVIE-HGest - $safe.lnk"
 }
 
 function New-PanelShortcut([string]$HotelName, [string]$Url) {
   $path = Get-PanelShortcutPath $HotelName
-  $content = "[InternetShortcut]`r`nURL=$Url`r`n"
+  $old = [IO.Path]::ChangeExtension($path, '.url')
+  if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Force }
+  $opener = Join-Path $PSScriptRoot 'abrir-painel.ps1'
+  $link = (New-Object -ComObject WScript.Shell).CreateShortcut($path)
+  $link.TargetPath = Join-Path $env:windir 'System32\WindowsPowerShell\v1.0\powershell.exe'
+  $link.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$opener`" -Url `"$Url`""
+  $link.WindowStyle = 7
   $icon = Join-Path $PSScriptRoot 'lam-company.ico'
-  if (Test-Path $icon) { $content += "IconIndex=0`r`nIconFile=$icon`r`n" }
-  Write-Utf8File $path $content
+  if (Test-Path $icon) { $link.IconLocation = "$icon,0" }
+  $link.Save()
   return $path
 }
 
 function Remove-PanelShortcut([string]$HotelName) {
   $path = Get-PanelShortcutPath $HotelName
-  if (Test-Path $path) { Remove-Item $path -Force }
+  foreach ($file in @($path, [IO.Path]::ChangeExtension($path, '.url'))) {
+    if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file -Force }
+  }
 }
 
 function Get-HotelInstances {

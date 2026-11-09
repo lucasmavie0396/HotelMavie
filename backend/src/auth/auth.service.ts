@@ -5,6 +5,7 @@ import { User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import QRCode from 'qrcode';
+import { AccessService } from '../access/access';
 import { AuditService } from '../audit/audit';
 import { MailService } from '../mail/mail.service';
 import { passwordResetEmail } from '../mail/templates';
@@ -31,6 +32,7 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly mail: MailService,
     private readonly audit: AuditService,
+    private readonly access: AccessService,
   ) {}
 
   async login(dto: LoginDto, userAgent?: string) {
@@ -220,8 +222,9 @@ export class AuthService {
     });
   }
 
-  me(userId: number) {
-    return this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: publicUserSelect });
+  async me(userId: number) {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: publicUserSelect });
+    return { ...user, permissions: await this.access.levelsFor(userId) };
   }
 
   private async issueTokens(user: User, previous?: { id: number; tokenHash: string }, userAgent?: string) {
@@ -259,7 +262,7 @@ export class AuthService {
     return {
       accessToken,
       refreshToken,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role, hotelId: user.hotelId },
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, hotelId: user.hotelId, permissions: await this.access.levelsFor(user.id) },
     };
   }
 }

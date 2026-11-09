@@ -16,6 +16,9 @@ export default async function globalSetup() {
     try {
       await admin.$executeRawUnsafe(`IF DB_ID(N'${name}') IS NOT NULL BEGIN ALTER DATABASE [${name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [${name}]; END`);
       await admin.$executeRawUnsafe(`CREATE DATABASE [${name}]`);
+      if (process.env.TEST_SQLSERVER_COMPAT) {
+        await admin.$executeRawUnsafe(`ALTER DATABASE [${name}] SET COMPATIBILITY_LEVEL = ${Number(process.env.TEST_SQLSERVER_COMPAT)}`);
+      }
     } finally {
       await admin.$disconnect();
     }

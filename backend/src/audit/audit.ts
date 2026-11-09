@@ -53,6 +53,7 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   STOCK_DOCUMENT: 'Documento de stock lancado',
   PAYROLL_CLOSE: 'Salarios fechados',
   USER_CHANGE: 'Utilizador alterado',
+  ACCESS_PROFILE_CHANGE: 'Perfil de acesso alterado',
   USER_2FA_RESET: '2FA desativado por um administrador',
   AUTH_2FA_ENABLED: '2FA ativado',
   AUTH_2FA_DISABLED: '2FA desativado',

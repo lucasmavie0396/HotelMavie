@@ -1,3 +1,5 @@
+import type { AccessLevels } from '@/utils/access';
+
 export type UserRole = 'ADMIN' | 'MANAGER' | 'RECEPTION' | 'CASHIER';
 
 export type RoomStatus = 'AVAILABLE' | 'OCCUPIED' | 'CLEANING' | 'MAINTENANCE';
@@ -12,6 +14,16 @@ export interface AuthUser {
   email: string;
   role: UserRole;
   hotelId: number | null;
+  permissions?: AccessLevels | null;
+}
+
+export interface AccessProfile {
+  id: number;
+  hotelId: number;
+  name: string;
+  baseRole: UserRole;
+  users: number;
+  permissions: AccessLevels;
 }
 
 export interface Hotel {

@@ -3,6 +3,7 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import { setPageIdentity } from '@/services/favicon';
 import { useAuthStore } from '@/stores/auth';
 import type { UserRole } from '@/types';
+import { allowedRoutes, ROUTE_AREAS } from '@/utils/access';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -75,6 +76,12 @@ const router = createRouter({
           meta: { roles: ['ADMIN'] },
         },
         {
+          path: 'permissoes',
+          name: 'permissions',
+          component: () => import('@/views/PermissionsView.vue'),
+          meta: { roles: ['ADMIN'] },
+        },
+        {
           path: 'configuracao',
           name: 'settings',
           component: () => import('@/views/SettingsView.vue'),
@@ -122,6 +129,15 @@ router.beforeEach(async (to) => {
   }
   if (to.meta.guestOnly && auth.isAuthenticated) {
     return { name: 'dashboard' };
+  }
+  const levels = auth.user?.permissions;
+  if (levels && to.meta.requiresAuth && to.name !== 'account') {
+    const allowed = allowedRoutes(levels);
+    const area = ROUTE_AREAS[String(to.name)];
+    if (area && (levels[area] ?? 'NONE') !== 'NONE') return true;
+    if (to.name === 'dashboard' && auth.user?.role !== 'CASHIER') return true;
+    const home = auth.user?.role === 'CASHIER' ? (allowed[0] ?? 'account') : 'dashboard';
+    return to.name === home ? true : { name: home };
   }
   if (auth.user?.role === 'CASHIER' && to.meta.requiresAuth && !CASHIER_ROUTES.includes(String(to.name))) {
     return { name: 'pos' };

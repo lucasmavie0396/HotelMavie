@@ -44,7 +44,9 @@ function selectTab(value: Tab) {
   router.replace({ query: { ...route.query, tab: value } });
 }
 
-const fiscal = reactive({ legalName: '', taxId: '', invoiceFooter: '', ticketFooter: '', accommodationTaxRateId: 0, city: '', postalCode: '', country: 'PT' });
+const CURRENCIES = ['MZN', 'EUR', 'USD', 'ZAR', 'AOA', 'CVE', 'BRL', 'GBP'];
+const fiscal = reactive({ legalName: '', taxId: '', invoiceFooter: '', ticketFooter: '', accommodationTaxRateId: 0, city: '', postalCode: '', country: 'PT', currency: 'EUR' });
+const currencies = computed(() => (CURRENCIES.includes(fiscal.currency) ? CURRENCIES : [fiscal.currency, ...CURRENCIES]));
 const series = ref<{ id: number; type: InvoiceType; code: string; nextNumber: number; atValidationCode: string | null }[]>([]);
 const seriesCodes = reactive<Record<number, string>>({});
 const atStatus = ref<{ certified: boolean; certificateNumber: string } | null>(null);
@@ -73,6 +75,7 @@ async function load() {
       city: hotel?.city ?? '',
       postalCode: hotel?.postalCode ?? '',
       country: hotel?.country ?? 'PT',
+      currency: hotel?.currency ?? 'EUR',
     });
   } catch (e) {
     error.value = errorMessage(e);
@@ -107,6 +110,7 @@ const saveFiscal = () =>
         city: fiscal.city || undefined,
         postalCode: fiscal.postalCode || undefined,
         country: fiscal.country.toUpperCase() || undefined,
+        currency: fiscal.currency,
       }),
     t('settings.fiscalSaved'),
   );
@@ -209,6 +213,13 @@ onMounted(load);
         <input v-model="fiscal.postalCode" class="input" :placeholder="t('settings.postalCode')" />
         <input v-model="fiscal.country" class="input w-20" maxlength="2" placeholder="PT" :aria-label="t('settings.country')" />
       </div>
+      <label class="text-sm sm:col-span-2">
+        {{ t('settings.currency') }}
+        <select v-model="fiscal.currency" class="input">
+          <option v-for="code in currencies" :key="code" :value="code">{{ code }}</option>
+        </select>
+        <span class="mt-1 block text-xs text-slate-500">{{ t('settings.currencyHint') }}</span>
+      </label>
       <textarea v-model="fiscal.invoiceFooter" class="input sm:col-span-2" rows="2" :placeholder="t('settings.invoiceFooter')" />
       <input v-model="fiscal.ticketFooter" class="input sm:col-span-2" maxlength="255" :placeholder="t('settings.ticketFooter')" />
       <div class="flex justify-end sm:col-span-2">

@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { translated } from '@/i18n';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
-import type { BackupStatus, UserRole } from '@/types';
+import type { AccessProfile, BackupStatus, UserRole } from '@/types';
 import { formatDateTime } from '@/utils/format';
 
 interface StaffUser {
@@ -15,6 +15,8 @@ interface StaffUser {
   role: UserRole;
   active: boolean;
   hotelId: number | null;
+  profileId: number | null;
+  profile: { id: number; name: string } | null;
   totpEnabled: boolean;
   createdAt: string;
 }
@@ -38,17 +40,28 @@ const busy = ref(false);
 const editingId = ref<number | null>(null);
 
 function emptyForm() {
-  return { name: '', email: '', password: '', role: 'RECEPTION' as UserRole, hotelId: hotels.selectedId ?? 0, active: true };
+  return { name: '', email: '', password: '', access: 'ROLE:RECEPTION', hotelId: hotels.selectedId ?? 0, active: true };
 }
 
 const form = reactive(emptyForm());
+const profiles = ref<AccessProfile[]>([]);
+const hotelProfiles = computed(() => profiles.value.filter((profile) => profile.hotelId === form.hotelId));
+const isAdminForm = computed(() => form.access === 'ROLE:ADMIN');
+
+watch(
+  () => form.hotelId,
+  () => {
+    if (form.access.startsWith('PROFILE:') && !hotelProfiles.value.some((profile) => `PROFILE:${profile.id}` === form.access)) form.access = 'ROLE:RECEPTION';
+  },
+);
 
 async function load() {
   try {
-    const [u, b, s] = await Promise.all([api.get<StaffUser[]>('/users'), api.get<BackupFile[]>('/backups'), api.get<BackupStatus>('/backups/status')]);
+    const [u, b, s, p] = await Promise.all([api.get<StaffUser[]>('/users'), api.get<BackupFile[]>('/backups'), api.get<BackupStatus>('/backups/status'), api.get<AccessProfile[]>('/access-profiles')]);
     users.value = u.data;
     backups.value = b.data;
     backupStatus.value = s.data;
+    profiles.value = p.data;
   } catch (e) {
     error.value = errorMessage(e);
   }
@@ -71,7 +84,7 @@ async function run(fn: () => Promise<unknown>, message = '') {
 
 function edit(user: StaffUser) {
   editingId.value = user.id;
-  Object.assign(form, { name: user.name, email: user.email, password: '', role: user.role, hotelId: user.hotelId ?? 0, active: user.active });
+  Object.assign(form, { name: user.name, email: user.email, password: '', access: user.profileId ? `PROFILE:${user.profileId}` : `ROLE:${user.role}`, hotelId: user.hotelId ?? 0, active: user.active });
 }
 
 function reset() {
@@ -81,12 +94,14 @@ function reset() {
 
 const save = () =>
   run(async () => {
+    const profileId = form.access.startsWith('PROFILE:') ? Number(form.access.slice(8)) : null;
     const payload = {
       name: form.name,
       email: form.email,
-      role: form.role,
+      ...(profileId ? {} : { role: form.access.slice(5) as UserRole }),
+      profileId,
       active: form.active,
-      hotelId: form.role === 'ADMIN' ? undefined : form.hotelId || undefined,
+      hotelId: isAdminForm.value ? undefined : form.hotelId || undefined,
       ...(form.password ? { password: form.password } : {}),
     };
     if (editingId.value) {
@@ -148,10 +163,11 @@ onMounted(load);
         :required="!editingId"
         minlength="8"
       />
-      <select v-model="form.role" class="input">
-        <option v-for="(label, role) in ROLE_LABELS" :key="role" :value="role">{{ label }}</option>
+      <select v-model="form.access" class="input">
+        <option v-for="(label, role) in ROLE_LABELS" :key="role" :value="`ROLE:${role}`">{{ label }}</option>
+        <option v-for="profile in hotelProfiles" :key="profile.id" :value="`PROFILE:${profile.id}`">{{ profile.name }}</option>
       </select>
-      <select v-model.number="form.hotelId" class="input" :disabled="form.role === 'ADMIN'">
+      <select v-model.number="form.hotelId" class="input" :disabled="isAdminForm">
         <option v-for="hotel in hotels.hotels" :key="hotel.id" :value="hotel.id">{{ hotel.name }}</option>
       </select>
       <label class="flex items-center gap-2 text-sm"><input v-model="form.active" type="checkbox" />{{ t('common.active') }}</label>
@@ -181,7 +197,7 @@ onMounted(load);
           <tr v-for="user in users" :key="user.id" class="border-b border-slate-100" :class="user.active ? '' : 'text-slate-400'">
             <td class="px-4 py-3 font-medium">{{ user.name }}</td>
             <td class="px-4 py-3">{{ user.email }}</td>
-            <td class="px-4 py-3">{{ ROLE_LABELS[user.role] }}</td>
+            <td class="px-4 py-3">{{ user.profile?.name ?? ROLE_LABELS[user.role] }}</td>
             <td class="px-4 py-3">{{ user.hotelId ? hotels.nameOf(user.hotelId) : t('common.all') }}</td>
             <td class="px-4 py-3">{{ user.active ? t('common.active') : t('common.inactive') }}</td>
             <td class="px-4 py-3">

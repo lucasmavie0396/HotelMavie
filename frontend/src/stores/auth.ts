@@ -52,6 +52,16 @@ export const useAuthStore = defineStore('auth', () => {
     setSession(data);
   }
 
+  async function refreshPermissions() {
+    if (!session.value) return;
+    try {
+      const { data } = await api.get<AuthUser>('/auth/me');
+      if (session.value) setSession({ ...session.value, user: { ...session.value.user, role: data.role, permissions: data.permissions } });
+    } catch {
+      return;
+    }
+  }
+
   function adoptNewerSession(usedRefreshToken: string) {
     const stored = loadSession();
     if (stored && stored.refreshToken !== usedRefreshToken) {
@@ -102,5 +112,5 @@ export const useAuthStore = defineStore('auth', () => {
     setSession(null);
   }
 
-  return { accessToken, user, isAuthenticated, isManager, isCashier, login, loginTwoFactor, refresh, logout };
+  return { accessToken, user, isAuthenticated, isManager, isCashier, login, loginTwoFactor, refreshPermissions, refresh, logout };
 });

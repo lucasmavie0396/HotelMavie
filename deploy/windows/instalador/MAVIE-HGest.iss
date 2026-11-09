@@ -36,9 +36,10 @@ Name: "portugues"; MessagesFile: "compiler:Languages\Portuguese.isl"
 [Types]
 Name: "servidor"; Description: "Servidor: sistema completo, base de dados e hotéis"
 Name: "posto"; Description: "Posto de trabalho: liga a um servidor da rede pelo IP"
+Name: "atualizacao"; Description: "Atualização: novo programa e escolha da base SQL Server a atualizar"
 
 [Components]
-Name: "sistema"; Description: "Sistema MAVIE-HGest e base de dados"; Types: servidor; Flags: fixed
+Name: "sistema"; Description: "Sistema MAVIE-HGest e base de dados"; Types: servidor atualizacao; Flags: fixed
 Name: "posto"; Description: "Atalho do painel e agente de impressão"; Types: posto; Flags: fixed
 
 [Tasks]
@@ -59,14 +60,16 @@ Name: "{app}\dados"; Flags: uninsneveruninstall; Components: sistema
 
 [Icons]
 Name: "{group}\Novo hotel"; Filename: "{app}\deploy\windows\Novo hotel.cmd"; WorkingDir: "{app}\deploy\windows"; IconFilename: "{app}\deploy\windows\lam-company.ico"; Components: sistema
+Name: "{group}\Atualizar base de dados"; Filename: "{app}\deploy\windows\Atualizar base de dados.cmd"; WorkingDir: "{app}\deploy\windows"; IconFilename: "{app}\deploy\windows\lam-company.ico"; Components: sistema
 Name: "{group}\Manual de instalação"; Filename: "{app}\deploy\windows\README.md"
 Name: "{group}\Pasta do MAVIE-HGest"; Filename: "{app}"
 Name: "{commondesktop}\MAVIE-HGest - Novo hotel"; Filename: "{app}\deploy\windows\Novo hotel.cmd"; WorkingDir: "{app}\deploy\windows"; IconFilename: "{app}\deploy\windows\lam-company.ico"; Tasks: atalho
 
 [Run]
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\deploy\windows\hoteis.ps1"" -Acao atualizar -SemCompilar"; StatusMsg: "A atualizar as bases de dados e a arrancar os hotéis..."; Flags: runhidden waituntilterminated; Check: HasHotels
-Filename: "{app}\deploy\windows\Novo hotel.cmd"; Description: "Abrir o assistente para criar um hotel"; Flags: postinstall shellexec skipifsilent nowait; Components: sistema
-Filename: "{code:PanelUrl}"; Description: "Abrir o painel no navegador"; Flags: postinstall shellexec skipifsilent nowait; Components: posto
+Filename: "{app}\deploy\windows\Novo hotel.cmd"; Description: "Abrir o assistente para criar um hotel"; Flags: postinstall shellexec skipifsilent nowait; Components: sistema; Check: not IsUpdate
+Filename: "{app}\deploy\windows\Atualizar base de dados.cmd"; Description: "Escolher a base de dados a atualizar"; Flags: postinstall shellexec skipifsilent nowait; Components: sistema; Check: IsUpdate
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\deploy\windows\abrir-painel.ps1"" -Url ""{code:PanelUrl}"""; Description: "Abrir o painel em ecrã inteiro"; Flags: postinstall skipifsilent nowait runhidden; Components: posto
 
 [UninstallRun]
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\deploy\windows\desinstalar.ps1"""; Flags: runhidden waituntilterminated; RunOnceId: "PararHoteis"
@@ -75,6 +78,7 @@ Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Fil
 Type: files; Name: "{app}\posto-atalhos.txt"
 Type: files; Name: "{app}\posto-origens.txt"
 Type: files; Name: "{app}\posto.log"
+Type: files; Name: "{app}\sqlserver-config.log"
 
 [Code]
 var
@@ -105,6 +109,11 @@ end;
 function HasHotels: Boolean;
 begin
   Result := HotelsIn(ExpandConstant('{app}'));
+end;
+
+function IsUpdate: Boolean;
+begin
+  Result := WizardSetupType(False) = 'atualizacao';
 end;
 
 function ServerAddress: String;
@@ -212,7 +221,19 @@ begin
     SuppressibleMsgBox('Não foi possível configurar este posto. Veja o motivo em ' + ExpandConstant('{app}\posto.log') + '.', mbError, MB_OK, IDOK);
 end;
 
+procedure PrepareSqlServer;
+var
+  Code: Integer;
+begin
+  if ExpandConstant('{param:SEMSQLCONFIG|0}') = '1' then Exit;
+  WizardForm.StatusLabel.Caption := 'A preparar o SQL Server (TCP fixo e autenticação SQL)...';
+  if not Exec('powershell.exe', '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\deploy\windows\preparar-sqlserver.ps1') + '"', ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, Code) or (Code <> 0) then
+    SuppressibleMsgBox('Não foi possível preparar o SQL Server. Veja o motivo em ' + ExpandConstant('{app}\sqlserver-config.log') + '. Pode corrigir depois em Novo hotel, com Instalar o que falta.', mbError, MB_OK, IDOK);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  if (CurStep = ssPostInstall) and WizardIsComponentSelected('posto') then ConfigureWorkstation;
+  if CurStep <> ssPostInstall then Exit;
+  if WizardIsComponentSelected('posto') then ConfigureWorkstation;
+  if WizardIsComponentSelected('sistema') and not IsUpdate then PrepareSqlServer;
 end;

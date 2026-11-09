@@ -136,6 +136,14 @@ export const SECTIONS: Record<string, Section> = {
     gradient: 'from-slate-600 via-slate-700 to-indigo-800',
     dot: 'bg-gradient-to-br from-slate-400 to-slate-600',
   },
+  permissions: {
+    get label() {
+      return t('nav.permissions');
+    },
+    icon: 'M9 12l2 2 4-4M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
+    gradient: 'from-violet-600 via-purple-600 to-fuchsia-700',
+    dot: 'bg-gradient-to-br from-violet-400 to-fuchsia-500',
+  },
   users: {
     get label() {
       return t('nav.users');

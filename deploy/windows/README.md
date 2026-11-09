@@ -13,7 +13,7 @@ Postos da receção / bar / cozinha ──► http://servidor:8080 ──► Nod
 |---|---|
 | Sistema | Windows 10 ou 11 (Pro ou Home) ou Windows Server 2016, 2019, 2022 ou 2025, sempre de 64 bits |
 | Node.js | 22 LTS, instalador MSI de https://nodejs.org (marcar "Add to PATH") |
-| Base de dados | MySQL 8.4 ou MariaDB 10.4+ (pode ser o do XAMPP) **ou SQL Server 2017 a 2022** (Express serve), no próprio servidor ou noutro — ver secção 12 |
+| Base de dados | MySQL 8.4 ou MariaDB 10.4+ (pode ser o do XAMPP) **ou SQL Server 2012 ou superior** (Express serve; nas versões 2012 a 2016, com o último Service Pack), no próprio servidor ou noutro — ver secção 12 |
 | Hardware | 2 CPU, 4 GB RAM, 20 GB de disco livres (indicativo, para 1 a 3 hotéis) |
 | Git | opcional, só para atualizar com `-GitPull` |
 
@@ -23,9 +23,17 @@ Postos da receção / bar / cozinha ──► http://servidor:8080 ──► Nod
 
 1. Copia o `.exe` para o computador (pen, rede ou email) e faz duplo clique. O Windows pede permissão de administrador.
 2. Escolhe a pasta (por omissão `C:\MAVIE-HGest`) e, se quiseres, o atalho no ambiente de trabalho.
-3. No fim, o instalador abre o assistente **Novo hotel** (secção 11), que verifica os requisitos e cria o hotel. Ao abrir, o assistente procura o SQL Server neste computador: se existir, escolhe SQL Server, preenche a instância e o utilizador `sa`, e só falta escrever a password. Se não existir, fica em MySQL/MariaDB. O tipo pode ser sempre mudado à mão.
+3. No fim, o instalador abre o assistente **Novo hotel** (secção 11), que verifica os requisitos e cria o hotel. Ao abrir, o assistente procura o SQL Server neste computador: se existir, escolhe SQL Server, preenche a instância e o utilizador `sa`, e só falta escrever a password. Se não existir, fica em MySQL/MariaDB. O tipo pode ser sempre mudado à mão. Em SQL Server, o botão **Testar ligação** confirma a instância, o utilizador e a password antes de criar o hotel, e o botão **Ver exemplo** abre a imagem seguinte:
+
+![Novo hotel preenchido para SQL Server](exemplo-novo-hotel-sqlserver.png)
+
+**Atualização:** ao correr o `.exe` num computador que já tem o sistema, escolhe o tipo **Atualização**. O programa é substituído e os hotéis desta instalação são atualizados como habitualmente. No fim abre o ecrã **Atualizar base de dados**: escolhe a instância SQL Server (ou escreve `servidor:porta`), indica o utilizador e a password, carrega em **Listar bases** e escolhe a base. Só aparecem bases do MAVIE-HGest; as de outras aplicações na mesma instância ficam de fora. Antes de atualizar é feito um backup `.bak`, e os hotéis que usam essa base param durante a atualização. O mesmo ecrã fica no menu Iniciar, em MAVIE-HGest.
+
+**Abrir o painel:** os atalhos abrem o sistema em ecrã inteiro, sem separadores nem barra de endereço, no Google Chrome. Se o Chrome não estiver instalado, usa o Microsoft Edge da mesma forma e, na falta deste, o navegador por omissão, com o aspeto normal. Para sair do ecrã inteiro carrega em F11; para fechar, Alt+F4. Numa instalação antiga, corre `hoteis.ps1 -Acao atalho` para trocar os atalhos.
 
 O ficheiro já leva o sistema compilado, as dependências, o Node.js 22 e o MariaDB 11.4 (verificados por SHA-256). Por isso, **com MySQL/MariaDB instala sem internet**. O SQL Server Express (secção 12) e os módulos do IIS (só com domínio) continuam a ser transferidos se forem precisos.
+
+**SQL Server:** no modo Servidor, se existir SQL Server no computador, o instalador prepara-o sozinho antes de abrir o Novo hotel: arranca a instância, se estiver parada, liga o TCP, fixa a porta atual (ou a 1433) e ativa a autenticação SQL. Só mexe se faltar alguma coisa e, nesse caso, **reinicia o serviço do SQL Server** durante uns segundos: numa instância usada por outros programas, instala fora de horas, ou usa `/SEMSQLCONFIG=1` para saltar este passo. Se falhar, o motivo fica em `sqlserver-config.log` na pasta de instalação. A autenticação SQL ativa não liga por si a conta `sa`: se ela estiver desativada, ativa-a no SQL Server Management Studio ou usa a conta do Windows.
 
 **Instalar os postos (receção, bar, cozinha):** corre o mesmo `.exe` em cada computador e escolhe **Posto de trabalho**. Indica o IP do servidor e a porta do hotel, que aparecem no fim da criação do hotel (a do primeiro é 3101). O instalador confirma que o servidor responde, cria no ambiente de trabalho o atalho `MAVIE-HGest - <ip> (<porta>)` e, se deixares marcado "Imprimir talões neste posto", instala o agente de impressão, que arranca quando um utilizador entra no Windows e já fica autorizado para esse endereço. Depois escolhe a impressora em Configuração → Impressoras.
 

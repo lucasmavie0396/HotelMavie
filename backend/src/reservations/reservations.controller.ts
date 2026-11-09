@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Query, Res } from '@nestjs/common';
-import { ReservationStatus, UserRole } from '@prisma/client';
+import { AccessLevel, ReservationStatus, UserRole } from '@prisma/client';
 import type { Response } from 'express';
+import { AccessService } from '../access/access';
+import { reaches } from '../access/areas';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { SalesAccess } from '../common/decorators/roles.decorator';
@@ -16,12 +18,15 @@ export class ReservationsController {
   constructor(
     private readonly reservationsService: ReservationsService,
     private readonly deposits: DepositService,
+    private readonly access: AccessService,
   ) {}
 
   @SalesAccess()
   @Get()
-  findAll(@Query() query: ReservationQueryDto, @CurrentUser() user: JwtPayload) {
-    return this.reservationsService.findAll(user.role === UserRole.CASHIER ? { ...query, status: ReservationStatus.CHECKED_IN } : query, user);
+  async findAll(@Query() query: ReservationQueryDto, @CurrentUser() user: JwtPayload) {
+    const levels = user.role === UserRole.ADMIN ? null : await this.access.levelsFor(user.sub);
+    const inHouseOnly = levels ? !reaches(levels.reservations, AccessLevel.VIEW) : user.role === UserRole.CASHIER;
+    return this.reservationsService.findAll(inHouseOnly ? { ...query, status: ReservationStatus.CHECKED_IN } : query, user);
   }
 
   @Get('availability')

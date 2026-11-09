@@ -85,11 +85,12 @@ Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 $font = New-Object Drawing.Font('Segoe UI', 10)
 $form = New-Object Windows.Forms.Form
 $form.Text = 'MAVIE-HGest - Novo hotel'
-$form.ClientSize = New-Object Drawing.Size(1120, 632)
+$form.ClientSize = New-Object Drawing.Size(1120, 668)
 $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = 'FixedDialog'
 $form.MaximizeBox = $false
 $form.Font = $font
+$tips = New-Object Windows.Forms.ToolTip
 $formIcon = Join-Path $PSScriptRoot 'lam-company.ico'
 if (Test-Path $formIcon) { $form.Icon = New-Object Drawing.Icon($formIcon) }
 
@@ -139,7 +140,7 @@ Add-Control $firewall 230 340 440 24 | Out-Null
 
 $group = New-Object Windows.Forms.GroupBox
 $group.Text = U 'Base de dados (conta de administrador)'
-Add-Control $group 20 374 650 124 | Out-Null
+Add-Control $group 20 374 650 160 | Out-Null
 Add-Label 'Tipo' 14 32 80 '' $group | Out-Null
 $dbKind = New-Object Windows.Forms.ComboBox
 $dbKind.DropDownStyle = 'DropDownList'
@@ -159,13 +160,66 @@ $dbPass = New-Object Windows.Forms.TextBox
 $dbPass.UseSystemPasswordChar = $true
 Add-Control $dbPass 380 63 250 26 $group | Out-Null
 $dbHint = Add-Label '' 14 96 630 'DimGray' $group
+$testDb = New-Object Windows.Forms.Button
+$testDb.Text = U 'Testar liga\u00e7\u00e3o'
+Add-Control $testDb 14 122 130 30 $group | Out-Null
+$showExample = New-Object Windows.Forms.Button
+$showExample.Text = 'Ver exemplo'
+Add-Control $showExample 152 122 110 30 $group | Out-Null
+$testResult = Add-Label '' 272 127 370 '' $group
+$testResult.AutoEllipsis = $true
 
 function Test-SqlServerChoice { return $dbKind.SelectedIndex -eq 1 }
+
+function Show-TestResult([bool]$Ok, [string]$Text) {
+  $testResult.ForeColor = if ($Ok) { [Drawing.Color]::DarkGreen } else { [Drawing.Color]::Firebrick }
+  $testResult.Text = $Text
+  $tips.SetToolTip($testResult, $Text)
+}
+
+function Get-SqlServerProblem($Target) {
+  if (-not $Target.Instance -and (Test-LocalDbHost)) { return U 'Inst\u00e2ncia n\u00e3o encontrada neste computador.' }
+  if ($Target.Instance -and -not $Target.Instance.Running) { return (U 'O servi\u00e7o ') + $Target.Instance.Service + (U ' est\u00e1 parado.') }
+  if (-not $Target.Port) { return U 'A inst\u00e2ncia n\u00e3o tem o TCP ligado. Use Instalar o que falta.' }
+  if (-not (Test-TcpPort $DbHost $Target.Port)) { return (U 'O SQL Server n\u00e3o responde na porta ') + "$($Target.Port)." }
+  if ($dbUser.Text.Trim() -and -not $dbPass.Text) { return "Escreva a password de $($dbUser.Text.Trim())." }
+  return ''
+}
+
+function Test-SqlServerConnection {
+  $form.Cursor = 'WaitCursor'
+  try {
+    $script:DbAdminUser = $dbUser.Text.Trim()
+    $script:DbAdminPassword = $dbPass.Text
+    $script:BaseDados = 'SQLServer'
+    $script:SqlInstancia = $sqlInstance.Text.Trim()
+    $script:DbPort = 0
+    $target = Get-SqlServerTarget
+    $problem = Get-SqlServerProblem $target
+    if ($problem) {
+      Show-TestResult $false $problem
+      return
+    }
+    $result = Test-SqlServerAdmin $target.Port
+    if ($result.Ok) {
+      Show-TestResult $true ((U 'Liga\u00e7\u00e3o OK: ') + $result.Detail)
+    } elseif ($result.Detail -match 'Authentication failed|credentials') {
+      Show-TestResult $false (U 'Utilizador ou password errados.')
+    } else {
+      Show-TestResult $false $result.Detail
+    }
+  } finally {
+    $form.Cursor = 'Default'
+  }
+}
 
 function Update-DatabaseChoice {
   $sql = Test-SqlServerChoice
   $instanceLabel.Enabled = $sql
   $sqlInstance.Enabled = $sql
+  $testDb.Visible = $sql
+  $showExample.Visible = $sql
+  $testResult.Text = ''
   if ($sql) {
     if ($dbUser.Text.Trim() -in @('', 'root')) { $dbUser.Text = 'sa' }
     $found = Find-PreferredSqlServerInstance
@@ -208,12 +262,12 @@ $create = New-Object Windows.Forms.Button
 $create.Text = 'Criar hotel'
 $create.Font = New-Object Drawing.Font('Segoe UI', 10, [Drawing.FontStyle]::Bold)
 $create.Enabled = $false
-Add-Control $create 20 512 160 36 | Out-Null
+Add-Control $create 20 548 160 36 | Out-Null
 $open = New-Object Windows.Forms.Button
 $open.Text = 'Abrir o painel'
 $open.Enabled = $false
-Add-Control $open 192 512 160 36 | Out-Null
-$status = Add-Label '' 20 558 650
+Add-Control $open 192 548 160 36 | Out-Null
+$status = Add-Label '' 20 594 650
 
 $log = New-Object Windows.Forms.TextBox
 $log.Multiline = $true
@@ -222,7 +276,7 @@ $log.ScrollBars = 'Vertical'
 $log.BackColor = [Drawing.Color]::FromArgb(1, 36, 86)
 $log.ForeColor = [Drawing.Color]::WhiteSmoke
 $log.Font = New-Object Drawing.Font('Consolas', 9)
-Add-Control $log 690 412 410 204 | Out-Null
+Add-Control $log 690 412 410 240 | Out-Null
 
 function Update-Installed {
   $items = @(Get-HotelInstances)
@@ -301,6 +355,14 @@ $dbKind.Add_SelectedIndexChanged({
   if (-not $script:busy) { Update-Requirements }
 })
 $check.Add_Click({ Update-Requirements })
+$testDb.Add_Click({
+  Test-SqlServerConnection
+  if (-not $script:busy) { Update-Requirements }
+})
+$showExample.Add_Click({
+  $example = Join-Path $PSScriptRoot 'exemplo-novo-hotel-sqlserver.png'
+  if (Test-Path $example) { Start-Process $example }
+})
 
 $script:process = $null
 $script:mode = ''
@@ -316,7 +378,7 @@ function Add-Log([string]$Text) {
 
 function Set-Busy([bool]$Busy, [string]$Text) {
   $script:busy = $Busy
-  foreach ($control in @($create, $install, $check, $open)) { $control.Enabled = -not $Busy }
+  foreach ($control in @($create, $install, $check, $open, $testDb)) { $control.Enabled = -not $Busy }
   $status.ForeColor = [Drawing.Color]::Black
   $status.Text = $Text
 }
@@ -418,7 +480,11 @@ $create.Add_Click({
   Start-Work 'create' (New-HotelArguments $data) @{ MAVIE_ADMIN_PASSWORD = $data.Password; MAVIE_DB_ADMIN_PASSWORD = $data.DbPassword } (U 'A criar... pode demorar alguns minutos.')
 })
 
-$open.Add_Click({ if ($script:panelUrl) { Start-Process $script:panelUrl } })
+$open.Add_Click({
+  if ($script:panelUrl) {
+    Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $PSScriptRoot 'abrir-painel.ps1')`" -Url `"$($script:panelUrl)`""
+  }
+})
 
 $form.Add_Shown({
   Update-Installed

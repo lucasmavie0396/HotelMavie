@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth';
 import { setPageIdentity } from '@/services/favicon';
 import { fileUrl } from '@/services/files';
 import { useHotelsStore } from '@/stores/hotels';
+import { allowedRoutes } from '@/utils/access';
 import { SECTIONS } from '@/utils/sections';
 
 const { t } = useI18n();
@@ -18,7 +19,7 @@ const route = useRoute();
 const router = useRouter();
 
 const links = computed(() =>
-  (auth.isCashier ? ['pos', 'cash'] : [
+  (auth.user?.permissions ? [...(auth.isCashier ? [] : ['dashboard']), ...allowedRoutes(auth.user.permissions)] : auth.isCashier ? ['pos', 'cash'] : [
     'dashboard',
     'calendar',
     'reservations',
@@ -34,7 +35,7 @@ const links = computed(() =>
     'hr',
     'reports',
     ...(auth.isManager ? ['purchases', 'audit', 'settings'] : []),
-    ...(auth.user?.role === 'ADMIN' ? ['users', 'hotels'] : []),
+    ...(auth.user?.role === 'ADMIN' ? ['users', 'permissions', 'hotels'] : []),
   ]).map((name) => ({ to: { name }, name, ...SECTIONS[name] })),
 );
 
@@ -54,7 +55,10 @@ watch(
   { immediate: true },
 );
 
-onMounted(() => hotels.load());
+onMounted(() => {
+  hotels.load();
+  auth.refreshPermissions();
+});
 
 async function logout() {
   await auth.logout();

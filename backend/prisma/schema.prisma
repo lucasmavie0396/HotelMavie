@@ -53,6 +53,7 @@ model Hotel {
   guests                 Guest[]
   reservations           Reservation[]
   reservationGroups      ReservationGroup[]
+  accessProfiles         AccessProfile[]
   taxRates               TaxRate[]
   charges                Charge[]
   payments               Payment[]
@@ -91,6 +92,8 @@ model User {
   active            Boolean         @default(true)
   hotelId           Int?
   hotel             Hotel?          @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  profileId         Int?
+  profile           AccessProfile?  @relation(fields: [profileId], references: [id], onDelete: SetNull)
   totpSecret        String?         @db.VarChar(255)
   totpEnabled       Boolean         @default(false)
   totpLastStep      Int?
@@ -119,7 +122,40 @@ model User {
   depositsConfirmed Reservation[]   @relation("DepositConfirmedBy")
 
   @@index([hotelId])
+  @@index([profileId])
   @@map("users")
+}
+
+enum AccessLevel {
+  NONE
+  VIEW
+  MANAGE
+}
+
+model AccessProfile {
+  id          Int                       @id @default(autoincrement())
+  hotelId     Int
+  hotel       Hotel                     @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  name        String                    @db.VarChar(80)
+  baseRole    UserRole                  @default(RECEPTION)
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+  permissions AccessProfilePermission[]
+  users       User[]
+
+  @@unique([hotelId, name])
+  @@map("access_profiles")
+}
+
+model AccessProfilePermission {
+  id        Int           @id @default(autoincrement())
+  profileId Int
+  profile   AccessProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  area      String        @db.VarChar(40)
+  level     AccessLevel
+
+  @@unique([profileId, area])
+  @@map("access_profile_permissions")
 }
 
 model PasswordReset {
