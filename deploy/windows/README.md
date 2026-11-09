@@ -17,6 +17,29 @@ Postos da receção / bar / cozinha ──► http://servidor:8080 ──► Nod
 | Hardware | 2 CPU, 4 GB RAM, 20 GB de disco livres (indicativo, para 1 a 3 hotéis) |
 | Git | opcional, só para atualizar com `-GitPull` |
 
+## Instalador de um só ficheiro (o mais simples)
+
+`MAVIE-HGest-Setup-<versão>-<data>.exe` instala tudo noutro computador sem precisar do código nem de compilar:
+
+1. Copia o `.exe` para o computador (pen, rede ou email) e faz duplo clique. O Windows pede permissão de administrador.
+2. Escolhe a pasta (por omissão `C:\MAVIE-HGest`) e, se quiseres, o atalho no ambiente de trabalho.
+3. No fim, o instalador abre o assistente **Novo hotel** (secção 11), que verifica os requisitos e cria o hotel.
+
+O ficheiro já leva o sistema compilado, as dependências, o Node.js 22 e o MariaDB 11.4 (verificados por SHA-256). Por isso, **com MySQL/MariaDB instala sem internet**. O SQL Server Express (secção 12) e os módulos do IIS (só com domínio) continuam a ser transferidos se forem precisos.
+
+- **Atualizar:** corre o `.exe` novo por cima. Se já houver hotéis, o instalador para-os, substitui os ficheiros, faz backup e migra cada base (`hoteis.ps1 -Acao atualizar -SemCompilar`) e volta a arrancá-los. A pasta `dados` nunca é substituída.
+- **Desinstalar:** em Definições → Aplicações → MAVIE-HGest. Para os hotéis desta instalação e retira as tarefas, as regras de firewall e os atalhos. A pasta `dados` (bases, backups e chave AT) fica no disco: apaga-a à mão só depois de guardares o que for preciso.
+- **O `.exe` não está assinado digitalmente.** O Windows SmartScreen pode avisar "O Windows protegeu o computador": carrega em **Mais informações → Executar mesmo assim**. Para tirar o aviso, é preciso um certificado de assinatura de código.
+
+**Gerar um novo instalador** (no computador de desenvolvimento, com o [Inno Setup 6](https://jrsoftware.org/isdl.php) instalado):
+
+```powershell
+deploy\windows\instalador\gerar-instalador.ps1                   # com Node.js e MariaDB incluídos
+deploy\windows\instalador\gerar-instalador.ps1 -SemInstaladores  # mais pequeno, transfere-os na instalação
+```
+
+O script confirma os tipos, compila o backend e o painel para `instalador\obj` (não mexe no `backend\dist` que está a correr), instala só as dependências de produção, gera os clientes Prisma (MySQL e SQL Server), junta os instaladores e cria o `.exe` em `deploy\windows\instalador\saida`.
+
 ## 2. Copiar o sistema
 
 Coloca o projeto numa pasta fora do perfil de utilizador, por exemplo `C:\MAVIE-HGest`:

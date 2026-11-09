@@ -20,7 +20,8 @@ param(
   [switch]$AbrirFirewall,
   [switch]$SemServico,
   [switch]$GitPull,
-  [switch]$SemBackup
+  [switch]$SemBackup,
+  [switch]$SemCompilar
 )
 
 . (Join-Path $PSScriptRoot 'comum.ps1')
@@ -329,7 +330,7 @@ switch ($Acao) {
     Write-Ok 'Parados'
     $failed = $null
     try {
-      Invoke-Build $node -SemMigrar
+      if (-not $SemCompilar) { Invoke-Build $node -SemMigrar }
       if ($defaultEnv['DATABASE_URL']) {
         Write-Step 'Migracoes: instalacao principal (backend\.env)'
         Invoke-Migrate $node $defaultEnv['DATABASE_URL']

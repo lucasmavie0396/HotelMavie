@@ -350,12 +350,24 @@ function Get-MariaDbInstaller {
   return [pscustomobject]@{ Version = $release.release_id; File = $msi.file_name; Url = ($msi.file_download_url -replace '^http:', 'https:'); Sha256 = $msi.checksum.sha256sum }
 }
 
+function Resolve-Installer([string]$Pattern, [scriptblock]$Online) {
+  $bundled = Get-ChildItem (Join-Path $Raiz 'instaladores') -Filter $Pattern -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+  if ($bundled -and (Test-Path "$($bundled.FullName).sha256")) {
+    $sha = ((Get-Content "$($bundled.FullName).sha256" -Raw).Trim() -split '\s+')[0]
+    Write-Ok "Instalador incluido no pacote: $($bundled.Name)"
+    $installer = [pscustomobject]@{ Version = [regex]::Match($bundled.Name, '\d+\.\d+\.\d+').Value; Path = $bundled.FullName; Sha256 = $sha }
+  } else {
+    $online = & $Online
+    $installer = [pscustomobject]@{ Version = $online.Version; Path = (Save-Installer $online.Url $online.File); Sha256 = $online.Sha256 }
+  }
+  Assert-Sha256 $installer.Path $installer.Sha256
+  return $installer
+}
+
 function Install-NodeJs {
   Write-Step "Instalar Node.js $NodeMajor LTS"
-  $installer = Get-NodeInstaller
-  $path = Save-Installer $installer.Url $installer.File
-  Assert-Sha256 $path $installer.Sha256
-  Install-Msi $path
+  $installer = Resolve-Installer 'node-v*-x64.msi' { Get-NodeInstaller }
+  Install-Msi $installer.Path
   Update-PathFromRegistry
   Write-Ok "Node $($installer.Version) instalado"
 }
@@ -370,10 +382,8 @@ function Install-DbServer {
     if (-not (Test-LocalDbHost)) { throw "O servidor de base de dados $DbHost e remoto: tem de ser ligado nesse servidor." }
     if ($DbAdminPassword.Length -lt 8) { throw 'Para instalar o MariaDB indique a password que o utilizador root vai ter (minimo 8 caracteres).' }
     Write-Step "Instalar MariaDB $MariaDbSerie LTS"
-    $installer = Get-MariaDbInstaller
-    $path = Save-Installer $installer.Url $installer.File
-    Assert-Sha256 $path $installer.Sha256
-    Install-Msi $path @('SERVICENAME=MariaDB', "PORT=$DbPort", "PASSWORD=`"$DbAdminPassword`"", 'UTF8=1')
+    $installer = Resolve-Installer 'mariadb-*-winx64.msi' { Get-MariaDbInstaller }
+    Install-Msi $installer.Path @('SERVICENAME=MariaDB', "PORT=$DbPort", "PASSWORD=`"$DbAdminPassword`"", 'UTF8=1')
     Update-PathFromRegistry
     Write-Ok "MariaDB $($installer.Version) instalado como servico MariaDB (utilizador root com a password indicada)"
   }
@@ -385,10 +395,8 @@ function Install-DbServer {
 
 function Install-DbTools([string[]]$Features, [string]$Name) {
   Write-Step "Instalar $Name (MariaDB $MariaDbSerie, sem servidor)"
-  $installer = Get-MariaDbInstaller
-  $path = Save-Installer $installer.Url $installer.File
-  Assert-Sha256 $path $installer.Sha256
-  Install-Msi $path @("ADDLOCAL=$($Features -join ',')")
+  $installer = Resolve-Installer 'mariadb-*-winx64.msi' { Get-MariaDbInstaller }
+  Install-Msi $installer.Path @("ADDLOCAL=$($Features -join ',')")
   Update-PathFromRegistry
   Write-Ok "$Name instalado"
 }
