@@ -37,6 +37,10 @@ O ficheiro já leva o sistema compilado, as dependências, o Node.js 22 e o Mari
 
 **Instalar os postos (receção, bar, cozinha):** corre o mesmo `.exe` em cada computador e escolhe **Posto de trabalho**. Indica o IP do servidor e a porta do hotel, que aparecem no fim da criação do hotel (a do primeiro é 3101). O instalador confirma que o servidor responde, cria no ambiente de trabalho o atalho `MAVIE-HGest - <ip> (<porta>)` e, se deixares marcado "Imprimir talões neste posto", instala o agente de impressão, que arranca quando um utilizador entra no Windows e já fica autorizado para esse endereço. Depois escolhe a impressora em Configuração → Impressoras.
 
+**Procurar o servidor na rede (SQL Server):** ao chegar à página de ligação, abre-se uma janela que procura as instâncias SQL Server da rede. Escolhe a instância, escreve a password do `sa`, marca os hotéis deste posto e carrega em **Testar ligação**; o botão **Instalar posto e agente** só fica disponível se todos responderem. A password só é usada nesta janela e não fica guardada. Em servidores MySQL/MariaDB, carrega em **Indicar o IP à mão**.
+
+A procura e o teste precisam de que o servidor esteja preparado: o assistente Novo hotel (com a opção de firewall ligada) e a atualização pelo setup abrem a porta de cada hotel, a porta do SQL Server e a UDP 1434, ligam o SQL Server Browser e guardam a porta do hotel na própria base. Para o fazer sem atualizar, corre no servidor `hoteis.ps1 -Acao firewall`. Só abre em redes de domínio e privadas. Um posto não consegue abrir o firewall do servidor sem credenciais de Windows desse computador; se o teste falhar, é no servidor que se corrige.
+
 Para instalar em vários postos sem perguntas, corre em cada um, como administrador (acrescenta `/TASKS=` para não instalar o agente de impressão):
 
 ```bat

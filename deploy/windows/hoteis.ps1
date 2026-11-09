@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('estado', 'novo', 'atalho', 'agente', 'iniciar', 'parar', 'reiniciar', 'logs', 'backup', 'agendar-backups', 'atualizar', 'remover')]
+  [ValidateSet('estado', 'novo', 'atalho', 'agente', 'firewall', 'iniciar', 'parar', 'reiniciar', 'logs', 'backup', 'agendar-backups', 'atualizar', 'remover')]
   [string]$Acao = 'estado',
   [string]$Codigo,
   [string]$Nome,
@@ -49,6 +49,48 @@ function Install-LocalPrintAgent([string]$Node, [string[]]$Urls) {
     Install-PrintAgent $Node $Urls
   } catch {
     Write-Note "Agente de impressao nao instalado: $($_.Exception.Message)"
+  }
+}
+
+function Open-HotelPort([string]$TaskName, [int]$HotelPort) {
+  if (-not (Get-NetFirewallRule -DisplayName $TaskName -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -DisplayName $TaskName -Direction Inbound -Protocol TCP -LocalPort $HotelPort -Action Allow -Profile Domain, Private | Out-Null
+  }
+}
+
+function Open-SqlServerNetwork([int]$SqlPort) {
+  $tcpRule = "MAVIE-HGest SQL Server $SqlPort"
+  if (-not (Get-NetFirewallRule -DisplayName $tcpRule -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -DisplayName $tcpRule -Direction Inbound -Protocol TCP -LocalPort $SqlPort -Action Allow -Profile Domain, Private | Out-Null
+  }
+  $udpRule = 'MAVIE-HGest SQL Server Browser'
+  if (-not (Get-NetFirewallRule -DisplayName $udpRule -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -DisplayName $udpRule -Direction Inbound -Protocol UDP -LocalPort 1434 -Action Allow -Profile Domain, Private | Out-Null
+  }
+  if (Get-Service -Name 'SQLBrowser' -ErrorAction SilentlyContinue) {
+    Set-Service -Name 'SQLBrowser' -StartupType Automatic
+    Start-Service -Name 'SQLBrowser'
+  }
+}
+
+function Publish-SqlServerHotel([string]$Node, [string]$DatabaseUrl, [int]$HotelPort) {
+  Invoke-SqlServer $Node $DatabaseUrl ("IF EXISTS (SELECT 1 FROM sys.extended_properties WHERE class = 0 AND name = N'MAVIE_PORT') " +
+    "EXEC sys.sp_updateextendedproperty @name = N'MAVIE_PORT', @value = N'$HotelPort' " +
+    "ELSE EXEC sys.sp_addextendedproperty @name = N'MAVIE_PORT', @value = N'$HotelPort'") | Out-Null
+  if ($DatabaseUrl -match '^sqlserver://(localhost|127\.0\.0\.1):(\d+)') { return [int]$Matches[2] }
+  return 0
+}
+
+function Open-HotelNetwork([string]$Node, $Item) {
+  try {
+    if ($Item.Env['HOST'] -ne '127.0.0.1') { Open-HotelPort $Item.TaskName $Item.Port }
+    if (Test-SqlServerUrl $Item.Env['DATABASE_URL']) {
+      $sqlPort = Publish-SqlServerHotel $Node $Item.Env['DATABASE_URL'] $Item.Port
+      if ($sqlPort) { Open-SqlServerNetwork $sqlPort }
+    }
+    Write-Ok "$($Item.Codigo): acessivel aos postos na porta $($Item.Port)"
+  } catch {
+    Write-Note "$($Item.Codigo): nao foi possivel preparar a rede: $($_.Exception.Message)"
   }
 }
 
@@ -212,12 +254,20 @@ function New-Hotel {
 
   $taskName = "$NomeTarefa-$code"
   if ($AbrirFirewall -and -not $Dominio) {
-    if (-not (Get-NetFirewallRule -DisplayName $taskName -ErrorAction SilentlyContinue)) {
-      New-NetFirewallRule -DisplayName $taskName -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow -Profile Domain, Private | Out-Null
-    }
+    Open-HotelPort $taskName $Port
     Write-Ok "Firewall: porta $Port aberta (redes de dominio e privadas)"
     $public = @(Get-NetConnectionProfile -ErrorAction SilentlyContinue | Where-Object { $_.NetworkCategory -eq 'Public' })
     if ($public.Count) { Write-Note "A rede '$($public[0].Name)' esta como Publica: os postos so chegam ao sistema depois de a mudar para Privada (Definicoes > Rede e Internet)." }
+  }
+
+  if ($BaseDados -eq 'SQLServer') {
+    try {
+      $sqlPort = Publish-SqlServerHotel $node $databaseUrl $Port
+      if ($sqlPort -and $AbrirFirewall -and -not $Dominio) { Open-SqlServerNetwork $sqlPort }
+      Write-Ok 'Hotel visivel para a procura de servidores nos postos'
+    } catch {
+      Write-Note "Nao foi possivel preparar a procura nos postos: $($_.Exception.Message)"
+    }
   }
 
   $shortcut = New-PanelShortcut $Nome $publicUrl
@@ -271,6 +321,11 @@ switch ($Acao) {
       if (-not $label) { $label = $item.Codigo }
       Write-Ok "$($item.Codigo): $(New-PanelShortcut $label $item.Url)"
     }
+  }
+  'firewall' {
+    Assert-Admin
+    $node = Assert-Node
+    foreach ($item in Get-Targets) { Open-HotelNetwork $node $item }
   }
   'agente' {
     Assert-Admin
@@ -370,6 +425,8 @@ switch ($Acao) {
       if (Wait-Health $item.Port) { Write-Ok "$($item.Codigo): a correr" } else { Write-Note "$($item.Codigo): sem resposta, ve $($item.LogFile)" }
     }
     Install-LocalPrintAgent $node @($items | ForEach-Object { $_.Url })
+    Write-Step 'Rede para os postos'
+    foreach ($item in $items) { Open-HotelNetwork $node $item }
     if ($failed) {
       Write-Host ''
       Write-Host "A atualizacao falhou: $($failed.Exception.Message)" -ForegroundColor Red

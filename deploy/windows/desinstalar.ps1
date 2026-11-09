@@ -8,6 +8,7 @@ foreach ($item in @(Get-HotelInstances)) {
   if ($item.Nome) { Remove-PanelShortcut $item.Nome }
   Remove-PanelShortcut $item.Codigo
 }
+Get-NetFirewallRule -DisplayName 'MAVIE-HGest SQL Server*' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 foreach ($task in @(Get-ScheduledTask -ErrorAction SilentlyContinue)) {
   $arguments = (@($task.Actions) | ForEach-Object { "$($_.Execute) $($_.Arguments)" }) -join ' '
   if ($arguments.ToLowerInvariant().Contains($root)) {

@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
   [string]$Servidor = '',
-  [int]$Porta = 3101,
+  [string]$Porta = '3101',
   [switch]$SemImpressao
 )
 
@@ -25,28 +25,35 @@ function Get-AgentNode {
 
 try {
   $target = ($Servidor.Trim() -replace '^https?://', '').TrimEnd('/')
+  $ports = @($Porta -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
   if ($target -match '^(.+):(\d+)$') {
     $target = $Matches[1]
-    $Porta = [int]$Matches[2]
+    $ports = @($Matches[2])
   }
   if ($target -notmatch '^[A-Za-z0-9._-]+$') { throw "Indica o IP ou o nome do servidor (recebido: '$Servidor')." }
-  if ($Porta -lt 1 -or $Porta -gt 65535) { throw "Porta invalida: $Porta" }
+  if (-not $ports.Count) { throw 'Indica a porta do hotel.' }
+  foreach ($port in $ports) {
+    if ($port -notmatch '^\d+$' -or [int]$port -lt 1 -or [int]$port -gt 65535) { throw "Porta invalida: $port" }
+  }
   if (-not (Test-Administrator)) { throw 'Abre o PowerShell como Administrador.' }
 
-  $url = "http://${target}:$Porta"
-  Write-Host "MAVIE-HGest - posto ligado a $url" -ForegroundColor White
-  try {
-    Invoke-WebRequest -Uri "$url/api/health" -UseBasicParsing -TimeoutSec 5 | Out-Null
-    Write-Ok 'Servidor a responder'
-  } catch {
-    Write-Note "O servidor nao respondeu em $url. O posto fica configurado e funciona quando o servidor estiver acessivel."
+  $urls = @()
+  foreach ($port in $ports) {
+    $url = "http://${target}:$port"
+    $urls += $url
+    Write-Host "MAVIE-HGest - posto ligado a $url" -ForegroundColor White
+    try {
+      Invoke-WebRequest -Uri "$url/api/health" -UseBasicParsing -TimeoutSec 5 | Out-Null
+      Write-Ok 'Servidor a responder'
+    } catch {
+      Write-Note "O servidor nao respondeu em $url. O posto fica configurado e funciona quando o servidor estiver acessivel."
+    }
+    $shortcut = New-PanelShortcut "$target ($port)" $url
+    Add-LineOnce $ListaAtalhos $shortcut | Out-Null
+    Write-Ok "Atalho do painel: $shortcut"
   }
 
-  $shortcut = New-PanelShortcut "$target ($Porta)" $url
-  Add-LineOnce $ListaAtalhos $shortcut | Out-Null
-  Write-Ok "Atalho do painel: $shortcut"
-
-  if (-not $SemImpressao) { Install-PrintAgent (Get-AgentNode) @($url) }
+  if (-not $SemImpressao) { Install-PrintAgent (Get-AgentNode) $urls }
   Remove-Item -LiteralPath $Registo -Force -ErrorAction SilentlyContinue
   Write-Step 'Posto pronto'
   exit 0
