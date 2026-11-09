@@ -679,33 +679,41 @@ export class PosService {
   ) {
     const products = await tx.product.findMany({
       where: { id: { in: items.map((item) => item.productId) } },
-      select: { id: true, name: true, trackStock: true, recipeItems: { select: { ingredientId: true, quantity: true } } },
+      select: {
+        id: true,
+        name: true,
+        trackStock: true,
+        category: { select: { warehouse: { select: { id: true, active: true } } } },
+        recipeItems: { select: { ingredientId: true, quantity: true } },
+      },
     });
-    const consumption = new Map<number, { quantity: Prisma.Decimal; reasons: Set<string> }>();
-    const consume = (productId: number, quantity: Prisma.Decimal, reason: string) => {
-      const current = consumption.get(productId) ?? { quantity: new Prisma.Decimal(0), reasons: new Set<string>() };
+    const consumption = new Map<string, { warehouseId: number | null; productId: number; quantity: Prisma.Decimal; reasons: Set<string> }>();
+    const consume = (warehouseId: number | null, productId: number, quantity: Prisma.Decimal, reason: string) => {
+      const key = `${warehouseId ?? 0}:${productId}`;
+      const current = consumption.get(key) ?? { warehouseId, productId, quantity: new Prisma.Decimal(0), reasons: new Set<string>() };
       current.quantity = current.quantity.add(quantity);
       current.reasons.add(reason);
-      consumption.set(productId, current);
+      consumption.set(key, current);
     };
     for (const item of items) {
       const product = products.find((p) => p.id === item.productId);
       if (!product) continue;
+      const source = product.category?.warehouse?.active ? product.category.warehouse.id : null;
       if (product.recipeItems.length) {
         for (const line of product.recipeItems) {
-          consume(line.ingredientId, line.quantity.mul(item.quantity), product.name);
+          consume(source, line.ingredientId, line.quantity.mul(item.quantity), product.name);
         }
       } else if (product.trackStock) {
-        consume(product.id, item.quantity, product.name);
+        consume(source, product.id, item.quantity, product.name);
       }
     }
     if (!consumption.size) {
       return;
     }
-    const warehouse = await this.stock.defaultWarehouse(tx, hotelId);
-    for (const [productId, { quantity, reasons }] of consumption) {
+    const main = [...consumption.values()].some((entry) => entry.warehouseId === null) ? await this.stock.defaultWarehouse(tx, hotelId) : null;
+    for (const { warehouseId, productId, quantity, reasons } of consumption.values()) {
       await this.stock.move(tx, {
-        warehouseId: warehouse.id,
+        warehouseId: warehouseId ?? main!.id,
         productId,
         type: StockMovementType.SALE,
         quantity: quantity.neg(),

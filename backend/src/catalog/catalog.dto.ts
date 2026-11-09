@@ -28,6 +28,10 @@ export class CreateCategoryDto {
 
   @IsOptional()
   @IsInt()
+  warehouseId?: number | null;
+
+  @IsOptional()
+  @IsInt()
   sortOrder?: number;
 }
 

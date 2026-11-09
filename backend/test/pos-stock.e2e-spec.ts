@@ -98,6 +98,51 @@ describe('Restaurante/bar, stocks e compras', () => {
     expect(await ctx.prisma.invoice.count({ where: { hotelId: hotel.id } })).toBe(0);
   });
 
+  it('cada categoria abate no seu armazem e sem armazem abate no principal', async () => {
+    const { hotel, beer, supplier } = await setup();
+    const other = await createHotel(ctx.prisma);
+    const main = await ctx.http().post('/api/warehouses').set(auth).send({ hotelId: hotel.id, name: 'Economato' }).expect(201);
+    const bar = await ctx.http().post('/api/warehouses').set(auth).send({ hotelId: hotel.id, name: 'Bar' }).expect(201);
+    const kitchen = await ctx.http().post('/api/warehouses').set(auth).send({ hotelId: hotel.id, name: 'Cozinha' }).expect(201);
+    const foreign = await ctx.http().post('/api/warehouses').set(auth).send({ hotelId: other.hotel.id, name: 'Outro' }).expect(201);
+    await ctx.http().post('/api/product-categories').set(auth).send({ hotelId: hotel.id, name: 'Errada', warehouseId: foreign.body.id }).expect(400);
+    const drinks = await ctx.http().post('/api/product-categories').set(auth).send({ hotelId: hotel.id, name: 'Bebidas', warehouseId: bar.body.id }).expect(201);
+    expect(drinks.body.warehouseId).toBe(bar.body.id);
+    const food = await ctx.http().post('/api/product-categories').set(auth).send({ hotelId: hotel.id, name: 'Comida' }).expect(201);
+    await ctx.http().patch(`/api/product-categories/${food.body.id}`).set(auth).send({ warehouseId: foreign.body.id }).expect(400);
+    await ctx.http().patch(`/api/product-categories/${food.body.id}`).set(auth).send({ warehouseId: kitchen.body.id }).expect(200);
+
+    const rate = await ctx.prisma.taxRate.create({ data: { hotelId: hotel.id, name: 'Outra', rate: 16 } });
+    const steak = await ctx.prisma.product.create({ data: { hotelId: hotel.id, name: 'Bife', price: 0, trackStock: true, sellable: false } });
+    const meal = await ctx.prisma.product.create({ data: { hotelId: hotel.id, name: 'Bitoque', price: 10, taxRateId: rate.id, categoryId: food.body.id } });
+    const juice = await ctx.prisma.product.create({ data: { hotelId: hotel.id, name: 'Sumo', price: 2, taxRateId: rate.id, trackStock: true } });
+    await ctx.prisma.product.update({ where: { id: beer.id }, data: { categoryId: drinks.body.id } });
+    await ctx.http().put(`/api/products/${meal.id}/recipe`).set(auth).send({ items: [{ ingredientId: steak.id, quantity: 0.25 }] }).expect(200);
+
+    await receive(supplier.id, main.body.id, beer.id, 20, 1);
+    await receive(supplier.id, main.body.id, steak.id, 4, 5);
+    await receive(supplier.id, main.body.id, juice.id, 6, 1);
+    const transfer = await ctx.http()
+      .post('/api/stock-documents')
+      .set(auth)
+      .send({ type: 'TRANSFER', warehouseId: main.body.id, toWarehouseId: bar.body.id, items: [{ productId: beer.id, quantity: 10 }] })
+      .expect(201);
+    await ctx.http().post(`/api/stock-documents/${transfer.body.id}/post`).set(auth).expect(200);
+    await ctx.http().post(`/api/warehouses/${main.body.id}/transfer`).set(auth).send({ productId: steak.id, toWarehouseId: kitchen.body.id, quantity: 2 }).expect(201);
+
+    const order = await ctx.http().post('/api/orders').set(auth).send({ hotelId: hotel.id, outlet: 'RESTAURANT', tableLabel: 'Mesa 1' }).expect(201);
+    await ctx.http().post(`/api/orders/${order.body.id}/items`).set(auth).send({ productId: beer.id, quantity: 3 }).expect(201);
+    await ctx.http().post(`/api/orders/${order.body.id}/items`).set(auth).send({ productId: meal.id, quantity: 2 }).expect(201);
+    const last = await ctx.http().post(`/api/orders/${order.body.id}/items`).set(auth).send({ productId: juice.id, quantity: 1 }).expect(201);
+    await ctx.http().post(`/api/orders/${order.body.id}/close`).set(auth).send({ mode: 'PAY', payments: [{ method: 'CARD', amount: Number(last.body.total) }] }).expect(200);
+
+    expect(await stockOf(bar.body.id, beer.id)).toBe(7);
+    expect(await stockOf(main.body.id, beer.id)).toBe(10);
+    expect(await stockOf(kitchen.body.id, steak.id)).toBeCloseTo(1.5, 3);
+    expect(await stockOf(main.body.id, steak.id)).toBe(2);
+    expect(await stockOf(main.body.id, juice.id)).toBe(5);
+  });
+
   it('transferencias e inventario mantem os saldos coerentes', async () => {
     const { hotel, beer, supplier } = await setup();
     const main = await ctx.http().post('/api/warehouses').set(auth).send({ hotelId: hotel.id, name: 'Economato' }).expect(201);

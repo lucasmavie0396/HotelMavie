@@ -302,6 +302,7 @@ export interface ProductCategory {
   outlet: Outlet | null;
   prepStation: PrepStation;
   printerId: number | null;
+  warehouseId: number | null;
   sortOrder: number;
 }
 

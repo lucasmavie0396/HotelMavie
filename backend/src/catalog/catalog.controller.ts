@@ -37,6 +37,7 @@ export class CatalogController {
   async createCategory(@Body() { hotelId, ...data }: CreateCategoryDto, @CurrentUser() user: JwtPayload) {
     const scoped = this.requireHotel(user, hotelId);
     await this.assertPrinter(scoped, data.printerId);
+    await this.assertWarehouse(scoped, data.warehouseId);
     return this.prisma.productCategory.create({ data: { ...data, hotelId: scoped } });
   }
 
@@ -48,6 +49,7 @@ export class CatalogController {
       throw new NotFoundException('Categoria nao encontrada');
     }
     await this.assertPrinter(category.hotelId, dto.printerId);
+    await this.assertWarehouse(category.hotelId, dto.warehouseId);
     return this.prisma.productCategory.update({ where: { id }, data: dto });
   }
 
@@ -179,6 +181,14 @@ export class CatalogController {
     const printer = await this.prisma.printer.findUnique({ where: { id: printerId } });
     if (printer?.hotelId !== hotelId) {
       throw new BadRequestException('Impressora invalida para este hotel');
+    }
+  }
+
+  private async assertWarehouse(hotelId: number, warehouseId?: number | null) {
+    if (!warehouseId) return;
+    const warehouse = await this.prisma.warehouse.findUnique({ where: { id: warehouseId } });
+    if (warehouse?.hotelId !== hotelId || !warehouse.active) {
+      throw new BadRequestException('Armazem invalido para este hotel');
     }
   }
 

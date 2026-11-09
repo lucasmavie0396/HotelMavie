@@ -9,7 +9,7 @@ import { api, errorMessage } from '@/services/api';
 import { fileUrl } from '@/services/files';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
-import type { Outlet, PrepStation, Printer, Product, ProductCategory, TaxRate } from '@/types';
+import type { Outlet, PrepStation, Printer, Product, ProductCategory, TaxRate, Warehouse } from '@/types';
 import { formatMoney } from '@/utils/format';
 
 const auth = useAuthStore();
@@ -34,8 +34,10 @@ function emptyProduct() {
 }
 
 const form = reactive(emptyProduct());
-const category = reactive({ name: '', outlet: '' as Outlet | '', prepStation: 'KITCHEN' as PrepStation, printerId: 0 });
+const category = reactive({ name: '', outlet: '' as Outlet | '', prepStation: 'KITCHEN' as PrepStation, printerId: 0, warehouseId: 0 });
 const printers = ref<Printer[]>([]);
+const warehouses = ref<Warehouse[]>([]);
+const warehouseName = (id: number | null) => warehouses.value.find((warehouse) => warehouse.id === id)?.name;
 const printerName = (id: number | null) => printers.value.find((printer) => printer.id === id)?.name;
 const STATION_LABELS = translated<PrepStation>('labels.prepStation', ['KITCHEN', 'BAR', 'NONE']);
 const { t } = useI18n();
@@ -52,6 +54,7 @@ async function load() {
     categories.value = c.data;
     taxRates.value = t.data.filter((rate) => rate.active);
     printers.value = (await api.get<Printer[]>('/printers', { params })).data;
+    warehouses.value = (await api.get<Warehouse[]>('/warehouses', { params })).data;
     await loadNextSku();
   } catch (e) {
     error.value = errorMessage(e);
@@ -134,12 +137,12 @@ async function loadNextSku() {
 
 function editCategory(item: ProductCategory) {
   editingCategoryId.value = item.id;
-  Object.assign(category, { name: item.name, outlet: item.outlet ?? '', prepStation: item.prepStation, printerId: item.printerId ?? 0 });
+  Object.assign(category, { name: item.name, outlet: item.outlet ?? '', prepStation: item.prepStation, printerId: item.printerId ?? 0, warehouseId: item.warehouseId ?? 0 });
 }
 
 function resetCategory() {
   editingCategoryId.value = null;
-  Object.assign(category, { name: '', outlet: '', prepStation: 'KITCHEN', printerId: 0 });
+  Object.assign(category, { name: '', outlet: '', prepStation: 'KITCHEN', printerId: 0, warehouseId: 0 });
 }
 
 const saveCategory = () =>
@@ -149,6 +152,7 @@ const saveCategory = () =>
       outlet: category.outlet || null,
       prepStation: category.prepStation,
       printerId: category.printerId || null,
+      warehouseId: category.warehouseId || null,
     };
     if (editingCategoryId.value) await api.patch(`/product-categories/${editingCategoryId.value}`, payload);
     else await api.post('/product-categories', { ...payload, hotelId: hotels.selectedId });
@@ -224,6 +228,10 @@ onMounted(load);
             <option :value="0">{{ t('products.mainPrinter') }}</option>
             <option v-for="printer in printers.filter((p) => p.active)" :key="printer.id" :value="printer.id">{{ t('products.printOn', { name: printer.name }) }}</option>
           </select>
+          <select v-model.number="category.warehouseId" class="input col-span-2" :aria-label="t('products.warehouse')">
+            <option :value="0">{{ t('products.mainWarehouse') }}</option>
+            <option v-for="warehouse in warehouses" :key="warehouse.id" :value="warehouse.id">{{ t('products.deductFrom', { name: warehouse.name }) }}</option>
+          </select>
           <button v-if="editingCategoryId" class="btn-secondary" type="button" @click="resetCategory">{{ t('common.cancel') }}</button>
           <button class="btn" :class="editingCategoryId ? '' : 'col-span-2'" type="submit" :disabled="busy">
             {{ editingCategoryId ? t('common.save') : t('products.addCategory') }}
@@ -236,6 +244,7 @@ onMounted(load);
               <span class="block text-xs text-slate-500">
                 {{ item.outlet ? t(`labels.outlet.${item.outlet}`) : t('products.bothShort') }} · {{ STATION_LABELS[item.prepStation] }}
                 · {{ item.printerId ? printerName(item.printerId) ?? t('products.printerInactive') : t('products.mainPrinterShort') }}
+                · {{ warehouseName(item.warehouseId) ?? t('products.mainWarehouseShort') }}
               </span>
             </span>
             <button class="shrink-0 text-xs text-indigo-600 hover:underline" type="button" @click="editCategory(item)">{{ t('common.edit') }}</button>

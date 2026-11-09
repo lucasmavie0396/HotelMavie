@@ -649,6 +649,8 @@ model ProductCategory {
   prepStation PrepStation @default(KITCHEN)
   printerId   Int?
   printer     Printer?    @relation(fields: [printerId], references: [id], onDelete: SetNull)
+  warehouseId Int?
+  warehouse   Warehouse?  @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   sortOrder   Int         @default(0)
   products    Product[]
 
@@ -799,6 +801,7 @@ model Warehouse {
   stockDocuments StockDocument[] @relation("StockDocumentFrom")
   transfersIn    StockDocument[] @relation("StockDocumentTo")
   stockLots      StockLot[]
+  categories     ProductCategory[]
 
   @@unique([hotelId, name])
   @@map("warehouses")
