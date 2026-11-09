@@ -2,9 +2,10 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import CashRequired from '@/components/CashRequired.vue';
+import PaperLinks from '@/components/PaperLinks.vue';
 import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
 import { useOwnCash } from '@/composables/cashGuard';
-import { api, errorMessage, openPdf } from '@/services/api';
+import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
 import type { CashRegister, Reservation } from '@/types';
 import { formatDateTime, formatMoney } from '@/utils/format';
@@ -91,7 +92,6 @@ const confirm = () =>
     notice.value = form.sendEmail ? t('deposit.confirmedSent') : t('deposit.confirmed');
   });
 
-const pdf = () => run(() => openPdf(`/reservations/${props.reservation.id}/deposit/pdf`));
 
 const email = () =>
   run(async () => {
@@ -109,8 +109,9 @@ const email = () =>
         <span v-if="confirmed" class="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">{{ t('deposit.received') }}</span>
         <span v-else-if="reservation.depositAmount !== null" class="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">{{ t('deposit.pending') }}</span>
       </h2>
-      <div v-if="confirmed" class="flex gap-2">
-        <button class="btn-secondary px-3 py-1 text-xs" type="button" :disabled="busy" @click="pdf">{{ t('deposit.receipt') }}</button>
+      <div v-if="confirmed" class="flex items-center gap-2">
+        <span class="text-xs text-slate-600">{{ t('deposit.receipt') }}</span>
+        <PaperLinks :path="`/reservations/${reservation.id}/deposit/pdf`" :title="t('deposit.receipt')" @error="error = $event" />
         <button v-if="reservation.guest.email" class="btn-secondary px-3 py-1 text-xs" type="button" :disabled="busy" @click="email">{{ t('deposit.sendToGuest') }}</button>
       </div>
       <button v-else-if="open && !opened" class="btn-secondary px-3 py-1 text-xs" type="button" @click="opened = true">{{ t('deposit.register') }}</button>

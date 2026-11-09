@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import PaperLinks from '@/components/PaperLinks.vue';
 import { api, errorMessage } from '@/services/api';
-import { previewPdfFrom } from '@/services/print';
 import { useHotelsStore } from '@/stores/hotels';
 import type { PayrollRun, PayrollSettings, Payslip, PayslipLine } from '@/types';
 import { formatDateTime, formatMoney, todayIso } from '@/utils/format';
@@ -123,14 +123,6 @@ const saveSlip = () =>
     editing.value = null;
   }, t('payroll.slipSaved'));
 
-async function preview(path: string, title: string) {
-  try {
-    await previewPdfFrom(path, {}, title, 'A4');
-  } catch (e) {
-    error.value = errorMessage(e);
-  }
-}
-
 onMounted(load);
 </script>
 
@@ -214,7 +206,7 @@ onMounted(load);
           <span class="font-normal text-slate-500">· {{ current.status === 'CLOSED' ? t('payroll.closedAt', { date: formatDateTime(current.closedAt!) }) : t('payroll.draft') }}</span>
         </h2>
         <div class="flex flex-wrap gap-2">
-          <button class="btn-secondary" type="button" @click="preview(`/hr/payroll/runs/${current.id}/pdf`, t('payroll.mapTitle', { period: period(current) }))">{{ t('payroll.mapPdf') }}</button>
+          <span class="inline-flex items-center gap-2 text-sm text-slate-600">{{ t('payroll.mapPdf') }} <PaperLinks :path="`/hr/payroll/runs/${current.id}/pdf`" :title="t('payroll.mapTitle', { period: period(current) })" @error="error = $event" /></span>
           <template v-if="isDraft">
             <button class="btn-secondary" type="button" :disabled="busy" @click="recalculate">{{ t('payroll.recalculate') }}</button>
             <button class="btn-secondary text-rose-700" type="button" :disabled="busy" @click="removeRun">{{ t('common.delete') }}</button>
@@ -286,7 +278,7 @@ onMounted(load);
               <td class="px-4 py-2 text-right">{{ money(slip.irsWithholding) }}</td>
               <td class="px-4 py-2 text-right font-semibold">{{ money(slip.netPay) }}</td>
               <td class="space-x-3 px-4 py-2 text-right text-xs whitespace-nowrap">
-                <button class="text-slate-600 hover:underline" type="button" @click="preview(`/hr/payroll/payslips/${slip.id}/pdf`, t('payroll.slipTitle', { name: slip.fullName, period: period(current) }))">{{ t('payroll.slip') }}</button>
+                <span class="text-slate-600">{{ t('payroll.slip') }} <PaperLinks :path="`/hr/payroll/payslips/${slip.id}/pdf`" :title="t('payroll.slipTitle', { name: slip.fullName, period: period(current) })" @error="error = $event" /></span>
                 <button v-if="isDraft" class="text-indigo-600 hover:underline" type="button" @click="edit(slip)">{{ t('common.edit') }}</button>
               </td>
             </tr>

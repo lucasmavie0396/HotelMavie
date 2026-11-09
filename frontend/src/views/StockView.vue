@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
+import PaperLinks from '@/components/PaperLinks.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { translated } from '@/i18n';
@@ -205,14 +206,6 @@ async function previewDocument(d: StockDocument, paper: PaperWidth) {
   }
 }
 
-async function previewCountSheet(withQuantities: boolean) {
-  try {
-    await previewPdfFrom(`/warehouses/${warehouseId.value}/count-sheet`, { withQuantities, paper: 'A4' }, t('stock.countSheet'), 'A4');
-  } catch (e) {
-    error.value = errorMessage(e);
-  }
-}
-
 function expiryClass(lot: StockLot) {
   if (!lot.expiryDate) return 'text-slate-400';
   const days = (new Date(lot.expiryDate).getTime() - Date.now()) / 86_400_000;
@@ -267,8 +260,8 @@ onMounted(load);
           <label class="flex items-center gap-2"><input v-model="onlyLow" type="checkbox" />{{ t('stock.onlyLow') }}</label>
           <span class="text-slate-600">{{ t('stock.value') }} <strong>{{ formatMoney(stockValue, hotels.currency) }}</strong></span>
           <span class="ml-auto flex gap-3 text-xs">
-            <button class="text-indigo-600 hover:underline" type="button" @click="previewCountSheet(false)">{{ t('stock.countSheet') }}</button>
-            <button v-if="isManager" class="text-indigo-600 hover:underline" type="button" @click="previewCountSheet(true)">{{ t('stock.countSheetQty') }}</button>
+            <span>{{ t('stock.countSheet') }} <PaperLinks :path="`/warehouses/${warehouseId}/count-sheet`" :params="{ withQuantities: false }" :title="t('stock.countSheet')" @error="error = $event" /></span>
+            <span v-if="isManager">{{ t('stock.countSheetQty') }} <PaperLinks :path="`/warehouses/${warehouseId}/count-sheet`" :params="{ withQuantities: true }" :title="t('stock.countSheetQty')" @error="error = $event" /></span>
           </span>
         </div>
 

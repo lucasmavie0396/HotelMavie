@@ -5,8 +5,10 @@ import { AtSigningService } from '../at/at-signing.service';
 import { JwtPayload } from '../auth/jwt-payload';
 import { nightsBetween } from '../common/dates';
 import { canAccessHotel } from '../common/hotel-scope';
+import { mailLang } from '../mail/templates';
 import { PrismaService } from '../prisma/prisma.service';
 import { FolioService } from './folio.service';
+import { InvoicePdfService } from './invoice-pdf.service';
 import { Ticket } from './ticket-pdf.service';
 
 const DOC_TITLES: Record<InvoiceType, string> = {
@@ -41,7 +43,30 @@ export class DocumentsService {
     private readonly prisma: PrismaService,
     private readonly folio: FolioService,
     private readonly signing: AtSigningService,
+    private readonly pdf: InvoicePdfService,
   ) {}
+
+  async invoiceA4(id: number, user: JwtPayload) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id },
+      include: { hotel: true, lines: true, creditOf: { select: { fullNumber: true } }, reservation: { select: { locale: true } } },
+    });
+    if (!invoice || !canAccessHotel(user, invoice.hotelId)) {
+      throw new NotFoundException('Documento nao encontrado');
+    }
+    return this.pdf.render(invoice, invoice.hotel, mailLang(invoice.reservation?.locale));
+  }
+
+  async receiptA4(id: number, user: JwtPayload) {
+    const receipt = await this.prisma.receipt.findUnique({
+      where: { id },
+      include: { hotel: true, lines: { include: { invoice: { select: { fullNumber: true, issuedAt: true, grossTotal: true } } } } },
+    });
+    if (!receipt || !canAccessHotel(user, receipt.hotelId)) {
+      throw new NotFoundException('Recibo nao encontrado');
+    }
+    return this.pdf.renderReceipt(receipt, receipt.hotel);
+  }
 
   async invoice(id: number, user: JwtPayload) {
     const invoice = await this.prisma.invoice.findUnique({

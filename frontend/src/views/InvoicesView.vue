@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
+import PaperLinks from '@/components/PaperLinks.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { api, emailInvoice, errorMessage, openInvoicePdf } from '@/services/api';
@@ -132,6 +133,7 @@ onMounted(load);
               >
                 {{ t('invoices.reservation') }}
               </RouterLink>
+              <PaperLinks class="mr-3" :params="{ document: 'INVOICE', invoiceId: invoice.id }" :title="invoice.fullNumber" @error="error = $event" />
               <button class="mr-3 text-xs text-indigo-600 hover:underline" type="button" @click="sendEmail(invoice)">{{ t('common.email') }}</button>
               <button
                 v-if="isManager && invoice.type !== 'CREDIT_NOTE' && invoice.status === 'ISSUED'"

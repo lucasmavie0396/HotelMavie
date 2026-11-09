@@ -244,7 +244,7 @@ export class PayrollService {
     await this.prisma.payrollRun.delete({ where: { id } });
   }
 
-  async payslipPdf(id: number, user: JwtPayload) {
+  async payslipPdf(id: number, paper: PaperWidth, user: JwtPayload) {
     const slip = await this.prisma.payslip.findUnique({ where: { id }, include: { run: true } });
     if (!slip || !canAccessHotel(user, slip.run.hotelId)) {
       throw new NotFoundException('Recibo nao encontrado');
@@ -315,10 +315,10 @@ export class PayrollService {
         { title: 'Recebi', note: 'Assinatura do trabalhador: ______________________________    Data: ____/____/______' },
       ],
     };
-    return { buffer: await this.render.pdf(report, PaperWidth.A4), name: `recibo-${slip.run.year}-${String(slip.run.month).padStart(2, '0')}-${slip.employeeId}` };
+    return { buffer: await this.render.pdf(report, paper), name: `recibo-${slip.run.year}-${String(slip.run.month).padStart(2, '0')}-${slip.employeeId}` };
   }
 
-  async summaryPdf(id: number, user: JwtPayload) {
+  async summaryPdf(id: number, paper: PaperWidth, user: JwtPayload) {
     const run = await this.findRun(id, user);
     const hotel = await this.prisma.hotel.findUniqueOrThrow({ where: { id: run.hotelId } });
     const operator = (await this.prisma.user.findUnique({ where: { id: user.sub }, select: { name: true } }))?.name ?? '-';
@@ -359,7 +359,7 @@ export class PayrollService {
         },
       ],
     };
-    return this.render.pdf(report, PaperWidth.A4);
+    return this.render.pdf(report, paper);
   }
 
   private async fill(runId: number, user: JwtPayload, fresh: boolean) {

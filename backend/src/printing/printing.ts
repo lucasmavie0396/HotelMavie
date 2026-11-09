@@ -277,7 +277,10 @@ export class PrintService {
     }
     const built = await this.build(dto, user);
     const printer = dto.paper ? null : await this.choosePrinter(built.hotelId, built.purpose, built.printerId ?? dto.printerId);
-    return { buffer: await this.tickets.render(built.ticket, dto.paper ?? printer?.paperWidth ?? PaperWidth.MM80), name: built.name };
+    const paper = dto.paper ?? printer?.paperWidth ?? PaperWidth.MM80;
+    if (paper === PaperWidth.A4 && dto.document === 'INVOICE') return { buffer: await this.documents.invoiceA4(dto.invoiceId!, user), name: built.name };
+    if (paper === PaperWidth.A4 && dto.document === 'RECEIPT') return { buffer: await this.documents.receiptA4(dto.receiptId!, user), name: built.name };
+    return { buffer: await this.tickets.render(built.ticket, paper), name: built.name };
   }
 
   async findPrinter(id: number, user: JwtPayload) {

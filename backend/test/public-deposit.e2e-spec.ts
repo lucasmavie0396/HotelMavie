@@ -122,6 +122,9 @@ describe('Site publico e sinal', () => {
     const pdf = await ctx.http().get(`/api/reservations/${reservation.id}/deposit/pdf`).set(reception).buffer(true).expect(200);
     expect(pdf.headers['content-type']).toBe('application/pdf');
     expect((pdf.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
+    expect((pdf.body as Buffer).toString('latin1')).toContain('/MediaBox [0 0 595.28');
+    const narrow = await ctx.http().get(`/api/reservations/${reservation.id}/deposit/pdf`).query({ paper: 'MM80' }).set(reception).buffer(true).expect(200);
+    expect((narrow.body as Buffer).toString('latin1')).toContain('/MediaBox [0 0 226.77');
 
     const other = await createHotel(ctx.prisma);
     await ctx.http().get(`/api/reservations/${reservation.id}/deposit/pdf`).set(await staff(other.hotel.id)).expect(404);

@@ -1,11 +1,12 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Query, Res } from '@nestjs/common';
-import { AccessLevel, ReservationStatus, UserRole } from '@prisma/client';
+import { AccessLevel, PaperWidth, ReservationStatus, UserRole } from '@prisma/client';
 import type { Response } from 'express';
 import { AccessService } from '../access/access';
 import { reaches } from '../access/areas';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { SalesAccess } from '../common/decorators/roles.decorator';
+import { PaperQueryDto } from '../common/paper-query.dto';
 import { ConfirmDepositDto, DepositService } from './deposit.service';
 import { CompanionDto } from './dto/companion.dto';
 import { CreateReservationDto } from './dto/create-reservation.dto';
@@ -88,8 +89,8 @@ export class ReservationsController {
   }
 
   @Get(':id/deposit/pdf')
-  async depositPdf(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload, @Res() res: Response) {
-    const { buffer, name } = await this.deposits.pdf(id, user);
+  async depositPdf(@Param('id', ParseIntPipe) id: number, @Query() query: PaperQueryDto, @CurrentUser() user: JwtPayload, @Res() res: Response) {
+    const { buffer, name } = await this.deposits.pdf(id, query.paper ?? PaperWidth.A4, user);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${name}.pdf"`);
     res.send(buffer);

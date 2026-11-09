@@ -1,10 +1,11 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Module, Param, ParseIntPipe, Patch, Post, Put, Query, Res } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { PaperWidth, UserRole } from '@prisma/client';
 import type { Response } from 'express';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { HotelQueryDto } from '../common/hotel-query.dto';
+import { PaperQueryDto } from '../common/paper-query.dto';
 import { ReportsModule } from '../reports/reports.module';
 import { ClockDto, CopyWeekDto, EmployeeDto, MonthQueryDto, RangeQueryDto, ShiftDto, UpdateEmployeeDto, UpdateShiftDto, UpdateTimeEntryDto } from './hr.dto';
 import { HrService } from './hr.service';
@@ -141,10 +142,10 @@ export class PayrollController {
   }
 
   @Get('runs/:id/pdf')
-  async summaryPdf(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload, @Res() res: Response) {
+  async summaryPdf(@Param('id', ParseIntPipe) id: number, @Query() query: PaperQueryDto, @CurrentUser() user: JwtPayload, @Res() res: Response) {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="mapa-salarios-${id}.pdf"`);
-    res.send(await this.payroll.summaryPdf(id, user));
+    res.send(await this.payroll.summaryPdf(id, query.paper ?? PaperWidth.A4, user));
   }
 
   @Patch('payslips/:id')
@@ -153,8 +154,8 @@ export class PayrollController {
   }
 
   @Get('payslips/:id/pdf')
-  async payslipPdf(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload, @Res() res: Response) {
-    const { buffer, name } = await this.payroll.payslipPdf(id, user);
+  async payslipPdf(@Param('id', ParseIntPipe) id: number, @Query() query: PaperQueryDto, @CurrentUser() user: JwtPayload, @Res() res: Response) {
+    const { buffer, name } = await this.payroll.payslipPdf(id, query.paper ?? PaperWidth.A4, user);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${name}.pdf"`);
     res.send(buffer);

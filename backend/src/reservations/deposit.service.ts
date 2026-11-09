@@ -1,10 +1,11 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, ReservationStatus } from '@prisma/client';
+import { PaperWidth, Prisma, ReservationStatus } from '@prisma/client';
 import { IsBoolean, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import PDFDocument from 'pdfkit';
 import { JwtPayload } from '../auth/jwt-payload';
 import { A4, COLORS, Column, drawFooter, drawHeader, infoCard, sectionTitle, tableHeader, tableRow, totalsBox } from '../billing/a4-layout';
 import { FolioService } from '../billing/folio.service';
+import { Ticket, TicketPdfService } from '../billing/ticket-pdf.service';
 import { nightsBetween } from '../common/dates';
 import { canAccessHotel } from '../common/hotel-scope';
 import { formatCurrency, toMoney } from '../common/money';
@@ -138,6 +139,7 @@ export class DepositService {
     private readonly folio: FolioService,
     private readonly mail: MailService,
     private readonly uploads: UploadsService,
+    private readonly tickets: TicketPdfService,
   ) {}
 
   async confirm(id: number, dto: ConfirmDepositDto, user: JwtPayload) {
@@ -207,12 +209,13 @@ export class DepositService {
     return this.email(reservation);
   }
 
-  async pdf(id: number, user: JwtPayload) {
+  async pdf(id: number, paper: PaperWidth, user: JwtPayload) {
     const reservation = await this.find(id, user);
     if (!reservation.depositPaymentId) {
       throw new ConflictException('O sinal desta reserva ainda nao foi confirmado');
     }
-    return { buffer: await this.render(reservation), name: `sinal-${reservation.code}` };
+    const buffer = paper === PaperWidth.A4 ? await this.render(reservation) : await this.tickets.render(this.ticket(reservation), paper);
+    return { buffer, name: `sinal-${reservation.code}` };
   }
 
   private async email(reservation: DepositReservation) {
@@ -253,6 +256,59 @@ export class DepositService {
     return reservation;
   }
 
+  private amounts(reservation: DepositReservation) {
+    const total = toMoney(reservation.totalAmount);
+    const deposit = toMoney(reservation.depositAmount ?? 0);
+    const remaining = total.sub(deposit);
+    const percent = total.isZero() ? 0 : Number(deposit.div(total).mul(100).toFixed(1));
+    return { total, deposit, remaining, percent, nights: nightsBetween(reservation.checkIn, reservation.checkOut) };
+  }
+
+  private ticket(reservation: DepositReservation, lang = mailLang(reservation.locale)) {
+    const { hotel, guest } = reservation;
+    const text = TEXT[lang];
+    const money = (value: { toString(): string } | number) => formatCurrency(value, hotel.currency, lang === 'en' ? 'en-GB' : 'pt-PT');
+    const { total, deposit, remaining, percent, nights } = this.amounts(reservation);
+    const ticket = new Ticket(hotel.currency).header(hotel);
+    ticket.text(text.title.toUpperCase(), { bold: true, size: 11, align: 'center' });
+    ticket.text(`${text.number} SN-${reservation.code}`, { size: 8, align: 'center' });
+    if (reservation.depositConfirmedAt) ticket.text(`${text.date}: ${Ticket.when(reservation.depositConfirmedAt)}`, { size: 8, align: 'center' });
+    ticket.text(`${text.booking} ${text.status[reservation.status].toLowerCase()}`, { size: 8, align: 'center' });
+    ticket.rule();
+    ticket.text(text.guest.toUpperCase(), { bold: true, size: 9 });
+    ticket.cols(text.name, `${guest.firstName} ${guest.lastName}`, { size: 8 });
+    if (guest.email) ticket.cols(text.email, guest.email, { size: 8 });
+    if (guest.phone) ticket.cols(text.phone, guest.phone, { size: 8 });
+    if (guest.taxId) ticket.cols(text.taxId, guest.taxId, { size: 8 });
+    if (guest.documentNumber) ticket.cols(text.document, [guest.documentType, guest.documentNumber].filter(Boolean).join(' '), { size: 8 });
+    ticket.rule();
+    ticket.text(text.stay.toUpperCase(), { bold: true, size: 9 });
+    ticket.cols(text.code, reservation.code, { size: 8 });
+    ticket.cols(text.room, text.roomValue(reservation.room.type, reservation.room.number), { size: 8 });
+    ticket.cols(text.checkIn, day(reservation.checkIn), { size: 8 });
+    ticket.cols(text.checkOut, day(reservation.checkOut), { size: 8 });
+    ticket.cols(text.nights, String(nights), { size: 8 });
+    ticket.cols(text.guests, text.guestsValue(reservation.adults, reservation.children), { size: 8 });
+    ticket.rule();
+    ticket.cols(`${nights} x ${text.lodging(reservation.room.type)}`, money(total), { size: 9 });
+    ticket.text(`   ${nights} x ${money(reservation.pricePerNight)}`, { size: 7 });
+    ticket.rule();
+    ticket.text(text.payment.toUpperCase(), { bold: true, size: 9 });
+    ticket.cols(text.method, reservation.depositPaymentType?.name ?? '-', { size: 8 });
+    ticket.cols(text.reference, reservation.depositReference ?? '-', { size: 8 });
+    ticket.rule();
+    ticket.cols(text.bookingTotal, money(total), { size: 9 });
+    ticket.cols(text.received(percent), `-${money(deposit)}`, { size: 9 });
+    ticket.cols(text.remaining, money(remaining), { bold: true, size: 11 });
+    ticket.space();
+    ticket.text(text.message(money(remaining)), { size: 7 });
+    if (reservation.notes) ticket.text(`${text.notes}: ${reservation.notes}`, { size: 7 });
+    if (hotel.invoiceFooter) ticket.text(hotel.invoiceFooter, { size: 7 });
+    ticket.space(3);
+    ticket.text(text.notice, { bold: true, size: 7, align: 'center' });
+    return ticket.footer(hotel, reservation.depositConfirmedBy?.name);
+  }
+
   async render(reservation: DepositReservation, lang = mailLang(reservation.locale)) {
     const { hotel, guest } = reservation;
     const text = TEXT[lang];
@@ -260,11 +316,7 @@ export class DepositService {
     const timeZone = process.env.AT_TIMEZONE ?? 'Europe/Lisbon';
     const money = (value: { toString(): string } | number) =>
       formatCurrency(value, hotel.currency, lang === 'en' ? 'en-GB' : 'pt-PT');
-    const total = toMoney(reservation.totalAmount);
-    const deposit = toMoney(reservation.depositAmount ?? 0);
-    const remaining = total.sub(deposit);
-    const percent = total.isZero() ? 0 : Number(deposit.div(total).mul(100).toFixed(1));
-    const nights = nightsBetween(reservation.checkIn, reservation.checkOut);
+    const { total, deposit, remaining, percent, nights } = this.amounts(reservation);
 
     return new Promise<Buffer>((resolve, reject) => {
       const doc = new PDFDocument({

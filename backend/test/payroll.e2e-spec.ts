@@ -48,6 +48,10 @@ describe('Processamento salarial', () => {
     const pdf = await ctx.http().get(`/api/hr/payroll/payslips/${slip.id}/pdf`).set(manager.auth).expect(200);
     expect(pdf.headers['content-type']).toContain('application/pdf');
     await ctx.http().get(`/api/hr/payroll/runs/${run.body.id}/pdf`).set(manager.auth).expect(200);
+    const narrowSlip = await ctx.http().get(`/api/hr/payroll/payslips/${slip.id}/pdf`).query({ paper: 'MM80' }).set(manager.auth).buffer(true).expect(200);
+    expect((narrowSlip.body as Buffer).toString('latin1')).toContain('/MediaBox [0 0 226.77');
+    const narrowMap = await ctx.http().get(`/api/hr/payroll/runs/${run.body.id}/pdf`).query({ paper: 'MM80' }).set(manager.auth).buffer(true).expect(200);
+    expect((narrowMap.body as Buffer).toString('latin1')).toContain('/MediaBox [0 0 226.77');
 
     await ctx.http().post(`/api/hr/payroll/runs/${run.body.id}/close`).set(manager.auth).expect(200);
     await ctx.http().patch(`/api/hr/payroll/payslips/${slip.id}`).set(manager.auth).send({ irsRate: 5 }).expect(409);

@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import CashRequired from '@/components/CashRequired.vue';
+import PaperLinks from '@/components/PaperLinks.vue';
 import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
 import { useOwnCash } from '@/composables/cashGuard';
 import { api, emailInvoice, errorMessage, openInvoicePdf } from '@/services/api';
@@ -146,6 +147,7 @@ defineExpose({ load });
         <button class="btn-secondary px-3 py-1 text-xs" type="button" @click="panel = panel === 'charge' ? null : 'charge'">
           {{ t('folio.addCharge') }}
         </button>
+        <PaperLinks :params="{ document: 'STATEMENT', reservationId: reservation.id }" :title="t('print.documents.STATEMENT')" @error="error = $event" />
         <button class="btn-secondary px-3 py-1 text-xs" type="button" @click="print({ document: 'STATEMENT', reservationId: reservation.id })">
           {{ t('folio.print') }}
         </button>
@@ -253,6 +255,7 @@ defineExpose({ load });
               <button class="ml-2 text-xs text-indigo-600 hover:underline" type="button" @click="print({ document: 'PAYMENT', paymentId: item.id })">
                 {{ t('folio.proof') }}
               </button>
+              <PaperLinks class="ml-2" :params="{ document: 'PAYMENT', paymentId: item.id }" :title="t('print.documents.PAYMENT')" @error="error = $event" />
             </td>
             <td class="py-2 text-right">-{{ money(item.amount) }}</td>
             <td colspan="2"></td>
@@ -295,6 +298,7 @@ defineExpose({ load });
         <button class="text-xs text-indigo-600 hover:underline" type="button" @click="print({ document: 'INVOICE', invoiceId: doc.id })">
           {{ t('folio.printTicket') }}
         </button>
+        <PaperLinks :params="{ document: 'INVOICE', invoiceId: doc.id }" :title="doc.fullNumber" @error="error = $event" />
       </div>
     </div>
   </div>

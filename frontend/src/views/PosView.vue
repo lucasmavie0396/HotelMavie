@@ -4,6 +4,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import RoomAccountPanel from '@/components/RoomAccountPanel.vue';
 import CashRequired from '@/components/CashRequired.vue';
+import PaperLinks from '@/components/PaperLinks.vue';
 import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
 import { useOwnCash } from '@/composables/cashGuard';
 import { api, errorMessage } from '@/services/api';
@@ -463,7 +464,7 @@ onMounted(load);
                   </span>
                 </div>
                 <p v-if="item.notes" class="text-xs text-slate-500">&gt; {{ item.notes }}</p>
-                <p v-if="item.voidedAt" class="text-xs">{{ t('pos.voidedBy', { reason: item.voidReason, name: item.voidedBy?.name }) }}</p>
+                <p v-if="item.voidedAt" class="text-xs">{{ t('pos.voidedBy', { reason: item.voidReason, name: item.voidedBy?.name }) }} <PaperLinks class="ml-1" :params="{ document: 'VOID', orderId: current.id, itemId: item.id }" :title="t('print.documents.VOID')" @error="error = $event" /></p>
               </li>
             </ul>
             <p class="flex justify-between border-t border-slate-200 pt-2 text-lg font-semibold">
@@ -489,6 +490,17 @@ onMounted(load);
               <button class="btn-secondary" type="button" :disabled="!activeItems" @click="prebill">{{ t('pos.prebill') }}</button>
               <button class="btn" type="button" :disabled="!activeItems" @click="startClose">{{ t('pos.closeBill') }}</button>
               <button class="btn-secondary col-span-2" type="button" :disabled="!activeItems" @click="startMove">{{ t('pos.splitMove') }}</button>
+              <div class="col-span-2 flex gap-2 text-xs">
+                {{ t('pos.prebill') }}
+                <PaperLinks :params="{ document: 'PREBILL', orderId: current.id }" :title="t('print.documents.PREBILL')" @error="error = $event" />
+              </div>
+              <div v-if="current.items.some((i) => i.sentAt)" class="col-span-2 flex flex-wrap gap-2 text-xs">
+                {{ t('print.documents.ORDER') }}
+                {{ t('pos.atKitchen') }}
+                <PaperLinks :params="{ document: 'ORDER', orderId: current.id, station: 'KITCHEN' }" :title="t('print.documents.ORDER')" @error="error = $event" />
+                {{ t('pos.atBar') }}
+                <PaperLinks :params="{ document: 'ORDER', orderId: current.id, station: 'BAR' }" :title="t('print.documents.ORDER')" @error="error = $event" />
+              </div>
               <div v-if="current.items.some((i) => i.sentAt)" class="col-span-2 flex gap-3 text-xs">
                 {{ t('pos.reprint') }}
                 <button class="text-indigo-600 hover:underline" type="button" @click="reprint('KITCHEN')">{{ t('pos.atKitchen') }}</button>

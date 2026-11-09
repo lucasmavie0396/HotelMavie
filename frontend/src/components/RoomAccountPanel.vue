@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import CashRequired from '@/components/CashRequired.vue';
+import PaperLinks from '@/components/PaperLinks.vue';
 import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
 import { useOwnCash } from '@/composables/cashGuard';
 import { api, errorMessage } from '@/services/api';
@@ -137,7 +138,8 @@ defineExpose({ load });
     <div v-if="selected && folio" class="card space-y-4">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h2 class="font-semibold">{{ t('dashboard.room', { number: selected.room.number }) }} · {{ selected.guest.firstName }} {{ selected.guest.lastName }}</h2>
-        <div class="flex gap-2">
+        <div class="flex items-center gap-2">
+          <PaperLinks :params="{ document: 'STATEMENT', reservationId: selected.id }" :title="t('print.documents.STATEMENT')" @error="error = $event" />
           <button class="btn-secondary" type="button" @click="print({ document: 'STATEMENT', reservationId: selected.id })">{{ t('folio.print') }}</button>
           <RouterLink :to="{ name: 'reservation', params: { id: selected.id } }" class="btn-secondary">{{ t('roomAccount.openReservation') }}</RouterLink>
         </div>
@@ -158,6 +160,7 @@ defineExpose({ load });
                 <button v-if="charge.invoice" class="text-indigo-600 hover:underline" type="button" @click="print({ document: 'INVOICE', invoiceId: charge.invoice.id })">
                   {{ charge.invoice.fullNumber }}
                 </button>
+                <PaperLinks v-if="charge.invoice" class="ml-2" :params="{ document: 'INVOICE', invoiceId: charge.invoice.id }" :title="charge.invoice.fullNumber" @error="error = $event" />
                 <span v-else class="text-amber-700">{{ t('roomAccount.uninvoiced') }}</span>
               </td>
               <td class="py-1.5 text-right">{{ money(charge.total) }}</td>
@@ -166,6 +169,7 @@ defineExpose({ load });
               <td class="py-1.5">{{ t('folio.payment') }} · {{ paymentTypes.byId(payment.paymentTypeId)?.name ?? PAYMENT_METHOD_LABELS[payment.method] }} <span class="text-xs text-slate-500">{{ formatDateTime(payment.createdAt) }}</span></td>
               <td class="py-1.5 text-xs">
                 <button class="text-indigo-600 hover:underline" type="button" @click="print({ document: 'PAYMENT', paymentId: payment.id })">{{ t('folio.proof') }}</button>
+                <PaperLinks class="ml-2" :params="{ document: 'PAYMENT', paymentId: payment.id }" :title="t('print.documents.PAYMENT')" @error="error = $event" />
               </td>
               <td class="py-1.5 text-right">-{{ money(payment.amount) }}</td>
             </tr>

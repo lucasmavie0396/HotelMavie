@@ -113,6 +113,20 @@ describe('Preparacao AT', () => {
     await ctx.http().get(`/api/saft?hotelId=${hotel.id}&from=${day(0)}&to=${day(0)}`).set(auth).expect(400);
   });
 
+  it('a fatura e a conta saem em 80 mm e em A4', async () => {
+    const { hotel, rooms } = await fiscalHotel();
+    const id = await invoiceFor(hotel.id, rooms[0].id);
+    const invoice = await ctx.http().post(`/api/reservations/${id}/invoices`).set(auth).send({ type: 'INVOICE_RECEIPT' }).expect(201);
+    const sizes = { MM80: '/MediaBox [0 0 226.77', A4: '/MediaBox [0 0 595.28' };
+    const requests = [{ document: 'INVOICE', invoiceId: invoice.body.id }, { document: 'STATEMENT', reservationId: id }];
+    for (const request of requests) {
+      for (const [paper, size] of Object.entries(sizes)) {
+        const pdf = await ctx.http().get('/api/print/pdf').query({ ...request, paper }).set(auth).buffer(true).expect(200);
+        expect((pdf.body as Buffer).toString('latin1')).toContain(size);
+      }
+    }
+  });
+
   it('o documento impresso segue o formato de Mocambique', async () => {
     const { hotel, rooms } = await fiscalHotel();
     await ctx.prisma.hotel.update({ where: { id: hotel.id }, data: { currency: 'MZN' } });

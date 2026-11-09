@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
+import PaperLinks from '@/components/PaperLinks.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import CashRequired from '@/components/CashRequired.vue';
@@ -106,10 +107,6 @@ function pdf(id: number) {
   printDocument({ document: 'RECEIPT', receiptId: id }).catch((e) => (error.value = errorMessage(e)));
 }
 
-function pdfA4(id: number) {
-  openInvoicePdf(id, 'receipts').catch((e) => (error.value = errorMessage(e)));
-}
-
 onMounted(load);
 </script>
 
@@ -209,6 +206,7 @@ onMounted(load);
           <tr v-for="item in receipts" :key="item.id" class="border-b border-slate-100" :class="item.status === 'CANCELLED' ? 'text-slate-400 line-through' : ''">
             <td class="px-4 py-2">
               <button class="text-indigo-600 hover:underline" type="button" @click="pdf(item.id)">{{ item.fullNumber }}</button>
+              <PaperLinks class="ml-2" :params="{ document: 'RECEIPT', receiptId: item.id }" :title="item.fullNumber" @error="error = $event" />
             </td>
             <td class="px-4 py-2">{{ formatDateTime(item.issuedAt) }}</td>
             <td class="px-4 py-2">{{ item.customerName }}</td>
