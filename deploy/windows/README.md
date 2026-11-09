@@ -205,15 +205,15 @@ $acao = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile 
 Register-ScheduledTask -TaskName 'MAVIE-HGest backup' -Action $acao -Trigger (New-ScheduledTaskTrigger -Daily -At 2am) -User SYSTEM -RunLevel Highest
 ```
 
-## 9. Impressoras nos postos
+## 9. Impressoras nos postos e no servidor
 
-Em cada computador que imprime talões diretamente, arranca o agente de impressão ([`print-agent`](../../print-agent/README.md)) e autoriza o endereço do sistema:
+O setup instala o agente de impressão ([`print-agent`](../../print-agent/README.md)) nos postos e também no computador onde o sistema está instalado; a atualização deixa-o instalado nos hotéis que já existem. Arranca sozinho ao entrar no Windows e aceita sempre o próprio computador (`localhost`, nome e IPs, em qualquer porta).
+
+Para o reinstalar no servidor corre `hoteis.ps1 -Acao agente`. Sem o setup, arranca-o à mão e autoriza o endereço do sistema:
 
 ```bat
 setx PRINT_AGENT_ORIGINS "http://servidor-hotel:8080"
 ```
-
-Se os utilizadores entrarem às vezes pelo IP, acrescenta também esse endereço, separado por vírgula.
 
 ## 10. Mudar de servidor
 

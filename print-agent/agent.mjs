@@ -2,11 +2,11 @@ import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { unlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { tmpdir } from 'node:os';
+import { hostname, networkInterfaces, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const PORT = Number(process.env.PRINT_AGENT_PORT ?? 9123);
 const ORIGINS = (process.env.PRINT_AGENT_ORIGINS ?? 'http://localhost:5173,http://127.0.0.1:5173')
   .split(',')
@@ -89,10 +89,28 @@ function send(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+function localNames() {
+  const names = new Set(['localhost', '127.0.0.1', '[::1]', hostname().toLowerCase()]);
+  for (const addresses of Object.values(networkInterfaces())) {
+    for (const address of addresses ?? []) names.add(address.family === 'IPv6' ? `[${address.address}]` : address.address);
+  }
+  return names;
+}
+
+function isAllowedOrigin(origin) {
+  if (ORIGINS.includes(origin)) return true;
+  try {
+    const { protocol, hostname: name } = new URL(origin);
+    return (protocol === 'http:' || protocol === 'https:') && localNames().has(name.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 const server = createServer(async (req, res) => {
   const origin = req.headers.origin?.replace(/\/$/, '');
   if (origin) {
-    if (!ORIGINS.includes(origin)) {
+    if (!isAllowedOrigin(origin)) {
       send(res, 403, { message: `Origem ${origin} nao autorizada. Acrescente-a a PRINT_AGENT_ORIGINS.` });
       return;
     }
@@ -141,7 +159,16 @@ const server = createServer(async (req, res) => {
   }
 });
 
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    console.log(`O agente de impressao ja esta a correr na porta ${PORT}.`);
+    process.exit(0);
+  }
+  console.error(error.message);
+  process.exit(1);
+});
+
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Agente de impressao MAVIE-HGest ${VERSION} em http://127.0.0.1:${PORT}`);
-  console.log(`Origens autorizadas: ${ORIGINS.join(', ')}`);
+  console.log(`Autorizados: este computador e ${ORIGINS.join(', ')}`);
 });

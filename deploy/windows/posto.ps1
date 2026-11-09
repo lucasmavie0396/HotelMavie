@@ -10,16 +10,6 @@ $ErrorActionPreference = 'Stop'
 
 $Registo = Join-Path $Raiz 'posto.log'
 $ListaAtalhos = Join-Path $Raiz 'posto-atalhos.txt'
-$ListaOrigens = Join-Path $Raiz 'posto-origens.txt'
-$TarefaAgente = 'MAVIE-HGest agente de impressao'
-
-function Add-LineOnce([string]$Path, [string]$Line) {
-  $lines = @()
-  if (Test-Path $Path) { $lines = @([IO.File]::ReadAllLines($Path) | Where-Object { $_ }) }
-  if ($lines -notcontains $Line) { $lines += $Line }
-  [IO.File]::WriteAllLines($Path, [string[]]$lines)
-  return $lines
-}
 
 function Get-AgentNode {
   $node = Find-Node
@@ -31,36 +21,6 @@ function Get-AgentNode {
   }
   if (-not $node) { throw 'Node.js nao ficou instalado.' }
   return $node
-}
-
-function Install-PrintAgent([string]$Origin) {
-  Write-Step 'Agente de impressao'
-  $node = Get-AgentNode
-  $agent = Join-Path $Raiz 'print-agent\agent.mjs'
-  foreach ($existing in @([string[]](([Environment]::GetEnvironmentVariable('PRINT_AGENT_ORIGINS', 'Machine') -split ',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }))) {
-    Add-LineOnce $ListaOrigens $existing | Out-Null
-  }
-  $origins = (Add-LineOnce $ListaOrigens $Origin) -join ','
-  Stop-ScheduledTask -TaskName $TarefaAgente -ErrorAction SilentlyContinue
-  foreach ($process in @(Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.ToLowerInvariant().Contains($agent.ToLowerInvariant()) })) {
-    Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
-  }
-  $deadline = (Get-Date).AddSeconds(15)
-  while ((Get-NetTCPConnection -State Listen -LocalPort 9123 -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
-  $safeNode = $node.Replace("'", "''")
-  $safeAgent = $agent.Replace("'", "''")
-  $command = "`$env:PRINT_AGENT_ORIGINS='$origins'; & '$safeNode' '$safeAgent'"
-  $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command `"$command`"" -WorkingDirectory (Split-Path $agent)
-  $trigger = New-ScheduledTaskTrigger -AtLogOn
-  $principal = New-ScheduledTaskPrincipal -GroupId 'S-1-5-32-545' -RunLevel Limited
-  $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
-  Register-ScheduledTask -TaskName $TarefaAgente -Description 'MAVIE-HGest: agente de impressao deste posto' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
-  try {
-    Start-ScheduledTask -TaskName $TarefaAgente
-  } catch {
-    Write-Note 'O agente de impressao arranca quando um utilizador entrar no Windows.'
-  }
-  Write-Ok "Agente autorizado para: $origins"
 }
 
 try {
@@ -86,7 +46,7 @@ try {
   Add-LineOnce $ListaAtalhos $shortcut | Out-Null
   Write-Ok "Atalho do painel: $shortcut"
 
-  if (-not $SemImpressao) { Install-PrintAgent $url }
+  if (-not $SemImpressao) { Install-PrintAgent (Get-AgentNode) @($url) }
   Remove-Item -LiteralPath $Registo -Force -ErrorAction SilentlyContinue
   Write-Step 'Posto pronto'
   exit 0

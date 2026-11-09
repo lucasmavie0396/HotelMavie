@@ -157,7 +157,7 @@ export const posViews = {
     },
     print: {
       documents: { ORDER: 'Pedido', VOID: 'Anulacao', PREBILL: 'Consulta de mesa', STATEMENT: 'Conta', INVOICE: 'Fatura', RECEIPT: 'Recibo', PAYMENT: 'Pagamento', TEST: 'Pagina de teste', REPORT: 'Relatorio' },
-      agentDown: 'O agente de impressao nao esta a correr neste computador (print-agent/iniciar.cmd)',
+      agentDown: 'O agente de impressao nao esta a correr neste computador. Volte a entrar no Windows ou corra o setup neste computador',
       agentError: 'Agente de impressao: erro {status}',
       printedOn: 'Impresso em {name}',
       pdfOpened: 'PDF aberto ({name})',
@@ -323,7 +323,7 @@ export const posViews = {
     },
     print: {
       documents: { ORDER: 'Order', VOID: 'Void', PREBILL: 'Pre-bill', STATEMENT: 'Bill', INVOICE: 'Invoice', RECEIPT: 'Receipt', PAYMENT: 'Payment', TEST: 'Test page', REPORT: 'Report' },
-      agentDown: 'The print agent is not running on this computer (print-agent/iniciar.cmd)',
+      agentDown: 'The print agent is not running on this computer. Sign in to Windows again or run the setup on this computer',
       agentError: 'Print agent: error {status}',
       printedOn: 'Printed on {name}',
       pdfOpened: 'PDF opened ({name})',

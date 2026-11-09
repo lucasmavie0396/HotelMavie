@@ -15,7 +15,7 @@ function Resolve-UpdateTarget([string]$Text) {
   $instance = Get-SqlServerInstance $value
   if (-not $instance) { throw (U 'Inst\u00e2ncia n\u00e3o encontrada neste computador. Para outro servidor escreva servidor:porta.') }
   if (-not $instance.Running) { throw (U 'O servi\u00e7o ') + $instance.Service + (U ' est\u00e1 parado.') }
-  if (-not $instance.Port) { throw (U 'A inst\u00e2ncia n\u00e3o tem o TCP ligado.') }
+  if (-not ($instance.TcpEnabled -and $instance.Port)) { throw (U 'A inst\u00e2ncia n\u00e3o tem o TCP ligado.') }
   return [pscustomobject]@{ Host = 'localhost'; Port = $instance.Port; Instance = $instance }
 }
 
@@ -113,7 +113,6 @@ if ($preferred) { $instance.Text = $preferred.Name }
 Add-Field $instance 160 63 460 26 | Out-Null
 Add-Text 'Utilizador' 20 104 130 | Out-Null
 $user = New-Object Windows.Forms.TextBox
-$user.Text = 'sa'
 Add-Field $user 160 101 200 26 | Out-Null
 Add-Text 'Password' 20 142 130 | Out-Null
 $password = New-Object Windows.Forms.TextBox
@@ -151,7 +150,15 @@ function Invoke-Safely([scriptblock]$Action) {
     & $Action
   } catch {
     $message = "$($_.Exception.Message)".Replace('SQL Server: ', '')
-    if ($message -match 'Authentication failed|credentials') { $message = U 'Utilizador ou password errados.' }
+    if ($message -match 'Authentication failed|credentials|Login failed') {
+      if ($user.Text.Trim()) {
+        $message = U 'Utilizador ou password errados.'
+      } else {
+        $message = U 'A conta do Windows n\u00e3o tem acesso a esta inst\u00e2ncia. Escreva a password do sa: as bases aparecem sozinhas.'
+        $user.Text = 'sa'
+        [void]$password.Focus()
+      }
+    }
     Show-Status $false $message
   } finally {
     $form.Cursor = 'Default'
@@ -160,22 +167,97 @@ function Invoke-Safely([scriptblock]$Action) {
   }
 }
 
-$list.Add_Click({
-  Invoke-Safely {
-    $database.Items.Clear()
-    $pending.Text = ''
-    $status.Text = ''
-    $target = Resolve-UpdateTarget $instance.Text
-    $found = @(Get-SystemDatabases $target $user.Text.Trim() $password.Text)
-    foreach ($name in $found) { [void]$database.Items.Add($name) }
-    if ($found.Count) {
-      $database.SelectedIndex = 0
-      Show-Status $true ("$($found.Count) " + (U 'base(s) do MAVIE-HGest nesta inst\u00e2ncia.'))
-    } else {
-      Show-Status $false (U 'N\u00e3o h\u00e1 bases do MAVIE-HGest nesta inst\u00e2ncia.')
+$script:lastKey = ''
+
+function Get-FormKey { return "$($instance.Text.Trim())|$($user.Text.Trim())|$($password.Text)" }
+
+function Open-UpdateTarget {
+  $text = $instance.Text.Trim()
+  if ($text -notmatch ':\d+$') {
+    $info = Get-SqlServerInstance $text
+    if ($info -and -not $info.Running) {
+      Show-Status $true ((U 'A arrancar o servi\u00e7o ') + $info.Service + '...')
+      [Windows.Forms.Application]::DoEvents()
+      Start-Service -Name $info.Service
+      if ($info.Port) { Wait-SqlServerPort $info.Port | Out-Null }
+      $info = Get-SqlServerInstance $text
+    }
+    if ($info -and -not ($info.TcpEnabled -and $info.Port)) {
+      $question = (U 'A inst\u00e2ncia ') + $info.Name + (U ' n\u00e3o tem o TCP ligado. Ligar agora, com porta fixa e autentica\u00e7\u00e3o SQL? O servi\u00e7o vai reiniciar e as aplica\u00e7\u00f5es que o usam param por momentos.')
+      if ([Windows.Forms.MessageBox]::Show($question, 'MAVIE-HGest', 'YesNo', 'Question') -eq 'Yes') {
+        Show-Status $true (U 'A configurar a inst\u00e2ncia...')
+        [Windows.Forms.Application]::DoEvents()
+        $script:SqlInstancia = $info.Name
+        Set-SqlServerConfig | Out-Null
+      }
     }
   }
+  return Resolve-UpdateTarget $text
+}
+
+function Update-DatabaseList {
+  $script:lastKey = Get-FormKey
+  $database.Items.Clear()
+  $pending.Text = ''
+  Show-Status $true (U 'A procurar as bases de dados...')
+  [Windows.Forms.Application]::DoEvents()
+  $target = Open-UpdateTarget
+  $found = @(Get-SystemDatabases $target $user.Text.Trim() $password.Text)
+  foreach ($name in $found) { [void]$database.Items.Add($name) }
+  if ($found.Count) {
+    $database.SelectedIndex = 0
+    Show-Status $true ("$($found.Count) " + (U 'base(s) do MAVIE-HGest nesta inst\u00e2ncia.'))
+  } else {
+    Show-Status $false (U 'N\u00e3o h\u00e1 bases do MAVIE-HGest nesta inst\u00e2ncia.')
+  }
+}
+
+function Request-DatabaseList {
+  if ((Get-FormKey) -eq $script:lastKey) { return }
+  if (-not $instance.Text.Trim()) { return }
+  if ($user.Text.Trim() -and -not $password.Text) { return }
+  Invoke-Safely { Update-DatabaseList }
+}
+
+function Start-AutomaticLoad {
+  if (-not $instance.Text.Trim()) {
+    Show-Status $false (U 'N\u00e3o h\u00e1 SQL Server neste computador. Para outro servidor escreva servidor:porta na inst\u00e2ncia.')
+    return
+  }
+  Invoke-Safely {
+    $preferredName = $instance.Text.Trim()
+    $ready = @(@($preferredName) + @(Get-SqlInstanceNames | Where-Object { $_ -ine $preferredName }) | Where-Object {
+      $info = Get-SqlServerInstance $_
+      $info -and $info.Running -and $info.TcpEnabled -and $info.Port
+    })
+    if ($ready.Count -gt 1) {
+      Show-Status $true (U 'A procurar as bases de dados nas inst\u00e2ncias deste computador...')
+      [Windows.Forms.Application]::DoEvents()
+      foreach ($name in $ready) {
+        try {
+          if (@(Get-SystemDatabases (Resolve-UpdateTarget $name) '' '').Count) {
+            $instance.Text = $name
+            break
+          }
+        } catch {
+          continue
+        }
+      }
+    }
+    Update-DatabaseList
+  }
+}
+
+$form.AcceptButton = $list
+$form.Add_Shown({ Start-AutomaticLoad })
+$instance.Add_SelectionChangeCommitted({
+  $instance.Text = "$($instance.SelectedItem)"
+  Request-DatabaseList
 })
+$instance.Add_Leave({ Request-DatabaseList })
+$user.Add_Leave({ Request-DatabaseList })
+$password.Add_Leave({ Request-DatabaseList })
+$list.Add_Click({ Invoke-Safely { Update-DatabaseList } })
 
 $database.Add_SelectedIndexChanged({
   if (-not $database.SelectedItem) { return }

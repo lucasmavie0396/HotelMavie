@@ -28,9 +28,11 @@ O agente escuta apenas em `http://127.0.0.1:9123`, por isso só é acessível a 
 | Variável | Predefinição | Descrição |
 |---|---|---|
 | `PRINT_AGENT_PORT` | `9123` | Porta local |
-| `PRINT_AGENT_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Endereços do MAVIE-HGest autorizados a imprimir (separados por vírgulas). Em produção, acrescente o domínio, por exemplo `https://hgest.exemplo.co.mz`. |
+| `PRINT_AGENT_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Endereços extra do MAVIE-HGest autorizados a imprimir (separados por vírgulas), por exemplo o servidor de um posto ou `https://hgest.exemplo.co.mz`. |
 
-Pedidos vindos de outros sites são recusados.
+O próprio computador (`localhost`, `127.0.0.1`, o seu nome e os seus IPs, em qualquer porta) está sempre autorizado. Pedidos vindos de outros sites são recusados.
+
+O setup instala o agente sozinho, em postos e em servidores, como tarefa `MAVIE-HGest agente de impressao` que arranca ao entrar no Windows. Para o reinstalar num servidor: `hoteis.ps1 -Acao agente`.
 
 ## Arrancar com o Windows
 

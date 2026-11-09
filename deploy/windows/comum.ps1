@@ -255,6 +255,47 @@ function Get-SqlServerInstance([string]$Name = '') {
   }
 }
 
+function Add-LineOnce([string]$Path, [string]$Line) {
+  $lines = @()
+  if (Test-Path $Path) { $lines = @([IO.File]::ReadAllLines($Path) | Where-Object { $_ }) }
+  if ($lines -notcontains $Line) { $lines += $Line }
+  [IO.File]::WriteAllLines($Path, [string[]]$lines)
+  return $lines
+}
+
+function Install-PrintAgent([string]$Node, [string[]]$Origins) {
+  Write-Step 'Agente de impressao'
+  $taskName = 'MAVIE-HGest agente de impressao'
+  $agent = Join-Path $Raiz 'print-agent\agent.mjs'
+  $list = Join-Path $Raiz 'posto-origens.txt'
+  foreach ($existing in @([string[]](([Environment]::GetEnvironmentVariable('PRINT_AGENT_ORIGINS', 'Machine') -split ',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }))) {
+    Add-LineOnce $list $existing | Out-Null
+  }
+  foreach ($origin in @($Origins | Where-Object { $_ })) { Add-LineOnce $list $origin.TrimEnd('/') | Out-Null }
+  $allowed = ''
+  if (Test-Path $list) { $allowed = @([IO.File]::ReadAllLines($list) | Where-Object { $_ }) -join ',' }
+  Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+  foreach ($process in @(Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.ToLowerInvariant().Contains($agent.ToLowerInvariant()) })) {
+    Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+  }
+  $deadline = (Get-Date).AddSeconds(15)
+  while ((Get-NetTCPConnection -State Listen -LocalPort 9123 -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+  $safeNode = $Node.Replace("'", "''")
+  $safeAgent = $agent.Replace("'", "''")
+  $command = "`$env:PRINT_AGENT_ORIGINS='$allowed'; & '$safeNode' '$safeAgent'"
+  $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command `"$command`"" -WorkingDirectory (Split-Path $agent)
+  $trigger = New-ScheduledTaskTrigger -AtLogOn
+  $principal = New-ScheduledTaskPrincipal -GroupId 'S-1-5-32-545' -RunLevel Limited
+  $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
+  Register-ScheduledTask -TaskName $taskName -Description 'MAVIE-HGest: agente de impressao deste computador' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+  try {
+    Start-ScheduledTask -TaskName $taskName
+  } catch {
+    Write-Note 'O agente de impressao arranca quando um utilizador entrar no Windows.'
+  }
+  Write-Ok 'Agente de impressao ativo neste computador'
+}
+
 function Find-PreferredSqlServerInstance {
   $names = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL' -ErrorAction SilentlyContinue
   if (-not $names) { return $null }

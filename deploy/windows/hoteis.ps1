@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('estado', 'novo', 'atalho', 'iniciar', 'parar', 'reiniciar', 'logs', 'backup', 'agendar-backups', 'atualizar', 'remover')]
+  [ValidateSet('estado', 'novo', 'atalho', 'agente', 'iniciar', 'parar', 'reiniciar', 'logs', 'backup', 'agendar-backups', 'atualizar', 'remover')]
   [string]$Acao = 'estado',
   [string]$Codigo,
   [string]$Nome,
@@ -42,6 +42,14 @@ function Get-Targets {
   $found = @($all | Where-Object { $_.Codigo -eq $Codigo.ToLowerInvariant() })
   if (-not $found) { throw "Nao existe o hotel '$Codigo'. Ve a lista com: hoteis.ps1 -Acao estado" }
   return $found
+}
+
+function Install-LocalPrintAgent([string]$Node, [string[]]$Urls) {
+  try {
+    Install-PrintAgent $Node $Urls
+  } catch {
+    Write-Note "Agente de impressao nao instalado: $($_.Exception.Message)"
+  }
 }
 
 function Get-Health([int]$HealthPort) {
@@ -214,6 +222,7 @@ function New-Hotel {
 
   $shortcut = New-PanelShortcut $Nome $publicUrl
   Write-Ok "Atalho do painel no ambiente de trabalho: $shortcut"
+  Install-LocalPrintAgent $node @($publicUrl)
 
   if ($SemServico) {
     Write-Step 'Concluido (sem arranque automatico)'
@@ -262,6 +271,10 @@ switch ($Acao) {
       if (-not $label) { $label = $item.Codigo }
       Write-Ok "$($item.Codigo): $(New-PanelShortcut $label $item.Url)"
     }
+  }
+  'agente' {
+    Assert-Admin
+    Install-PrintAgent (Assert-Node) @(Get-HotelInstances | ForEach-Object { $_.Url })
   }
   'iniciar' {
     Assert-Admin
@@ -356,6 +369,7 @@ switch ($Acao) {
       Start-Api $item.TaskName
       if (Wait-Health $item.Port) { Write-Ok "$($item.Codigo): a correr" } else { Write-Note "$($item.Codigo): sem resposta, ve $($item.LogFile)" }
     }
+    Install-LocalPrintAgent $node @($items | ForEach-Object { $_.Url })
     if ($failed) {
       Write-Host ''
       Write-Host "A atualizacao falhou: $($failed.Exception.Message)" -ForegroundColor Red
