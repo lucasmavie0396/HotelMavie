@@ -18,6 +18,16 @@ function Find-Iscc {
   throw 'Inno Setup 6 nao encontrado. Instala-o de https://jrsoftware.org/isdl.php e volta a correr.'
 }
 
+function Get-InstallerCode {
+  if ($env:MAVIE_INSTALLER_CODE) { return $env:MAVIE_INSTALLER_CODE.Trim() }
+  $file = Join-Path $PSScriptRoot 'codigo-instalador.txt'
+  if (Test-Path $file) {
+    $code = (Get-Content -LiteralPath $file -Raw).Trim()
+    if ($code) { return $code }
+  }
+  throw 'Falta o codigo do instalador: cria instalador\codigo-instalador.txt (fica fora do Git) ou define MAVIE_INSTALLER_CODE.'
+}
+
 function Copy-Folder([string]$From, [string]$To, [string[]]$Skip = @()) {
   New-Item -ItemType Directory -Force $To | Out-Null
   foreach ($item in Get-ChildItem -LiteralPath $From -Force) {
@@ -28,6 +38,7 @@ function Copy-Folder([string]$From, [string]$To, [string[]]$Skip = @()) {
 
 Write-Host 'MAVIE-HGest - gerar o instalador' -ForegroundColor White
 $iscc = Find-Iscc
+$installerCode = Get-InstallerCode
 $node = Assert-Node
 $npm = Get-Npm $node
 $obj = Join-Path $PSScriptRoot 'obj'
@@ -80,6 +91,6 @@ if (-not $SemInstaladores) {
 Write-Step 'Gerar o ficheiro unico (Inno Setup)'
 $version = (Get-Content (Join-Path $Backend 'package.json') -Raw | ConvertFrom-Json).version
 $stamp = Get-Date -Format 'yyyyMMdd'
-Invoke-Native $iscc @('/Q', "/DStage=$stage", "/DOutput=$saida", "/DAppVersion=$version", "/DBuildStamp=$stamp", (Join-Path $PSScriptRoot 'MAVIE-HGest.iss')) $PSScriptRoot
+Invoke-Native $iscc @('/Q', "/DStage=$stage", "/DOutput=$saida", "/DAppVersion=$version", "/DBuildStamp=$stamp", "/DInstallerCode=$installerCode", (Join-Path $PSScriptRoot 'MAVIE-HGest.iss')) $PSScriptRoot
 $exe = Get-ChildItem $saida -Filter "MAVIE-HGest-Setup-$version-$stamp.exe" | Select-Object -First 1
 Write-Ok "Instalador: $($exe.FullName) ($([math]::Round($exe.Length / 1MB)) MB)"

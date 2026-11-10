@@ -2,6 +2,10 @@
   #error Corre gerar-instalador.ps1 (define Stage, Output, AppVersion e BuildStamp)
 #endif
 
+#ifndef InstallerCode
+  #error Falta o codigo do instalador (codigo-instalador.txt ou MAVIE_INSTALLER_CODE)
+#endif
+
 #define AppName "MAVIE-HGest"
 
 [Setup]
@@ -22,6 +26,8 @@ OutputDir={#Output}
 OutputBaseFilename=MAVIE-HGest-Setup-{#AppVersion}-{#BuildStamp}
 Compression=lzma2
 SolidCompression=yes
+Password={#InstallerCode}
+Encryption=yes
 LZMANumBlockThreads=1
 WizardStyle=modern
 UninstallDisplayName={#AppName}

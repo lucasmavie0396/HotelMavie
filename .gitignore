@@ -21,3 +21,4 @@ frontend/test-results/
 frontend/playwright-report/
 /deploy/windows/instalador/obj/
 /deploy/windows/instalador/saida/
+/deploy/windows/instalador/codigo-instalador.txt

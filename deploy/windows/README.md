@@ -44,13 +44,14 @@ A procura e o teste precisam de que o servidor esteja preparado: o assistente No
 Para instalar em vários postos sem perguntas, corre em cada um, como administrador (acrescenta `/TASKS=` para não instalar o agente de impressão):
 
 ```bat
-MAVIE-HGest-Setup-0.1.0-AAAAMMDD.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TYPE=posto /COMPONENTS=posto /SERVIDOR=192.168.1.10 /PORTA=3101
+MAVIE-HGest-Setup-0.1.0-AAAAMMDD.exe /PASSWORD=<codigo> /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TYPE=posto /COMPONENTS=posto /SERVIDOR=192.168.1.10 /PORTA=3101
 ```
 
 Se algo falhar, o motivo fica em `C:\MAVIE-HGest\posto.log`. Para os postos chegarem ao servidor: o IP do servidor deve ser fixo (ou reservado no router), o hotel tem de ter a porta aberta na firewall (a opção do assistente, ligada por omissão) e a rede do servidor tem de estar como Privada. Um hotel criado com domínio só aceita ligações pelo IIS, por isso os postos usam o domínio em vez do IP. Para ligar um posto a outro hotel, corre o instalador outra vez com a outra porta: fica com os dois atalhos e o agente autorizado para ambos. Para desinstalar um posto, usa Definições → Aplicações → MAVIE-HGest.
 
 - **Atualizar:** corre o `.exe` novo por cima. Se já houver hotéis, o instalador para-os, substitui os ficheiros, faz backup e migra cada base (`hoteis.ps1 -Acao atualizar -SemCompilar`) e volta a arrancá-los. A pasta `dados` nunca é substituída.
 - **Desinstalar:** em Definições → Aplicações → MAVIE-HGest. Para os hotéis desta instalação e retira as tarefas, as regras de firewall e os atalhos. A pasta `dados` (bases, backups e chave AT) fica no disco: apaga-a à mão só depois de guardares o que for preciso.
+- **Código do instalador:** o setup pede um código logo no primeiro ecrã e não continua sem ele; os ficheiros vão cifrados com esse código, por isso também não se extraem sem ele. Nas instalações sem perguntas passa-se com `/PASSWORD=<codigo>`. O código não está no Git: ao gerar, `gerar-instalador.ps1` lê-o de `instalador/codigo-instalador.txt` (no `.gitignore`) ou da variável `MAVIE_INSTALLER_CODE`, e recusa gerar sem ele.
 - **O `.exe` não está assinado digitalmente.** O Windows SmartScreen pode avisar "O Windows protegeu o computador": carrega em **Mais informações → Executar mesmo assim**. Para tirar o aviso, é preciso um certificado de assinatura de código.
 
 **Gerar um novo instalador** (no computador de desenvolvimento, com o [Inno Setup 6](https://jrsoftware.org/isdl.php) instalado):
