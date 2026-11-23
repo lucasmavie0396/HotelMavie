@@ -9,7 +9,7 @@ param(
   [string]$DbPassword = '',
   [string]$AdminEmail = 'admin@maviehgest.com',
   [string]$DataDir,
-  [string]$TimeZone = 'Europe/Lisbon',
+  [string]$TimeZone = 'Africa/Maputo',
   [switch]$AtrasDoIIS,
   [switch]$AbrirFirewall,
   [switch]$SemServico,

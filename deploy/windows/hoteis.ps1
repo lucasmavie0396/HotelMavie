@@ -14,7 +14,7 @@ param(
   [int]$DbPort = 3306,
   [string]$DbAdminUser = 'root',
   [string]$DbAdminPassword = '',
-  [string]$TimeZone = 'Europe/Lisbon',
+  [string]$TimeZone = 'Africa/Maputo',
   [int]$DiasBackup = 30,
   [int]$Linhas = 60,
   [switch]$AbrirFirewall,
