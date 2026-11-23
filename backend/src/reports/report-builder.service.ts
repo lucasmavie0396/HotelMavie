@@ -20,6 +20,8 @@ import { Type } from 'class-transformer';
 import { IsDateString, IsInt, IsOptional, Length } from 'class-validator';
 import { JwtPayload } from '../auth/jwt-payload';
 import { paymentLabel } from '../billing/documents.service';
+import { ON_GUEST_ACCOUNT } from '../billing/folio.service';
+import { localParts } from '../at/at-format';
 import { Ticket } from '../billing/ticket-pdf.service';
 import { addDays, nightsBetween, parseDate, todayUtc } from '../common/dates';
 import { HotelQueryDto } from '../common/hotel-query.dto';
@@ -62,8 +64,11 @@ const EVERYONE: UserRole[] = [UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTI
 export const REPORTS: ReportDefinition[] = [
   { key: 'daily', title: 'Relatorio diario', description: 'Fecho do dia: ocupacao, chegadas, saidas, receita, recebimentos, documentos e caixa.', group: 'Operacao', params: 'date', roles: MANAGERS },
   { key: 'guests', title: 'Hospedes em casa', description: 'Lista de hospedes alojados num dia, com documento e nacionalidade.', group: 'Operacao', params: 'date', roles: EVERYONE },
+  { key: 'forecast', title: 'Previsao de ocupacao', description: 'Proximos dias: quartos reservados, ocupacao e receita prevista, reservas por confirmar e chegadas previstas.', group: 'Operacao', params: 'future', roles: EVERYONE },
+  { key: 'balances', title: 'Saldos dos hospedes em casa', description: 'Quanto deve cada quarto ocupado: consumos, pagamentos e saldo, com as saidas de hoje assinaladas.', group: 'Operacao', params: 'none', roles: EVERYONE },
   { key: 'reservations', title: 'Reservas do periodo', description: 'Reservas com entrada no periodo, por estado e origem, com totais e sinais.', group: 'Operacao', params: 'period', roles: EVERYONE },
   { key: 'occupancy', title: 'Ocupacao diaria', description: 'Dia a dia: quartos ocupados, taxa de ocupacao, chegadas, saidas e receita de alojamento.', group: 'Operacao', params: 'period', roles: MANAGERS },
+  { key: 'cancellations', title: 'Cancelamentos e no-shows', description: 'Reservas canceladas e no-shows com entrada no periodo, por origem, com o valor perdido e os sinais recebidos e devolvidos.', group: 'Operacao', params: 'period', roles: MANAGERS },
   { key: 'management', title: 'Resumo de gestao', description: 'Ocupacao, ADR, RevPAR, receita por area, pagamentos, faturacao e produtos mais vendidos.', group: 'Gestao', params: 'period', roles: MANAGERS },
   { key: 'sales', title: 'Mapa de faturacao', description: 'Todos os documentos emitidos (FT, FR, NC) e recibos, com base, IVA e totais.', group: 'Financeiro', params: 'period', roles: MANAGERS },
   { key: 'vat', title: 'Mapa de IVA', description: 'Base tributavel e imposto por taxa e por motivo de isencao, com notas de credito deduzidas.', group: 'Financeiro', params: 'period', roles: MANAGERS },
@@ -71,6 +76,7 @@ export const REPORTS: ReportDefinition[] = [
   { key: 'cash', title: 'Caixa', description: 'Sessoes de caixa: fundo, recebimentos em numerario, entradas, saidas e diferencas no fecho.', group: 'Financeiro', params: 'period', roles: MANAGERS },
   { key: 'accounts', title: 'Contas correntes', description: 'Divida de clientes por antiguidade (0-30, 31-60, 61-90 e mais de 90 dias).', group: 'Financeiro', params: 'none', roles: MANAGERS },
   { key: 'pos', title: 'Restaurante e bar', description: 'Vendas por produto, categoria e ponto de venda, ticket medio e anulacoes.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
+  { key: 'staff', title: 'Vendas por empregado e por hora', description: 'Contas, ticket medio e anulacoes de cada empregado e as horas com mais vendas no restaurante e bar.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
   { key: 'stock', title: 'Existencias', description: 'Quantidades e valor de stock por armazem, com os produtos abaixo do minimo.', group: 'Restauracao e stocks', params: 'stock', roles: MANAGERS },
   { key: 'inventory', title: 'Diferencas de inventario', description: 'Acertos dos inventarios lancados no periodo, por produto, com o valor das faltas e sobras.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
   { key: 'waste', title: 'Quebras e devolucoes', description: 'Quebras por motivo e por produto e devolucoes a fornecedores, ao custo medio.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
@@ -153,9 +159,10 @@ export class ReportBuilderService {
 
     let period: string;
     let sections: ReportSection[];
-    if (definition.params === 'period') {
-      const from = params.from ?? iso(addDays(todayUtc(), -30));
-      const to = params.to ?? iso(todayUtc());
+    if (definition.params === 'period' || definition.params === 'future') {
+      const future = definition.params === 'future';
+      const from = params.from ?? iso(future ? todayUtc() : addDays(todayUtc(), -30));
+      const to = params.to ?? iso(future ? addDays(todayUtc(), 29) : todayUtc());
       const range = reportPeriod(from, to);
       period = from === to ? `Dia ${day(range.from)}` : `${day(range.from)} a ${day(addDays(range.to, -1))} (${range.days} dias)`;
       sections = await this.periodReport(key, range, from, to, context);
@@ -173,7 +180,7 @@ export class ReportBuilderService {
       sections = result.sections;
     } else {
       period = `Situacao em ${day(todayUtc())}`;
-      sections = await this.accounts(context);
+      sections = key === 'balances' ? await this.balances(context) : await this.accounts(context);
     }
 
     return {
@@ -191,6 +198,12 @@ export class ReportBuilderService {
     switch (key) {
       case 'reservations':
         return this.reservations(range, context);
+      case 'forecast':
+        return this.forecast(range, context);
+      case 'cancellations':
+        return this.cancellations(range, context);
+      case 'staff':
+        return this.staff(range, context);
       case 'occupancy':
         return this.occupancy(range, context);
       case 'management':
@@ -210,6 +223,337 @@ export class ReportBuilderService {
       default:
         return this.pos(range, context);
     }
+  }
+
+  private async forecast(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
+    const [rooms, reservations] = await Promise.all([
+      this.prisma.room.count({ where: { hotelId: hotel.id } }),
+      this.prisma.reservation.findMany({
+        where: {
+          hotelId: hotel.id,
+          status: { in: [ReservationStatus.PENDING, ReservationStatus.CONFIRMED, ReservationStatus.CHECKED_IN] },
+          checkIn: { lt: range.to },
+          checkOut: { gt: range.from },
+        },
+        include: { guest: { select: { firstName: true, lastName: true } }, room: { select: { number: true } } },
+        orderBy: [{ checkIn: 'asc' }, { id: 'asc' }],
+      }),
+    ]);
+    const firm = reservations.filter((reservation) => reservation.status !== ReservationStatus.PENDING);
+    const pending = reservations.filter((reservation) => reservation.status === ReservationStatus.PENDING);
+    let soldNights = 0;
+    let pendingNights = 0;
+    let revenue = new Prisma.Decimal(0);
+    let arrivalsTotal = 0;
+    let departuresTotal = 0;
+    const rows: string[][] = [];
+    for (let index = 0; index < range.days; index++) {
+      const date = addDays(range.from, index);
+      const staying = firm.filter((reservation) => reservation.checkIn <= date && reservation.checkOut > date);
+      const waiting = pending.filter((reservation) => reservation.checkIn <= date && reservation.checkOut > date).length;
+      const dayRevenue = sumMoney(staying.map((reservation) => reservation.pricePerNight));
+      const arrivals = firm.filter((reservation) => iso(reservation.checkIn) === iso(date)).length;
+      const departures = firm.filter((reservation) => iso(reservation.checkOut) === iso(date)).length;
+      soldNights += staying.length;
+      pendingNights += waiting;
+      revenue = revenue.add(dayRevenue);
+      arrivalsTotal += arrivals;
+      departuresTotal += departures;
+      rows.push([
+        `${['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'][date.getUTCDay()]} ${day(date)}`,
+        String(staying.length),
+        rooms ? percent((staying.length / rooms) * 100) : '0%',
+        waiting ? String(waiting) : '-',
+        String(arrivals),
+        String(departures),
+        money(dayRevenue),
+      ]);
+    }
+    const available = rooms * range.days;
+    const rate = available ? (soldNights / available) * 100 : 0;
+    const arriving = reservations.filter((reservation) => reservation.checkIn >= range.from && reservation.checkIn < range.to);
+    return [
+      {
+        title: 'Resumo',
+        kpis: [
+          { label: 'Ocupacao prevista', value: percent(rate) },
+          { label: 'Noites reservadas', value: `${soldNights} de ${available}` },
+          { label: 'Receita prevista', value: money(revenue) },
+          { label: 'ADR previsto', value: money(soldNights ? revenue.div(soldNights) : 0) },
+          { label: 'Noites por confirmar', value: String(pendingNights) },
+          { label: 'Quartos', value: String(rooms) },
+        ],
+      },
+      {
+        title: 'Previsao por dia',
+        table: {
+          columns: [
+            { label: 'Dia', weight: 1.4 },
+            { label: 'Reservados', align: 'right' },
+            { label: 'Ocupacao', align: 'right' },
+            { label: 'Por confirmar', align: 'right' },
+            { label: 'Chegadas', align: 'right' },
+            { label: 'Saidas', align: 'right' },
+            { label: 'Receita', align: 'right', weight: 1.4 },
+          ],
+          rows,
+          totals: ['Total', String(soldNights), percent(rate), String(pendingNights), String(arrivalsTotal), String(departuresTotal), money(revenue)],
+        },
+        note: 'Ocupacao e receita contam as reservas confirmadas e os hospedes em casa, pelo preco por noite. As reservas pendentes aparecem em Por confirmar.',
+      },
+      {
+        title: 'Chegadas previstas',
+        table: {
+          columns: [
+            { label: 'Reserva', weight: 1.2 },
+            { label: 'Hospede', weight: 2 },
+            { label: 'Quarto', weight: 0.7 },
+            { label: 'Entrada', weight: 1 },
+            { label: 'Saida', weight: 1 },
+            { label: 'Noites', align: 'right', weight: 0.7 },
+            { label: 'Estado', weight: 1 },
+            { label: 'Sinal', align: 'right', weight: 1.1 },
+            { label: 'Total', align: 'right', weight: 1.2 },
+          ],
+          rows: arriving.map((reservation) => [
+            reservation.code,
+            `${reservation.guest.firstName} ${reservation.guest.lastName}`,
+            reservation.room.number,
+            day(reservation.checkIn),
+            day(reservation.checkOut),
+            String(nightsBetween(reservation.checkIn, reservation.checkOut)),
+            STATUS_LABELS[reservation.status],
+            reservation.depositAmount ? `${money(reservation.depositAmount)}${reservation.depositPaymentId ? '' : ' (por confirmar)'}` : '-',
+            money(reservation.totalAmount),
+          ]),
+          totals: ['Total', `${arriving.length} reservas`, '', '', '', '', '', '', money(sumMoney(arriving.map((reservation) => reservation.totalAmount)))],
+          empty: 'Sem chegadas previstas no periodo',
+        },
+      },
+    ];
+  }
+
+  private async cancellations(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
+    const reservations = await this.prisma.reservation.findMany({
+      where: { hotelId: hotel.id, status: { in: [ReservationStatus.CANCELLED, ReservationStatus.NO_SHOW] }, checkIn: { gte: range.from, lt: range.to } },
+      include: { guest: { select: { firstName: true, lastName: true } }, room: { select: { number: true } }, payments: { select: { amount: true } } },
+      orderBy: [{ checkIn: 'asc' }, { id: 'asc' }],
+    });
+    const rows = reservations.map((reservation) => {
+      const received = sumMoney(reservation.payments.filter((payment) => payment.amount.greaterThan(0)).map((payment) => payment.amount));
+      const refunded = sumMoney(reservation.payments.filter((payment) => payment.amount.lessThan(0)).map((payment) => payment.amount.neg()));
+      return { reservation, received, refunded, nights: nightsBetween(reservation.checkIn, reservation.checkOut) };
+    });
+    const cancelled = rows.filter((row) => row.reservation.status === ReservationStatus.CANCELLED);
+    const noShows = rows.filter((row) => row.reservation.status === ReservationStatus.NO_SHOW);
+    const lost = sumMoney(rows.map((row) => row.reservation.totalAmount));
+    const received = sumMoney(rows.map((row) => row.received));
+    const refunded = sumMoney(rows.map((row) => row.refunded));
+    const bySource = new Map<ReservationSource, { cancelled: number; noShow: number; total: Prisma.Decimal }>();
+    for (const row of rows) {
+      const current = bySource.get(row.reservation.source) ?? { cancelled: 0, noShow: 0, total: new Prisma.Decimal(0) };
+      if (row.reservation.status === ReservationStatus.CANCELLED) current.cancelled++;
+      else current.noShow++;
+      current.total = current.total.add(row.reservation.totalAmount);
+      bySource.set(row.reservation.source, current);
+    }
+    return [
+      {
+        title: 'Resumo',
+        kpis: [
+          { label: 'Cancelamentos', value: String(cancelled.length) },
+          { label: 'No-shows', value: String(noShows.length) },
+          { label: 'Noites perdidas', value: String(rows.reduce((sum, row) => sum + row.nights, 0)) },
+          { label: 'Valor das reservas', value: money(lost) },
+          { label: 'Recebido', value: money(received) },
+          { label: 'Devolvido', value: money(refunded) },
+          { label: 'Retido', value: money(received.sub(refunded)) },
+        ],
+      },
+      {
+        title: 'Por origem',
+        table: {
+          columns: [{ label: 'Origem', weight: 2 }, { label: 'Canceladas', align: 'right' }, { label: 'No-show', align: 'right' }, { label: 'Valor', align: 'right', weight: 1.3 }],
+          rows: [...bySource.entries()].map(([source, row]) => [SOURCE_LABELS[source], String(row.cancelled), String(row.noShow), money(row.total)]),
+          totals: ['Total', String(cancelled.length), String(noShows.length), money(lost)],
+          empty: 'Sem cancelamentos nem no-shows',
+        },
+      },
+      {
+        title: 'Reservas canceladas e no-shows',
+        table: {
+          columns: [
+            { label: 'Reserva', weight: 1.1 },
+            { label: 'Hospede', weight: 1.8 },
+            { label: 'Quarto', weight: 0.6 },
+            { label: 'Entrada', weight: 0.9 },
+            { label: 'Noites', align: 'right', weight: 0.6 },
+            { label: 'Origem', weight: 0.8 },
+            { label: 'Estado', weight: 0.9 },
+            { label: 'Cancelada em', weight: 1.1 },
+            { label: 'Recebido', align: 'right' },
+            { label: 'Devolvido', align: 'right' },
+            { label: 'Total', align: 'right', weight: 1.1 },
+          ],
+          rows: rows.map(({ reservation, received: paid, refunded: back, nights }) => [
+            reservation.code,
+            `${reservation.guest.firstName} ${reservation.guest.lastName}`,
+            reservation.room.number,
+            day(reservation.checkIn),
+            String(nights),
+            SOURCE_LABELS[reservation.source],
+            STATUS_LABELS[reservation.status],
+            reservation.cancelledAt ? Ticket.when(reservation.cancelledAt) : '-',
+            money(paid),
+            money(back),
+            money(reservation.totalAmount),
+          ]),
+          totals: ['Total', `${rows.length} reservas`, '', '', '', '', '', '', money(received), money(refunded), money(lost)],
+          empty: 'Sem cancelamentos nem no-shows com entrada no periodo',
+        },
+        note: 'Reservas canceladas ou marcadas como no-show com entrada prevista no periodo. Recebido e Devolvido sao os pagamentos e estornos registados em cada reserva.',
+      },
+    ];
+  }
+
+  private async staff(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
+    const orders = await this.prisma.order.findMany({
+      where: { hotelId: hotel.id, status: OrderStatus.CLOSED, closedAt: { gte: range.from, lt: range.to } },
+      include: { openedBy: { select: { name: true } }, items: { select: { quantity: true, total: true, voidedAt: true } } },
+    });
+    const byStaff = new Map<string, { orders: number; quantity: Prisma.Decimal; total: Prisma.Decimal; voided: number; voidedTotal: Prisma.Decimal }>();
+    const byHour = new Map<string, { orders: number; total: Prisma.Decimal }>();
+    let total = new Prisma.Decimal(0);
+    for (const order of orders) {
+      const sold = order.items.filter((item) => !item.voidedAt);
+      const voided = order.items.filter((item) => item.voidedAt);
+      const orderTotal = sumMoney(sold.map((item) => item.total));
+      total = total.add(orderTotal);
+      const name = order.openedBy?.name ?? 'Sem utilizador';
+      const current = byStaff.get(name) ?? { orders: 0, quantity: new Prisma.Decimal(0), total: new Prisma.Decimal(0), voided: 0, voidedTotal: new Prisma.Decimal(0) };
+      byStaff.set(name, {
+        orders: current.orders + 1,
+        quantity: sold.reduce((sum, item) => sum.add(item.quantity), current.quantity),
+        total: current.total.add(orderTotal),
+        voided: current.voided + voided.length,
+        voidedTotal: current.voidedTotal.add(sumMoney(voided.map((item) => item.total))),
+      });
+      const hour = localParts(order.closedAt!).dateTime.slice(11, 13);
+      const slot = byHour.get(hour) ?? { orders: 0, total: new Prisma.Decimal(0) };
+      byHour.set(hour, { orders: slot.orders + 1, total: slot.total.add(orderTotal) });
+    }
+    const share = (value: Prisma.Decimal) => percent(total.isZero() ? 0 : Number(value.div(total).mul(100)));
+    const busiest = [...byHour.entries()].sort((a, b) => b[1].total.comparedTo(a[1].total))[0];
+    const hourLabel = (hour: string) => `${hour}h-${String((Number(hour) + 1) % 24).padStart(2, '0')}h`;
+    return [
+      {
+        title: 'Resumo',
+        kpis: [
+          { label: 'Vendas', value: money(total) },
+          { label: 'Contas fechadas', value: String(orders.length) },
+          { label: 'Ticket medio', value: money(orders.length ? total.div(orders.length) : 0) },
+          { label: 'Hora com mais vendas', value: busiest ? hourLabel(busiest[0]) : '-' },
+        ],
+      },
+      {
+        title: 'Por empregado',
+        table: {
+          columns: [
+            { label: 'Empregado', weight: 2 },
+            { label: 'Contas', align: 'right', weight: 0.8 },
+            { label: 'Artigos', align: 'right', weight: 0.8 },
+            { label: 'Ticket medio', align: 'right' },
+            { label: 'Anulados', align: 'right', weight: 0.8 },
+            { label: 'Valor anulado', align: 'right' },
+            { label: 'Total', align: 'right' },
+            { label: 'Peso', align: 'right', weight: 0.7 },
+          ],
+          rows: [...byStaff.entries()]
+            .sort((a, b) => b[1].total.comparedTo(a[1].total))
+            .map(([name, row]) => [name, String(row.orders), qty(row.quantity), money(row.orders ? row.total.div(row.orders) : 0), String(row.voided), money(row.voidedTotal), money(row.total), share(row.total)]),
+          totals: ['Total', String(orders.length), '', money(orders.length ? total.div(orders.length) : 0), '', '', money(total), '100%'],
+          empty: 'Sem vendas no periodo',
+        },
+        note: 'Cada conta conta para quem a abriu. Anulados sao os artigos anulados depois de enviados para preparacao, nas contas desse empregado.',
+      },
+      {
+        title: 'Por hora',
+        table: {
+          columns: [{ label: 'Hora', weight: 1.4 }, { label: 'Contas', align: 'right' }, { label: 'Ticket medio', align: 'right' }, { label: 'Total', align: 'right' }, { label: 'Peso', align: 'right' }],
+          rows: [...byHour.entries()]
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([hour, row]) => [hourLabel(hour), String(row.orders), money(row.orders ? row.total.div(row.orders) : 0), money(row.total), share(row.total)]),
+          totals: ['Total', String(orders.length), money(orders.length ? total.div(orders.length) : 0), money(total), '100%'],
+          empty: 'Sem vendas no periodo',
+        },
+        note: 'Hora a que cada conta foi fechada.',
+      },
+    ];
+  }
+
+  private async balances({ hotel, money }: Context): Promise<ReportSection[]> {
+    const today = todayUtc();
+    const reservations = await this.prisma.reservation.findMany({
+      where: { hotelId: hotel.id, status: ReservationStatus.CHECKED_IN },
+      include: { guest: { select: { firstName: true, lastName: true } }, room: { select: { number: true } } },
+      orderBy: [{ checkOut: 'asc' }, { id: 'asc' }],
+    });
+    const ids = reservations.map((reservation) => reservation.id);
+    const [charges, payments] = ids.length
+      ? await Promise.all([
+          this.prisma.charge.groupBy({ by: ['reservationId'], where: { reservationId: { in: ids }, ...ON_GUEST_ACCOUNT }, _sum: { total: true } }),
+          this.prisma.payment.groupBy({ by: ['reservationId'], where: { reservationId: { in: ids } }, _sum: { amount: true } }),
+        ])
+      : [[], []];
+    const chargesOf = new Map(charges.map((row) => [row.reservationId, toMoney(row._sum.total ?? 0)]));
+    const paymentsOf = new Map(payments.map((row) => [row.reservationId, toMoney(row._sum.amount ?? 0)]));
+    const rows = reservations.map((reservation) => {
+      const consumed = chargesOf.get(reservation.id) ?? new Prisma.Decimal(0);
+      const paid = paymentsOf.get(reservation.id) ?? new Prisma.Decimal(0);
+      return { reservation, consumed, paid, balance: consumed.sub(paid), leaving: iso(reservation.checkOut) <= iso(today) };
+    });
+    const debt = sumMoney(rows.filter((row) => row.balance.greaterThan(0)).map((row) => row.balance));
+    const leavingWithDebt = rows.filter((row) => row.leaving && row.balance.greaterThan(0));
+    return [
+      {
+        title: 'Resumo',
+        kpis: [
+          { label: 'Quartos ocupados', value: String(rows.length) },
+          { label: 'Consumos', value: money(sumMoney(rows.map((row) => row.consumed))) },
+          { label: 'Pago', value: money(sumMoney(rows.map((row) => row.paid))) },
+          { label: 'Saldo em divida', value: money(debt) },
+          { label: 'Saidas hoje com saldo', value: String(leavingWithDebt.length) },
+        ],
+      },
+      {
+        title: 'Hospedes em casa',
+        table: {
+          columns: [
+            { label: 'Quarto', weight: 0.7 },
+            { label: 'Hospede', weight: 2 },
+            { label: 'Reserva', weight: 1.1 },
+            { label: 'Entrada', weight: 0.9 },
+            { label: 'Saida', weight: 1.1 },
+            { label: 'Consumos', align: 'right' },
+            { label: 'Pago', align: 'right' },
+            { label: 'Saldo', align: 'right', weight: 1.1 },
+          ],
+          rows: rows.map(({ reservation, consumed, paid, balance, leaving }) => [
+            reservation.room.number,
+            `${reservation.guest.firstName} ${reservation.guest.lastName}`,
+            reservation.code,
+            day(reservation.checkIn),
+            `${day(reservation.checkOut)}${leaving ? ' (hoje)' : ''}`,
+            money(consumed),
+            money(paid),
+            money(balance),
+          ]),
+          totals: ['Total', `${rows.length} quartos`, '', '', '', money(sumMoney(rows.map((row) => row.consumed))), money(sumMoney(rows.map((row) => row.paid))), money(sumMoney(rows.map((row) => row.balance)))],
+          empty: 'Nao ha hospedes em casa',
+        },
+        note: 'Consumos lancados na conta do quarto, sem os que ja passaram a fatura em conta corrente. Saldo negativo = valor pago a mais (a devolver ou a usar na estadia).',
+      },
+    ];
   }
 
   private async daily(date: Date, { hotel, money }: Context): Promise<ReportSection[]> {

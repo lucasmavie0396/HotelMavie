@@ -1,6 +1,6 @@
 import { Hotel, UserRole } from '@prisma/client';
 
-export type ReportParams = 'period' | 'date' | 'stock' | 'session' | 'none';
+export type ReportParams = 'period' | 'future' | 'date' | 'stock' | 'session' | 'none';
 
 export interface ReportDefinition {
   key: string;

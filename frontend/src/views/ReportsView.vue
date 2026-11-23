@@ -51,7 +51,7 @@ function query() {
   const kind = selected.value?.params;
   return {
     hotelId: hotels.selectedId,
-    ...(kind === 'period' ? { from: params.from, to: params.to } : {}),
+    ...(kind === 'period' || kind === 'future' ? { from: params.from, to: params.to } : {}),
     ...(kind === 'date' ? { date: params.date } : {}),
     ...(kind === 'stock' && params.warehouseId ? { warehouseId: params.warehouseId } : {}),
   };
@@ -168,7 +168,22 @@ onMounted(() =>
 
       <div v-if="selected" class="min-w-0 space-y-4">
         <form class="card flex flex-wrap items-end gap-3" @submit.prevent="view">
-          <template v-if="selected.params === 'period'">
+          <template v-if="selected.params === 'future'">
+            <label class="text-sm">{{ t('common.from') }}<input v-model="params.from" class="input mt-1 w-auto" type="date" required /></label>
+            <label class="text-sm">{{ t('common.to') }}<input v-model="params.to" class="input mt-1 w-auto" type="date" :min="params.from" required /></label>
+            <div class="flex flex-wrap gap-1 pb-0.5">
+              <button
+                v-for="days in [7, 30, 90]"
+                :key="days"
+                type="button"
+                class="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:border-indigo-300 hover:text-indigo-700"
+                @click="Object.assign(params, { from: todayIso(), to: addDays(todayIso(), days - 1) }); view()"
+              >
+                {{ t('reports.nextDays', { n: days }) }}
+              </button>
+            </div>
+          </template>
+          <template v-else-if="selected.params === 'period'">
             <label class="text-sm">{{ t('common.from') }}<input v-model="params.from" class="input mt-1 w-auto" type="date" required /></label>
             <label class="text-sm">{{ t('common.to') }}<input v-model="params.to" class="input mt-1 w-auto" type="date" :min="params.from" required /></label>
             <div class="flex flex-wrap gap-1 pb-0.5">

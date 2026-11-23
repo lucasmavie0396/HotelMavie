@@ -1,5 +1,6 @@
 import { UserRole } from '@prisma/client';
 import { REPORTS } from '../src/reports/report-builder.service';
+import { formatCurrency } from '../src/common/money';
 import { createApp, createGuest, createHotel, createUser, day, login, TestContext } from './helpers';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
@@ -35,7 +36,7 @@ describe('Relatorios', () => {
     return { hotel, admin, manager, reception };
   }
 
-  it('gera os 12 relatorios em JSON, A4 e 80 mm com os dados do periodo', async () => {
+  it('gera todos os relatorios em JSON, A4 e 80 mm com os dados do periodo', async () => {
     const { hotel, manager } = await setup();
     const catalog = await ctx.http().get('/api/reports/catalog').set(manager).expect(200);
     const listed = REPORTS.filter((report) => !report.hidden);
@@ -69,10 +70,50 @@ describe('Relatorios', () => {
     expect(vat.sections[1].table.rows[0][0]).toBe('6%');
   });
 
+  it('previsao, saldos dos hospedes, cancelamentos e vendas por empregado', async () => {
+    const { hotel, manager } = await setup();
+    const rooms = await ctx.prisma.room.findMany({ where: { hotelId: hotel.id }, orderBy: { number: 'asc' } });
+    const guest = await createGuest(ctx.prisma, hotel.id);
+    const upcoming = await ctx.http().post('/api/reservations').set(manager).send({ guestId: guest.id, roomId: rooms[1].id, checkIn: day(3), checkOut: day(5) }).expect(201);
+    const dropped = await ctx.http().post('/api/reservations').set(manager).send({ guestId: guest.id, roomId: rooms[2].id, checkIn: day(1), checkOut: day(4) }).expect(201);
+    await ctx.http().post(`/api/reservations/${dropped.body.id}/cancel`).set(manager).expect(200);
+
+    const forecast = (await ctx.http().get('/api/reports/view/forecast').query({ hotelId: hotel.id, from: day(0), to: day(6) }).set(manager).expect(200)).body;
+    expect(forecast.sections[1].table.rows).toHaveLength(7);
+    const arrivals = forecast.sections[2].table.rows.map((row: string[]) => row[0]);
+    expect(arrivals).toHaveLength(2);
+    expect(arrivals).toContain(upcoming.body.code);
+    expect(arrivals).not.toContain(dropped.body.code);
+    const defaults = (await ctx.http().get('/api/reports/view/forecast').query({ hotelId: hotel.id }).set(manager).expect(200)).body;
+    expect(defaults.sections[1].table.rows).toHaveLength(30);
+
+    const cancellations = (await ctx.http().get('/api/reports/view/cancellations').query({ hotelId: hotel.id, from: day(0), to: day(6) }).set(manager).expect(200)).body;
+    const kpis = Object.fromEntries(cancellations.sections[0].kpis.map((kpi: { label: string; value: string }) => [kpi.label, kpi.value]));
+    expect(kpis).toMatchObject({ Cancelamentos: '1', 'No-shows': '0', 'Noites perdidas': '3' });
+    expect(cancellations.sections[2].table.rows[0][0]).toBe(dropped.body.code);
+
+    const stay = await ctx.prisma.reservation.findFirstOrThrow({ where: { hotelId: hotel.id, status: 'CHECKED_IN' } });
+    const folio = (await ctx.http().get(`/api/reservations/${stay.id}/folio`).set(manager).expect(200)).body;
+    const balances = (await ctx.http().get('/api/reports/view/balances').query({ hotelId: hotel.id }).set(manager).expect(200)).body;
+    expect(balances.sections[1].table.rows).toHaveLength(1);
+    expect(balances.sections[1].table.rows[0][0]).toBe('101');
+    expect(balances.sections[1].table.rows[0][7]).toBe(formatCurrency(folio.balance, 'EUR'));
+
+    const rate = await ctx.prisma.taxRate.create({ data: { hotelId: hotel.id, name: 'Normal', rate: 16 } });
+    const product = await ctx.prisma.product.create({ data: { hotelId: hotel.id, name: 'Sumo', price: 3, taxRateId: rate.id } });
+    const order = await ctx.http().post('/api/orders').set(manager).send({ hotelId: hotel.id, outlet: 'BAR', tableLabel: 'Balcao' }).expect(201);
+    await ctx.http().post(`/api/orders/${order.body.id}/items`).set(manager).send({ productId: product.id, quantity: 2 }).expect(201);
+    await ctx.http().post(`/api/orders/${order.body.id}/close`).set(manager).send({ mode: 'PAY', payments: [{ method: 'CARD', amount: 6 }] }).expect(200);
+    const seller = await ctx.prisma.user.findFirstOrThrow({ where: { hotelId: hotel.id, role: 'MANAGER' } });
+    const staff = (await ctx.http().get('/api/reports/view/staff').query({ hotelId: hotel.id, from: day(0), to: day(0) }).set(manager).expect(200)).body;
+    expect(staff.sections[1].table.rows[0]).toEqual(expect.arrayContaining([seller.name, '1', '2', formatCurrency(6, 'EUR')]));
+    expect(staff.sections[2].table.rows).toHaveLength(1);
+  });
+
   it('a rececao so ve os relatorios operacionais e o relatorio imprime por ESC/POS', async () => {
     const { hotel, reception, manager } = await setup();
     const catalog = await ctx.http().get('/api/reports/catalog').set(reception).expect(200);
-    expect(catalog.body.map((report: { key: string }) => report.key).sort()).toEqual(['guests', 'reservations']);
+    expect(catalog.body.map((report: { key: string }) => report.key).sort()).toEqual(['balances', 'forecast', 'guests', 'reservations']);
     await ctx.http().get('/api/reports/view/sales').query({ hotelId: hotel.id }).set(reception).expect(403);
     await ctx.http().get('/api/reports/view/guests').query({ hotelId: hotel.id }).set(reception).expect(200);
     await ctx.http().get('/api/reports/view/nao-existe').query({ hotelId: hotel.id }).set(manager).expect(404);

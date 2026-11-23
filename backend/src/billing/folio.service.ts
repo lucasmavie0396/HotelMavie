@@ -38,7 +38,7 @@ export interface PaymentInput {
 
 const ACCOMMODATION_REF = 'accommodation';
 
-const ON_GUEST_ACCOUNT: Prisma.ChargeWhereInput = {
+export const ON_GUEST_ACCOUNT: Prisma.ChargeWhereInput = {
   OR: [{ invoiceId: null }, { invoice: { OR: [{ type: { not: InvoiceType.INVOICE } }, { status: { not: InvoiceStatus.ISSUED } }] } }],
 };
 

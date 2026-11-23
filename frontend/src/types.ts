@@ -649,7 +649,7 @@ export interface ReportDefinition {
   title: string;
   description: string;
   group: string;
-  params: 'period' | 'date' | 'stock' | 'none';
+  params: 'period' | 'future' | 'date' | 'stock' | 'none';
 }
 
 export interface ReportDocument {
