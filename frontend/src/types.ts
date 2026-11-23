@@ -440,6 +440,7 @@ export interface OrderItem {
   voidedAt: string | null;
   voidReason: string | null;
   voidedBy: { name: string } | null;
+  taxRateRef?: { rate: string } | null;
   product: { category: { prepStation: PrepStation } | null };
 }
 

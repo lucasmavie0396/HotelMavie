@@ -9,7 +9,7 @@ test('abre mesa, envia para a cozinha, divide a conta e marca o prato como pront
 
   await page.getByRole('button', { name: /Bitoque/ }).click();
   await page.getByRole('button', { name: /Imperial/ }).click();
-  await page.getByRole('button', { name: 'Enviar pedido (2)' }).click();
+  await page.getByRole('button', { name: 'Enviar (2)' }).click();
   const preview = page.getByRole('dialog');
   await expect(preview).toContainText('1 de 2');
   await expect(preview).toContainText('PDF KITCHEN');
@@ -18,7 +18,8 @@ test('abre mesa, envia para a cozinha, divide a conta e marca o prato como pront
   await preview.getByRole('button', { name: 'Fechar' }).click();
   await expect(page.getByText('Pedido enviado')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Dividir / transferir artigos' }).click();
+  await page.getByRole('button', { name: 'Mais opcoes do pedido' }).click();
+  await page.getByRole('menuitem', { name: 'Dividir / transferir artigos' }).click();
   await page.getByLabel('Mover Imperial').check();
   await page.getByRole('button', { name: 'Mover 1 linha(s)' }).click();
   await expect(page.getByRole('button', { name: /Conta 2/ })).toBeVisible();

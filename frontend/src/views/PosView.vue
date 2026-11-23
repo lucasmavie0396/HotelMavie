@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import RoomAccountPanel from '@/components/RoomAccountPanel.vue';
 import CashRequired from '@/components/CashRequired.vue';
@@ -14,6 +14,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
 import type { CashRegister, DiningTable, Order, OrderItem, Outlet, Product, Reservation } from '@/types';
 import { formatMoney } from '@/utils/format';
+import { localeTag } from '@/i18n';
 
 type Mode = Outlet | 'ROOMS';
 
@@ -41,6 +42,13 @@ const tables = ref<DiningTable[]>([]);
 const activeTables = computed(() => tables.value.filter((table) => table.active || table.openOrder));
 const looseOrders = computed(() => orders.value.filter((order) => !order.tableId));
 const categoryFilter = ref<number | 0>(0);
+const search = ref('');
+const menuOpen = ref(false);
+const menuRoot = ref<HTMLElement | null>(null);
+
+function closeMenuOutside(event: PointerEvent) {
+  if (menuOpen.value && !menuRoot.value?.contains(event.target as Node)) menuOpen.value = false;
+}
 const closing = ref(false);
 const people = ref(2);
 const moving = reactive({ active: false, target: 'split', quantities: {} as Record<number, number> });
@@ -70,9 +78,18 @@ const categories = computed(() => {
 });
 const CATEGORY_COLORS = ['border-l-indigo-500', 'border-l-rose-500', 'border-l-amber-500', 'border-l-emerald-500', 'border-l-sky-500', 'border-l-fuchsia-500', 'border-l-orange-500', 'border-l-teal-500'];
 const categoryColor = (id: number | null) => (id ? CATEGORY_COLORS[id % CATEGORY_COLORS.length] : 'border-l-slate-300');
-const visibleProducts = computed(() =>
-  products.value.filter((p) => p.active && (!categoryFilter.value || p.categoryId === categoryFilter.value)),
+const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+const visibleProducts = computed(() => {
+  const term = normalize(search.value);
+  if (term) return products.value.filter((p) => p.active && normalize(`${p.name} ${p.sku ?? ''}`).includes(term));
+  return products.value.filter((p) => p.active && (!categoryFilter.value || p.categoryId === categoryFilter.value));
+});
+const taxIncluded = computed(() =>
+  (current.value?.items ?? [])
+    .filter((item) => !item.voidedAt && item.taxRateRef)
+    .reduce((sum, item) => sum + (Number(item.total) * Number(item.taxRateRef!.rate)) / (100 + Number(item.taxRateRef!.rate)), 0),
 );
+const openedTime = computed(() => (current.value ? new Date(current.value.openedAt).toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit' }) : ''));
 const hasCash = useOwnCash(registers);
 const paidTotal = computed(() => close.payments.reduce((sum, p) => sum + Number(p.amount || 0), 0));
 const pendingCount = computed(() => current.value?.items.filter((item) => !item.sentAt && !item.voidedAt).length ?? 0);
@@ -141,6 +158,29 @@ const openOrder = () =>
     view.value = 'products';
     return data;
   });
+
+function searchEnter() {
+  const term = normalize(search.value);
+  if (!term || !current.value) return;
+  const exact = products.value.find((product) => product.active && product.sku && normalize(product.sku) === term);
+  const target = exact ?? (visibleProducts.value.length === 1 ? visibleProducts.value[0] : null);
+  if (!target) return;
+  search.value = '';
+  addItem(target);
+}
+
+function hidePanel() {
+  current.value = null;
+  closing.value = false;
+  moving.active = false;
+  menuOpen.value = false;
+  view.value = 'tables';
+}
+
+function menuAction(action: () => unknown) {
+  menuOpen.value = false;
+  action();
+}
 
 function pickOrder(order: Order) {
   current.value = order;
@@ -317,7 +357,11 @@ const confirmClose = () =>
     }
   }, close.mode === 'ROOM' ? t('pos.chargedToRoom') : t('pos.closed'));
 
-onMounted(load);
+onMounted(() => {
+  load();
+  document.addEventListener('pointerdown', closeMenuOutside);
+});
+onBeforeUnmount(() => document.removeEventListener('pointerdown', closeMenuOutside));
 </script>
 
 <template>
@@ -417,8 +461,23 @@ onMounted(load);
             </div>
 
             <div class="card min-h-0 min-w-0 flex-1 flex-col gap-3 p-3 xl:flex" :class="view === 'products' ? 'flex' : 'hidden'" data-testid="pos-products">
+              <div class="relative shrink-0">
+                <svg viewBox="0 0 24 24" class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
+                </svg>
+                <input
+                  v-model="search"
+                  class="input pr-12 pl-9"
+                  type="search"
+                  :placeholder="t('pos.search')"
+                  :aria-label="t('pos.search')"
+                  autocomplete="off"
+                  @keydown.enter.prevent="searchEnter"
+                />
+                <button v-if="search" class="btn-icon absolute top-1/2 right-0 -translate-y-1/2" type="button" :aria-label="t('pos.clearSearch')" @click="search = ''">✕</button>
+              </div>
               <div class="flex shrink-0 gap-2 overflow-x-auto pb-1">
-                <button type="button" class="chip" :class="!categoryFilter ? 'bg-slate-900 text-white' : 'bg-white ring-1 ring-slate-300'" @click="categoryFilter = 0">
+                <button type="button" class="chip" :class="!categoryFilter ? 'bg-slate-900 text-white' : 'bg-white ring-1 ring-slate-300'" @click="categoryFilter = 0; search = ''">
                   {{ t('common.all') }}
                 </button>
                 <button
@@ -427,12 +486,13 @@ onMounted(load);
                   type="button"
                   class="chip"
                   :class="categoryFilter === id ? 'bg-slate-900 text-white' : 'bg-white ring-1 ring-slate-300'"
-                  @click="categoryFilter = id"
+                  @click="categoryFilter = id; search = ''"
                 >
                   {{ name }}
                 </button>
               </div>
               <p v-if="!current" class="shrink-0 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">{{ t('pos.pickOrder') }}</p>
+              <p v-if="search && !visibleProducts.length" class="shrink-0 rounded-lg bg-slate-50 px-3 py-6 text-center text-sm text-slate-500">{{ t('pos.noResults') }}</p>
               <div class="grid min-h-0 flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2 overflow-y-auto touch:grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] touch:gap-3">
                 <button
                   v-for="product in visibleProducts"
@@ -457,6 +517,13 @@ onMounted(load);
             <div class="flex shrink-0 items-start justify-between gap-2 border-b border-slate-100 p-3">
               <div class="min-w-0">
                 <h2 class="truncate text-lg font-semibold">{{ current.tableLabel ?? t('pos.order', { id: current.id }) }}</h2>
+                <p class="text-xs text-slate-500">{{ t('pos.order', { id: current.id }) }} · {{ t('pos.openedAt', { time: openedTime }) }}</p>
+                <p v-if="current.openedBy" class="mt-0.5 flex items-center gap-1.5 text-sm text-slate-700" :title="t('pos.responsible')" data-testid="pos-responsible">
+                  <svg viewBox="0 0 24 24" class="size-4 shrink-0 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM16 11l2 2 4-4" />
+                  </svg>
+                  <span class="sr-only">{{ t('pos.responsible') }}: </span><strong class="truncate">{{ current.openedBy.name }}</strong>
+                </p>
                 <div v-if="tableChecks.length > 1" class="mt-1 flex flex-wrap gap-1">
                   <button
                     v-for="(check, index) in tableChecks"
@@ -470,7 +537,60 @@ onMounted(load);
                   </button>
                 </div>
               </div>
-              <button class="btn-secondary min-h-9 shrink-0 px-3 text-xs text-rose-600" type="button" :disabled="busy" @click="cancelOrder">{{ t('pos.cancelOrder') }}</button>
+              <div class="flex shrink-0 gap-1">
+                <div ref="menuRoot" class="relative">
+                  <button
+                    class="btn-icon"
+                    :class="menuOpen ? 'bg-slate-100' : ''"
+                    type="button"
+                    :aria-label="t('pos.moreOptions')"
+                    :title="t('pos.moreOptions')"
+                    aria-haspopup="menu"
+                    :aria-expanded="menuOpen"
+                    @click="menuOpen = !menuOpen"
+                  >
+                    <svg viewBox="0 0 24 24" class="size-5" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
+                  </button>
+                  <div v-if="menuOpen" role="menu" :aria-label="t('pos.moreOptions')" class="absolute top-full right-0 z-30 mt-1 w-72 rounded-xl border border-slate-200 bg-white p-1.5 text-sm shadow-lg">
+                    <button role="menuitem" type="button" class="flex min-h-11 w-full items-center rounded-lg px-3 text-left font-medium hover:bg-slate-100 disabled:opacity-40 touch:min-h-12 touch:text-base" :disabled="!activeItems || closing" @click="menuAction(startMove)">
+                      {{ t('pos.splitMove') }}
+                    </button>
+                    <template v-if="current.items.some((i) => i.sentAt)">
+                      <button role="menuitem" type="button" class="flex min-h-11 w-full items-center rounded-lg px-3 text-left font-medium hover:bg-slate-100 touch:min-h-12 touch:text-base" @click="menuAction(() => reprint('KITCHEN'))">
+                        {{ t('pos.reprint') }} {{ t('pos.atKitchen') }}
+                      </button>
+                      <button role="menuitem" type="button" class="flex min-h-11 w-full items-center rounded-lg px-3 text-left font-medium hover:bg-slate-100 touch:min-h-12 touch:text-base" @click="menuAction(() => reprint('BAR'))">
+                        {{ t('pos.reprint') }} {{ t('pos.atBar') }}
+                      </button>
+                    </template>
+                    <div class="mt-1 space-y-1 border-t border-slate-200 px-3 pt-2 pb-1 text-xs text-slate-600">
+                      <p class="font-semibold">{{ t('pos.documents') }}</p>
+                      <div class="flex flex-wrap items-center gap-1">
+                        {{ t('pos.prebill') }}
+                        <PaperLinks :params="{ document: 'PREBILL', orderId: current.id }" :title="t('print.documents.PREBILL')" @error="error = $event" />
+                      </div>
+                      <template v-if="current.items.some((i) => i.sentAt)">
+                        <div class="flex flex-wrap items-center gap-1">
+                          {{ t('print.documents.ORDER') }} · {{ t('pos.atKitchen') }}
+                          <PaperLinks :params="{ document: 'ORDER', orderId: current.id, station: 'KITCHEN' }" :title="t('print.documents.ORDER')" @error="error = $event" />
+                        </div>
+                        <div class="flex flex-wrap items-center gap-1">
+                          {{ t('print.documents.ORDER') }} · {{ t('pos.atBar') }}
+                          <PaperLinks :params="{ document: 'ORDER', orderId: current.id, station: 'BAR' }" :title="t('print.documents.ORDER')" @error="error = $event" />
+                        </div>
+                      </template>
+                    </div>
+                    <div class="mt-1 border-t border-slate-200 pt-1">
+                      <button role="menuitem" type="button" class="flex min-h-11 w-full items-center rounded-lg px-3 text-left font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-40 touch:min-h-12 touch:text-base" :disabled="busy" @click="menuAction(cancelOrder)">
+                        {{ t('pos.cancelOrder') }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <button class="btn-icon" type="button" :aria-label="t('pos.hidePanel')" :title="t('pos.hidePanel')" @click="hidePanel">
+                  <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                </button>
+              </div>
             </div>
 
             <form v-if="closing" id="pos-close" class="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 text-sm" @submit.prevent="confirmClose">
@@ -517,6 +637,7 @@ onMounted(load);
             </form>
 
             <ul v-else class="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto px-3 text-sm">
+              <li v-if="!current.items.length" class="p-6 text-center text-sm text-slate-500">{{ t('pos.tapProducts') }}</li>
               <li v-for="item in current.items" :key="item.id" class="py-2" :class="item.voidedAt ? 'text-slate-400' : ''">
                 <div class="flex items-start justify-between gap-2">
                   <span class="min-w-0" :class="item.voidedAt ? 'line-through' : ''">
@@ -573,11 +694,12 @@ onMounted(load);
               </li>
             </ul>
 
-            <div class="shrink-0 space-y-2 border-t border-slate-200 p-3">
-              <p class="flex justify-between text-lg font-semibold">
-                {{ t('common.total') }} <span class="tabular-nums">{{ money(current.total) }}</span>
-              </p>
+            <div class="shrink-0 space-y-1 border-t border-slate-200 px-3 pt-2 pb-1 text-sm tabular-nums" data-testid="pos-totals">
+              <div class="flex justify-between text-xs text-slate-500"><span>{{ t('pos.taxIncluded') }}</span><span>{{ money(taxIncluded) }}</span></div>
+              <div class="flex justify-between text-xl font-bold"><span>{{ t('common.total') }}</span><span>{{ money(current.total) }}</span></div>
+            </div>
 
+            <div class="shrink-0 space-y-2 border-t border-slate-200 p-3">
               <div v-if="moving.active" class="space-y-2 text-sm">
                 <p class="text-xs text-slate-500">{{ t('pos.moveHint') }}</p>
                 <select v-model="moving.target" class="input">
@@ -596,32 +718,13 @@ onMounted(load);
               </div>
 
               <div v-else class="grid grid-cols-2 gap-2">
-                <button class="btn col-span-2" type="button" :disabled="busy || !pendingCount" @click="sendOrder">
-                  {{ t('pos.send') }}{{ pendingCount ? ` (${pendingCount})` : '' }}
+                <button class="btn-secondary" type="button" :disabled="busy || !pendingCount" @click="sendOrder">
+                  {{ t('pos.sendShort') }}{{ pendingCount ? ` (${pendingCount})` : '' }}
                 </button>
                 <button class="btn-secondary" type="button" :disabled="!activeItems" @click="prebill">{{ t('pos.prebill') }}</button>
-                <button class="btn" type="button" :disabled="!activeItems" @click="startClose">{{ t('pos.closeBill') }}</button>
-                <button class="btn-secondary col-span-2" type="button" :disabled="!activeItems" @click="startMove">{{ t('pos.splitMove') }}</button>
-                <details class="col-span-2 text-sm">
-                  <summary class="flex min-h-11 cursor-pointer touch-manipulation items-center rounded-lg px-2 text-slate-600 select-none hover:bg-slate-50">{{ t('pos.documents') }}</summary>
-                  <div class="space-y-2 px-2 pt-1 pb-2">
-                    <div class="flex flex-wrap items-center gap-2">
-                      {{ t('pos.prebill') }}
-                      <PaperLinks :params="{ document: 'PREBILL', orderId: current.id }" :title="t('print.documents.PREBILL')" @error="error = $event" />
-                    </div>
-                    <div v-if="current.items.some((i) => i.sentAt)" class="flex flex-wrap items-center gap-2">
-                      {{ t('print.documents.ORDER') }} · {{ t('pos.atKitchen') }}
-                      <PaperLinks :params="{ document: 'ORDER', orderId: current.id, station: 'KITCHEN' }" :title="t('print.documents.ORDER')" @error="error = $event" />
-                      · {{ t('pos.atBar') }}
-                      <PaperLinks :params="{ document: 'ORDER', orderId: current.id, station: 'BAR' }" :title="t('print.documents.ORDER')" @error="error = $event" />
-                    </div>
-                    <div v-if="current.items.some((i) => i.sentAt)" class="flex flex-wrap items-center gap-2">
-                      {{ t('pos.reprint') }}
-                      <button class="btn-secondary min-h-11 px-3 text-xs" type="button" @click="reprint('KITCHEN')">{{ t('pos.atKitchen') }}</button>
-                      <button class="btn-secondary min-h-11 px-3 text-xs" type="button" @click="reprint('BAR')">{{ t('pos.atBar') }}</button>
-                    </div>
-                  </div>
-                </details>
+                <button class="btn col-span-2 min-h-14 text-base touch:min-h-14 touch:text-lg" type="button" :disabled="!activeItems" @click="startClose">
+                  {{ t('pos.pay', { amount: money(current.total) }) }}
+                </button>
               </div>
             </div>
           </template>

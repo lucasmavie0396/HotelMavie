@@ -34,11 +34,26 @@ test('restaurante a 1024x768 com toque: mesas, produtos, quantidades, nota e tec
   const columns = await grid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
   expect(columns).toBeGreaterThanOrEqual(3);
 
+  const searchBox = page.getByRole('searchbox', { name: 'Pesquisar produto ou codigo...' });
+  await searchBox.fill('imper');
+  await expect(page.getByTestId('pos-products').getByRole('button', { name: /Bitoque/ })).toHaveCount(0);
+  await expect(page.getByTestId('pos-products').getByRole('button', { name: /Imperial/ })).toBeVisible();
+  await searchBox.fill('xyz');
+  await expect(page.getByText('Nenhum produto encontrado')).toBeVisible();
+  await searchBox.fill('UI-2');
+  await searchBox.press('Enter');
+  await expect(searchBox).toHaveValue('');
+  const order = page.getByTestId('pos-order');
+  await expect(order.locator('li')).toHaveCount(1);
+  await expect(order.locator('li').first()).toContainText('Imperial');
+  await order.getByRole('button', { name: 'Diminuir Imperial' }).click();
+  await expect(order.getByText('Toque nos produtos para adicionar.')).toBeVisible();
+  await expect(order.getByTestId('pos-responsible')).toContainText('Gestor');
+
   const bitoque = page.getByTestId('pos-products').getByRole('button', { name: /Bitoque/ });
   await tall(bitoque);
   await bitoque.click();
   await bitoque.click();
-  const order = page.getByTestId('pos-order');
   await expect(order.locator('li')).toHaveCount(1);
   await expect(order.locator('li').first()).toContainText('2');
   await order.getByRole('button', { name: 'Aumentar Bitoque' }).click();
@@ -46,7 +61,7 @@ test('restaurante a 1024x768 com toque: mesas, produtos, quantidades, nota e tec
   await tall(order.getByRole('button', { name: 'Diminuir Bitoque' }));
   await order.getByRole('button', { name: 'Diminuir Bitoque' }).click();
   await expect(order.locator('li').first().locator('span.tabular-nums').last()).toHaveText('2');
-  await tall(order.getByRole('button', { name: /Enviar pedido/ }));
+  await tall(order.getByRole('button', { name: /^Enviar/ }));
 
   await order.getByRole('button', { name: 'nota' }).click();
   const dialog = page.getByRole('dialog', { name: 'Nota do artigo' });
@@ -58,7 +73,9 @@ test('restaurante a 1024x768 com toque: mesas, produtos, quantidades, nota e tec
   await dialog.getByRole('button', { name: 'Confirmar' }).click();
   await expect(order.getByText('> sem')).toBeVisible();
 
-  await order.getByRole('button', { name: 'Fechar conta' }).click();
+  await expect(order.getByTestId('pos-totals')).toContainText('Impostos incluidos');
+  await tall(order.getByRole('button', { name: /^Pagar / }), 52);
+  await order.getByRole('button', { name: /^Pagar / }).click();
   await order.getByLabel('Valor').click();
   await expect(keyboard.getByRole('button', { name: '00', exact: true })).toBeVisible();
   await keyboard.getByRole('button', { name: 'Apagar' }).click();
@@ -67,11 +84,14 @@ test('restaurante a 1024x768 com toque: mesas, produtos, quantidades, nota e tec
   await fitsWidth(page);
   await order.getByRole('button', { name: 'Voltar' }).click();
 
-  await order.getByRole('button', { name: 'Anular pedido' }).click();
+  await order.getByRole('button', { name: 'Mais opcoes do pedido' }).click();
+  await page.getByRole('menuitem', { name: 'Anular pedido' }).click();
   const confirm = page.getByRole('dialog', { name: 'Anular pedido' });
   await expect(confirm).toBeVisible();
   await confirm.getByRole('button', { name: 'Cancelar' }).click();
   await expect(page.getByRole('heading', { name: 'Mesa 3' })).toBeVisible();
+  await order.getByRole('button', { name: 'Fechar no ecra (o pedido continua aberto)' }).click();
+  await expect(page.getByText('Nenhum pedido selecionado')).toBeVisible();
 });
 
 test('cozinha e caixa cabem em 1024x768 e usam o teclado numerico', async ({ page }) => {
