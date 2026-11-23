@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/auth';
 import { usePaymentTypesStore } from '@/stores/paymentTypes';
 import type { CashRegister } from '@/types';
 
-const props = defineProps<{ registers?: CashRegister[] }>();
+const props = defineProps<{ registers?: CashRegister[]; buttons?: boolean }>();
 const typeId = defineModel<number>('typeId', { required: true });
 const cashSessionId = defineModel<number>('cashSessionId', { default: 0 });
 const reference = defineModel<string>('reference', { default: '' });
@@ -38,7 +38,20 @@ defineExpose({ needsSession: () => selected.value?.kind === 'CASH' && !cashSessi
 </script>
 
 <template>
-  <select v-model.number="typeId" class="input" :aria-label="t('payment.type')">
+  <div v-if="props.buttons" class="grid grid-cols-2 gap-2" role="radiogroup" :aria-label="t('payment.type')">
+    <button
+      v-for="type in types.active"
+      :key="type.id"
+      type="button"
+      role="radio"
+      :aria-checked="typeId === type.id"
+      :class="typeId === type.id ? 'btn' : 'btn-secondary'"
+      @click="typeId = type.id"
+    >
+      {{ type.name }}
+    </button>
+  </div>
+  <select v-else v-model.number="typeId" class="input" :aria-label="t('payment.type')">
     <option v-for="type in types.active" :key="type.id" :value="type.id">{{ type.name }}</option>
   </select>
   <select v-if="selected?.kind === 'CASH'" v-model.number="cashSessionId" class="input" :aria-label="t('payment.register')" required>

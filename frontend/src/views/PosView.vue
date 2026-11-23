@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import PageHeader from '@/components/PageHeader.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import RoomAccountPanel from '@/components/RoomAccountPanel.vue';
@@ -8,6 +7,7 @@ import PaperLinks from '@/components/PaperLinks.vue';
 import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
 import { useOwnCash } from '@/composables/cashGuard';
 import { api, errorMessage } from '@/services/api';
+import { askConfirm, askText } from '@/services/dialog';
 import { fileUrl } from '@/services/files';
 import { printDocument } from '@/services/print';
 import { useAuthStore } from '@/stores/auth';
@@ -32,6 +32,7 @@ const products = ref<Product[]>([]);
 const inHouse = ref<Reservation[]>([]);
 const registers = ref<CashRegister[]>([]);
 const current = ref<Order | null>(null);
+const view = ref<'tables' | 'products'>('tables');
 const error = ref('');
 const notice = ref('');
 const busy = ref(false);
@@ -67,6 +68,8 @@ const categories = computed(() => {
   }
   return [...map.entries()];
 });
+const CATEGORY_COLORS = ['border-l-indigo-500', 'border-l-rose-500', 'border-l-amber-500', 'border-l-emerald-500', 'border-l-sky-500', 'border-l-fuchsia-500', 'border-l-orange-500', 'border-l-teal-500'];
+const categoryColor = (id: number | null) => (id ? CATEGORY_COLORS[id % CATEGORY_COLORS.length] : 'border-l-slate-300');
 const visibleProducts = computed(() =>
   products.value.filter((p) => p.active && (!categoryFilter.value || p.categoryId === categoryFilter.value)),
 );
@@ -125,6 +128,7 @@ async function run(action: () => Promise<Order | void>, message = '') {
 function switchMode(value: Mode) {
   mode.value = value;
   current.value = null;
+  view.value = 'tables';
   closing.value = false;
   categoryFilter.value = 0;
   load();
@@ -134,12 +138,20 @@ const openOrder = () =>
   run(async () => {
     const { data } = await api.post<Order>('/orders', { hotelId: hotels.selectedId, outlet: outlet.value, tableLabel: newTable.value || undefined });
     newTable.value = '';
+    view.value = 'products';
     return data;
   });
+
+function pickOrder(order: Order) {
+  current.value = order;
+  closing.value = false;
+  view.value = 'products';
+}
 
 function openTable(table: DiningTable) {
   closing.value = false;
   moving.active = false;
+  view.value = 'products';
   const existing = table.openOrder && orders.value.find((order) => order.id === table.openOrder!.id);
   if (existing) {
     current.value = existing;
@@ -149,13 +161,24 @@ function openTable(table: DiningTable) {
 }
 
 const addItem = (product: Product) =>
-  run(async () => (await api.post<Order>(`/orders/${current.value!.id}/items`, { productId: product.id, quantity: 1 })).data);
+  run(async () => {
+    const order = current.value!;
+    const line = order.items.find((item) => item.productId === product.id && !item.sentAt && !item.voidedAt && !item.notes);
+    if (line) return (await api.patch<Order>(`/orders/${order.id}/items/${line.id}`, { quantity: Number(line.quantity) + 1 })).data;
+    return (await api.post<Order>(`/orders/${order.id}/items`, { productId: product.id, quantity: 1 })).data;
+  });
+
+const changeQuantity = (item: OrderItem, delta: number) => {
+  const next = Number(item.quantity) + delta;
+  if (next <= 0) return removeItem(item);
+  return run(async () => (await api.patch<Order>(`/orders/${current.value!.id}/items/${item.id}`, { quantity: next })).data);
+};
 
 const removeItem = (item: OrderItem) =>
   run(async () => (await api.delete<Order>(`/orders/${current.value!.id}/items/${item.id}`)).data);
 
-const addNote = (item: OrderItem) => {
-  const notes = window.prompt(t('pos.notePrompt', { name: item.description }), item.notes ?? '');
+const addNote = async (item: OrderItem) => {
+  const notes = await askText({ title: t('pos.noteTitle'), message: t('pos.notePrompt', { name: item.description }), value: item.notes ?? '', multiline: true });
   if (notes === null) return;
   run(async () => {
     const order = current.value!;
@@ -170,8 +193,14 @@ const printingScreens = () =>
     .then(({ data }) => data.stations)
     .catch(() => [] as string[]);
 
-const voidItem = (item: OrderItem) => {
-  const reason = window.prompt(t('pos.voidPrompt', { quantity: Number(item.quantity), name: item.description }));
+const voidItem = async (item: OrderItem) => {
+  const reason = await askText({
+    title: t('pos.voidTitle'),
+    message: t('pos.voidPrompt', { quantity: Number(item.quantity), name: item.description }),
+    required: true,
+    danger: true,
+    confirmLabel: t('pos.voidTitle'),
+  });
   if (!reason) return;
   run(async () => {
     const { data } = await api.post<Order>(`/orders/${current.value!.id}/items/${item.id}/void`, { reason });
@@ -202,12 +231,13 @@ const reprint = (target: 'KITCHEN' | 'BAR') => print({ document: 'ORDER', orderI
 
 const prebill = () => print({ document: 'PREBILL', orderId: current.value!.id });
 
-const cancelOrder = () =>
-  run(async () => {
-    if (!window.confirm(t('pos.confirmCancel'))) return;
+const cancelOrder = async () => {
+  if (!(await askConfirm({ title: t('pos.cancelOrder'), message: t('pos.confirmCancel'), danger: true, confirmLabel: t('pos.cancelOrder') }))) return;
+  return run(async () => {
     await api.post(`/orders/${current.value!.id}/cancel`);
     current.value = null;
   });
+};
 
 function startClose() {
   Object.assign(close, {
@@ -259,6 +289,11 @@ const confirmMove = () =>
     return data.from.status === 'OPEN' ? data.from : data.to;
   }, t('pos.moved'));
 
+function exactAmount(index: number) {
+  const others = close.payments.reduce((sum, payment, position) => (position === index ? sum : sum + Number(payment.amount || 0)), 0);
+  close.payments[index].amount = Math.max(Math.round((Number(current.value!.total) - others) * 100) / 100, 0);
+}
+
 function addPaymentLine() {
   close.payments.push({ paymentTypeId: 0, amount: Math.max(Number(current.value!.total) - paidTotal.value, 0), cashSessionId: 0, reference: '' });
 }
@@ -286,233 +321,165 @@ onMounted(load);
 </script>
 
 <template>
-  <section class="space-y-4">
-    <PageHeader section="pos" :title="t('pos.title')" :subtitle="t('pos.subtitle')">
-      <div class="flex rounded-lg bg-white p-0.5 text-sm shadow">
+  <section class="flex flex-col gap-3" :class="mode === 'ROOMS' ? '' : 'h-full min-h-[34rem]'">
+    <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
+      <h1 class="text-xl font-semibold text-slate-900">{{ t('pos.title') }}</h1>
+      <div class="flex gap-2" role="tablist">
         <button
           v-for="item in MODES.filter((entry) => entry.value !== 'ROOMS' || !auth.isCashier)"
           :key="item.value"
           type="button"
-          class="rounded px-4 py-1.5"
-          :class="mode === item.value ? 'bg-indigo-600 text-white' : 'text-slate-700'"
+          role="tab"
+          class="chip"
+          :aria-selected="mode === item.value"
+          :class="mode === item.value ? 'bg-indigo-600 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-300'"
           @click="switchMode(item.value)"
         >
           {{ t(item.label) }}
         </button>
       </div>
-    </PageHeader>
+    </div>
 
     <RoomAccountPanel v-if="mode === 'ROOMS'" />
 
     <template v-else>
-      <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
-      <p v-if="notice" class="text-sm text-emerald-700">{{ notice }}</p>
+      <p v-if="error" class="shrink-0 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{{ error }}</p>
+      <p v-if="notice" class="shrink-0 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{{ notice }}</p>
 
-      <div class="grid gap-4 lg:grid-cols-[260px_1fr_360px]">
-        <div class="card space-y-3 p-3 lg:max-h-[calc(100dvh-14rem)] lg:overflow-y-auto">
-          <div class="flex items-center justify-between">
-            <h2 class="text-sm font-semibold text-slate-700">{{ t('pos.tables') }}</h2>
-            <span class="flex gap-2 text-[10px] text-slate-500">
-              <span class="flex items-center gap-1"><span class="size-2 rounded-full bg-emerald-400" />{{ t('pos.free') }}</span>
-              <span class="flex items-center gap-1"><span class="size-2 rounded-full bg-rose-500" />{{ t('pos.busy') }}</span>
-            </span>
-          </div>
-          <div v-if="activeTables.length" class="grid grid-cols-3 gap-2">
-            <button
-              v-for="table in activeTables"
-              :key="table.id"
-              type="button"
-              class="relative flex aspect-square flex-col items-center justify-center rounded-xl border-2 p-1 text-center transition disabled:opacity-60"
-              :class="[
-                current?.tableId === table.id ? 'ring-2 ring-indigo-500 ring-offset-1' : '',
-                table.openOrder ? 'border-rose-200 bg-gradient-to-br from-rose-500 to-pink-500 text-white shadow-md' : 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100',
-              ]"
-              :title="table.label"
-              :disabled="busy"
-              @click="openTable(table)"
-            >
-              <span class="text-lg leading-none font-bold">{{ table.number }}</span>
-              <span class="w-full truncate text-[10px] leading-tight">{{ table.openOrder ? money(table.openOrder.total) : t('pos.seats', { n: table.seats }) }}</span>
-              <span v-if="table.openOrder?.pending" class="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-amber-400 text-[10px] font-bold text-amber-950 shadow" :title="t('pos.pendingItems')">
-                {{ table.openOrder.pending }}
-              </span>
+      <div class="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+          <div class="grid shrink-0 grid-cols-2 gap-2 xl:hidden" role="tablist">
+            <button type="button" role="tab" class="chip justify-center" :aria-selected="view === 'tables'" :class="view === 'tables' ? 'bg-slate-900 text-white' : 'bg-white ring-1 ring-slate-300'" @click="view = 'tables'">
+              {{ t('pos.tables') }}
+            </button>
+            <button type="button" role="tab" class="chip justify-center" :aria-selected="view === 'products'" :class="view === 'products' ? 'bg-slate-900 text-white' : 'bg-white ring-1 ring-slate-300'" @click="view = 'products'">
+              {{ t('pos.productsTab') }}
             </button>
           </div>
-          <p v-else class="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
-            {{ t('pos.noTables') }}
-            <RouterLink v-if="isManager" :to="{ name: 'settings', query: { tab: 'tables' } }" class="text-indigo-600 hover:underline">{{ t('pos.createTables') }}</RouterLink>
-            <template v-else>{{ t('pos.askManager') }}</template>
-          </p>
 
-          <div class="space-y-2 border-t border-slate-100 pt-3">
-            <h2 class="text-sm font-semibold text-slate-700">{{ t('pos.noTable') }}</h2>
-            <form class="flex gap-2" @submit.prevent="openOrder">
-              <input v-model="newTable" class="input" :placeholder="t('pos.optionalName')" />
-              <button class="btn px-3" type="submit" :disabled="busy" :title="t('pos.openLoose')">+</button>
-            </form>
-            <button
-              v-for="order in looseOrders"
-              :key="order.id"
-              type="button"
-              class="flex w-full justify-between rounded-lg border px-3 py-2 text-left text-sm"
-              :class="current?.id === order.id ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'"
-              @click="current = order; closing = false"
-            >
-              <span class="font-medium">
-                {{ order.tableLabel ?? `#${order.id}` }}
-                <span v-if="order.items.some((i) => !i.sentAt && !i.voidedAt)" class="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800">{{ t('pos.toSend') }}</span>
-              </span>
-              <span>{{ money(order.total) }}</span>
-            </button>
+          <div class="flex min-h-0 flex-1 gap-3">
+            <div class="card min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3 xl:flex xl:w-60 xl:flex-none" :class="view === 'tables' ? 'flex' : 'hidden'" data-testid="pos-tables">
+              <div class="flex items-center justify-between">
+                <h2 class="text-sm font-semibold text-slate-700">{{ t('pos.tables') }}</h2>
+                <span class="flex gap-2 text-xs text-slate-500">
+                  <span class="flex items-center gap-1"><span class="size-2.5 rounded-full bg-emerald-400" />{{ t('pos.free') }}</span>
+                  <span class="flex items-center gap-1"><span class="size-2.5 rounded-full bg-rose-500" />{{ t('pos.busy') }}</span>
+                </span>
+              </div>
+              <div v-if="activeTables.length" class="grid grid-cols-[repeat(auto-fill,minmax(4.75rem,1fr))] gap-2 touch:grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))]">
+                <button
+                  v-for="table in activeTables"
+                  :key="table.id"
+                  type="button"
+                  class="relative flex aspect-square touch-manipulation flex-col items-center justify-center rounded-xl border-2 p-1 text-center transition select-none active:scale-[0.97] disabled:opacity-60"
+                  :class="[
+                    current?.tableId === table.id ? 'ring-2 ring-indigo-500 ring-offset-1' : '',
+                    table.openOrder ? 'border-rose-200 bg-gradient-to-br from-rose-500 to-pink-500 text-white shadow-md' : 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100',
+                  ]"
+                  :title="table.label"
+                  :disabled="busy"
+                  @click="openTable(table)"
+                >
+                  <span class="text-xl leading-none font-bold">{{ table.number }}</span>
+                  <span class="w-full truncate text-xs leading-tight">{{ table.openOrder ? money(table.openOrder.total) : t('pos.seats', { n: table.seats }) }}</span>
+                  <span v-if="table.openOrder?.pending" class="absolute -top-1.5 -right-1.5 flex size-6 items-center justify-center rounded-full bg-amber-400 text-xs font-bold text-amber-950 shadow" :title="t('pos.pendingItems')">
+                    {{ table.openOrder.pending }}
+                  </span>
+                </button>
+              </div>
+              <p v-else class="rounded-lg bg-slate-50 p-3 text-sm text-slate-500">
+                {{ t('pos.noTables') }}
+                <RouterLink v-if="isManager" :to="{ name: 'settings', query: { tab: 'tables' } }" class="text-indigo-600 hover:underline">{{ t('pos.createTables') }}</RouterLink>
+                <template v-else>{{ t('pos.askManager') }}</template>
+              </p>
+
+              <div class="space-y-2 border-t border-slate-100 pt-3">
+                <h2 class="text-sm font-semibold text-slate-700">{{ t('pos.noTable') }}</h2>
+                <form class="flex gap-2" @submit.prevent="openOrder">
+                  <input v-model="newTable" class="input" :placeholder="t('pos.optionalName')" />
+                  <button class="btn px-4 text-lg" type="submit" :disabled="busy" :title="t('pos.openLoose')" :aria-label="t('pos.openLoose')">+</button>
+                </form>
+                <button
+                  v-for="order in looseOrders"
+                  :key="order.id"
+                  type="button"
+                  class="flex min-h-11 w-full touch-manipulation items-center justify-between rounded-lg border px-3 py-2 text-left text-sm"
+                  :class="current?.id === order.id ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'"
+                  @click="pickOrder(order)"
+                >
+                  <span class="font-medium">
+                    {{ order.tableLabel ?? `#${order.id}` }}
+                    <span v-if="order.items.some((i) => !i.sentAt && !i.voidedAt)" class="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800">{{ t('pos.toSend') }}</span>
+                  </span>
+                  <span>{{ money(order.total) }}</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="card min-h-0 min-w-0 flex-1 flex-col gap-3 p-3 xl:flex" :class="view === 'products' ? 'flex' : 'hidden'" data-testid="pos-products">
+              <div class="flex shrink-0 gap-2 overflow-x-auto pb-1">
+                <button type="button" class="chip" :class="!categoryFilter ? 'bg-slate-900 text-white' : 'bg-white ring-1 ring-slate-300'" @click="categoryFilter = 0">
+                  {{ t('common.all') }}
+                </button>
+                <button
+                  v-for="[id, name] in categories"
+                  :key="id"
+                  type="button"
+                  class="chip"
+                  :class="categoryFilter === id ? 'bg-slate-900 text-white' : 'bg-white ring-1 ring-slate-300'"
+                  @click="categoryFilter = id"
+                >
+                  {{ name }}
+                </button>
+              </div>
+              <p v-if="!current" class="shrink-0 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">{{ t('pos.pickOrder') }}</p>
+              <div class="grid min-h-0 flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2 overflow-y-auto touch:grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] touch:gap-3">
+                <button
+                  v-for="product in visibleProducts"
+                  :key="product.id"
+                  type="button"
+                  class="relative flex min-h-24 touch-manipulation flex-col justify-between rounded-xl border-l-8 bg-white p-3 text-left shadow-sm ring-1 ring-slate-200 transition select-none hover:shadow active:scale-[0.98] disabled:opacity-40 touch:min-h-28"
+                  :class="categoryColor(product.categoryId)"
+                  :disabled="!current || busy"
+                  @click="addItem(product)"
+                >
+                  <img v-if="product.imageFile" :src="fileUrl(product.imageFile)" alt="" class="mb-2 h-16 w-full rounded-md object-cover" loading="lazy" />
+                  <span class="line-clamp-2 text-sm font-medium text-slate-800 touch:text-base" :title="product.name">{{ product.name }}</span>
+                  <span class="mt-1 font-semibold text-indigo-700 tabular-nums touch:text-lg">{{ money(product.price) }}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div class="card space-y-3 p-3 lg:max-h-[calc(100dvh-14rem)] lg:overflow-y-auto">
-          <div class="flex flex-wrap gap-2">
-            <button type="button" class="rounded-full px-3 py-1 text-xs" :class="!categoryFilter ? 'bg-slate-900 text-white' : 'bg-slate-100'" @click="categoryFilter = 0">
-              {{ t('common.all') }}
-            </button>
-            <button
-              v-for="[id, name] in categories"
-              :key="id"
-              type="button"
-              class="rounded-full px-3 py-1 text-xs"
-              :class="categoryFilter === id ? 'bg-slate-900 text-white' : 'bg-slate-100'"
-              @click="categoryFilter = id"
-            >
-              {{ name }}
-            </button>
-          </div>
-          <p v-if="!current" class="text-sm text-slate-500">{{ t('pos.pickOrder') }}</p>
-          <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-            <button
-              v-for="product in visibleProducts"
-              :key="product.id"
-              type="button"
-              class="overflow-hidden rounded-xl border border-slate-200 bg-white text-left text-sm shadow-sm transition hover:border-indigo-400 hover:shadow-md disabled:opacity-40"
-              :disabled="!current || busy"
-              @click="addItem(product)"
-            >
-              <img v-if="product.imageFile" :src="fileUrl(product.imageFile)" alt="" class="aspect-[4/3] w-full object-cover" loading="lazy" />
-              <span v-else class="flex aspect-[4/3] w-full items-center justify-center bg-gradient-to-br from-rose-100 to-pink-100 text-2xl font-bold text-rose-400">
-                {{ product.name.slice(0, 2).toUpperCase() }}
-              </span>
-              <span class="block p-2">
-                <span class="block truncate font-medium" :title="product.name">{{ product.name }}</span>
-                <span class="text-slate-500">{{ money(product.price) }}</span>
-              </span>
-            </button>
-          </div>
-        </div>
-
-        <div class="card space-y-3 p-3 lg:max-h-[calc(100dvh-14rem)] lg:overflow-y-auto">
+        <aside class="card flex min-h-0 flex-col p-0 lg:w-80 lg:flex-none xl:w-96" data-testid="pos-order">
           <template v-if="current">
-            <div class="flex items-center justify-between">
-              <h2 class="font-semibold">{{ current.tableLabel ?? t('pos.order', { id: current.id }) }}</h2>
-              <button class="text-xs text-rose-600 hover:underline" type="button" @click="cancelOrder">{{ t('pos.cancelOrder') }}</button>
-            </div>
-            <div v-if="tableChecks.length > 1" class="flex flex-wrap gap-1 text-xs">
-              <button
-                v-for="(check, index) in tableChecks"
-                :key="check.id"
-                type="button"
-                class="rounded-full px-2 py-0.5"
-                :class="check.id === current.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700'"
-                @click="current = check; closing = false; moving.active = false"
-              >
-                {{ t('pos.check', { n: index + 1 }) }} · {{ money(check.total) }}
-              </button>
-            </div>
-            <ul class="divide-y divide-slate-100 text-sm">
-              <li v-for="item in current.items" :key="item.id" class="py-1.5" :class="item.voidedAt ? 'text-slate-400' : ''">
-                <div class="flex items-center justify-between gap-2">
-                  <span :class="item.voidedAt ? 'line-through' : ''">
-                    <input
-                      v-if="moving.active && !item.voidedAt"
-                      class="mr-1 align-middle"
-                      type="checkbox"
-                      :checked="(moving.quantities[item.id] ?? 0) > 0"
-                      :aria-label="t('pos.moveItem', { name: item.description })"
-                      @change="toggleMoveLine(item)"
-                    />
-                    {{ Number(item.quantity) }}x {{ item.description }}
-                    <span
-                      v-if="!item.voidedAt"
-                      class="ml-1 rounded px-1 text-[10px]"
-                      :class="item.readyAt ? 'bg-sky-100 text-sky-800' : item.sentAt ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
-                    >
-                      {{ item.readyAt ? t('pos.ready') : item.sentAt ? (station(item) === 'BAR' ? t('pos.atBar') : station(item) === 'NONE' ? t('pos.served') : t('pos.atKitchen')) : t('pos.toSend') }}
-                    </span>
-                  </span>
-                  <input
-                    v-if="moving.active && (moving.quantities[item.id] ?? 0) > 0 && Number(item.quantity) > 1"
-                    v-model.number="moving.quantities[item.id]"
-                    class="input w-20 py-0.5"
-                    type="number"
-                    min="0.001"
-                    :max="Number(item.quantity)"
-                    step="1"
-                    :aria-label="t('pos.moveQuantity')"
-                  />
-                  <span v-else class="flex items-center gap-2 whitespace-nowrap">
-                    {{ item.voidedAt ? t('pos.voidedLabel') : money(item.total) }}
-                    <template v-if="!item.voidedAt">
-                      <button v-if="!item.sentAt" class="text-xs text-indigo-600" type="button" :disabled="busy" @click="addNote(item)">{{ t('pos.note') }}</button>
-                      <button v-if="!item.sentAt" class="text-rose-600" type="button" :disabled="busy" :aria-label="t('common.remove')" @click="removeItem(item)">&times;</button>
-                      <button v-else-if="isManager" class="text-xs text-rose-600 hover:underline" type="button" :disabled="busy" @click="voidItem(item)">{{ t('pos.void') }}</button>
-                    </template>
-                  </span>
+            <div class="flex shrink-0 items-start justify-between gap-2 border-b border-slate-100 p-3">
+              <div class="min-w-0">
+                <h2 class="truncate text-lg font-semibold">{{ current.tableLabel ?? t('pos.order', { id: current.id }) }}</h2>
+                <div v-if="tableChecks.length > 1" class="mt-1 flex flex-wrap gap-1">
+                  <button
+                    v-for="(check, index) in tableChecks"
+                    :key="check.id"
+                    type="button"
+                    class="min-h-9 touch-manipulation rounded-full px-3 text-xs"
+                    :class="check.id === current.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700'"
+                    @click="current = check; closing = false; moving.active = false"
+                  >
+                    {{ t('pos.check', { n: index + 1 }) }} · {{ money(check.total) }}
+                  </button>
                 </div>
-                <p v-if="item.notes" class="text-xs text-slate-500">&gt; {{ item.notes }}</p>
-                <p v-if="item.voidedAt" class="text-xs">{{ t('pos.voidedBy', { reason: item.voidReason, name: item.voidedBy?.name }) }} <PaperLinks class="ml-1" :params="{ document: 'VOID', orderId: current.id, itemId: item.id }" :title="t('print.documents.VOID')" @error="error = $event" /></p>
-              </li>
-            </ul>
-            <p class="flex justify-between border-t border-slate-200 pt-2 text-lg font-semibold">
-              {{ t('common.total') }} <span>{{ money(current.total) }}</span>
-            </p>
-
-            <div v-if="moving.active" class="space-y-2 rounded-md bg-slate-50 p-3 text-sm">
-              <p class="text-xs text-slate-500">{{ t('pos.moveHint') }}</p>
-              <select v-model="moving.target" class="input">
-                <option value="split">{{ current.tableId ? t('pos.splitTable') : t('pos.splitSale') }}</option>
-                <option v-for="target in moveTargets" :key="target.value" :value="target.value">{{ t('pos.transferTo', { target: target.label }) }}</option>
-              </select>
-              <div class="flex justify-end gap-2">
-                <button class="btn-secondary" type="button" @click="moving.active = false">{{ t('common.back') }}</button>
-                <button class="btn" type="button" :disabled="busy || !movingCount" @click="confirmMove">{{ t('pos.moveLines', { n: movingCount }) }}</button>
               </div>
+              <button class="btn-secondary min-h-9 shrink-0 px-3 text-xs text-rose-600" type="button" :disabled="busy" @click="cancelOrder">{{ t('pos.cancelOrder') }}</button>
             </div>
 
-            <div v-else-if="!closing" class="grid grid-cols-2 gap-2">
-              <button class="btn col-span-2" type="button" :disabled="busy || !pendingCount" @click="sendOrder">
-                {{ t('pos.send') }}{{ pendingCount ? ` (${pendingCount})` : '' }}
-              </button>
-              <button class="btn-secondary" type="button" :disabled="!activeItems" @click="prebill">{{ t('pos.prebill') }}</button>
-              <button class="btn" type="button" :disabled="!activeItems" @click="startClose">{{ t('pos.closeBill') }}</button>
-              <button class="btn-secondary col-span-2" type="button" :disabled="!activeItems" @click="startMove">{{ t('pos.splitMove') }}</button>
-              <div class="col-span-2 flex gap-2 text-xs">
-                {{ t('pos.prebill') }}
-                <PaperLinks :params="{ document: 'PREBILL', orderId: current.id }" :title="t('print.documents.PREBILL')" @error="error = $event" />
-              </div>
-              <div v-if="current.items.some((i) => i.sentAt)" class="col-span-2 flex flex-wrap gap-2 text-xs">
-                {{ t('print.documents.ORDER') }}
-                {{ t('pos.atKitchen') }}
-                <PaperLinks :params="{ document: 'ORDER', orderId: current.id, station: 'KITCHEN' }" :title="t('print.documents.ORDER')" @error="error = $event" />
-                {{ t('pos.atBar') }}
-                <PaperLinks :params="{ document: 'ORDER', orderId: current.id, station: 'BAR' }" :title="t('print.documents.ORDER')" @error="error = $event" />
-              </div>
-              <div v-if="current.items.some((i) => i.sentAt)" class="col-span-2 flex gap-3 text-xs">
-                {{ t('pos.reprint') }}
-                <button class="text-indigo-600 hover:underline" type="button" @click="reprint('KITCHEN')">{{ t('pos.atKitchen') }}</button>
-                <button class="text-indigo-600 hover:underline" type="button" @click="reprint('BAR')">{{ t('pos.atBar') }}</button>
-              </div>
-            </div>
-
-            <form v-else class="space-y-3 rounded-md bg-slate-50 p-3 text-sm" @submit.prevent="confirmClose">
+            <form v-if="closing" id="pos-close" class="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 text-sm" @submit.prevent="confirmClose">
               <CashRequired :registers="registers" />
-              <div class="flex gap-4">
-                <label class="flex items-center gap-1"><input v-model="close.mode" type="radio" value="PAY" />{{ t('pos.payNow') }}</label>
-                <label class="flex items-center gap-1"><input v-model="close.mode" type="radio" value="ROOM" :disabled="!inHouse.length" />{{ t('pos.chargeRoom') }}</label>
+              <div class="grid grid-cols-2 gap-2">
+                <button type="button" class="chip justify-center" :class="close.mode === 'PAY' ? 'bg-indigo-600 text-white' : 'bg-white ring-1 ring-slate-300'" @click="close.mode = 'PAY'">{{ t('pos.payNow') }}</button>
+                <button type="button" class="chip justify-center disabled:opacity-40" :class="close.mode === 'ROOM' ? 'bg-indigo-600 text-white' : 'bg-white ring-1 ring-slate-300'" :disabled="!inHouse.length" @click="close.mode = 'ROOM'">
+                  {{ t('pos.chargeRoom') }}
+                </button>
               </div>
               <select v-if="close.mode === 'ROOM'" v-model.number="close.reservationId" class="input">
                 <option v-for="reservation in inHouse" :key="reservation.id" :value="reservation.id">
@@ -520,38 +487,146 @@ onMounted(load);
                 </option>
               </select>
               <template v-else>
-                <div v-for="(payment, index) in close.payments" :key="index" class="grid grid-cols-2 gap-2 rounded border border-slate-200 bg-white p-2">
-                  <input v-model.number="payment.amount" class="input col-span-2" type="number" min="0.01" step="0.01" :aria-label="t('common.value')" />
+                <div v-for="(payment, index) in close.payments" :key="index" class="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                  <div class="flex gap-2">
+                    <input v-model.number="payment.amount" class="input text-lg font-semibold tabular-nums" type="number" inputmode="decimal" min="0.01" step="0.01" :aria-label="t('pos.amount')" />
+                    <button class="btn-secondary shrink-0 px-3" type="button" @click="exactAmount(index)">{{ t('pos.exact') }}</button>
+                  </div>
                   <PaymentTypeSelect
                     v-model:type-id="payment.paymentTypeId"
                     v-model:cash-session-id="payment.cashSessionId"
                     v-model:reference="payment.reference"
                     :registers="registers"
+                    buttons
                   />
                 </div>
-                <div class="flex flex-wrap items-center gap-2 text-xs">
-                  <button class="text-indigo-600 hover:underline" type="button" @click="addPaymentLine">{{ t('pos.splitPayment') }}</button>
-                  <span class="text-slate-400">|</span>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button class="btn-secondary px-3" type="button" @click="addPaymentLine">{{ t('pos.splitPayment') }}</button>
                   <label class="flex items-center gap-1">
                     {{ t('pos.splitBy') }}
-                    <input v-model.number="people" class="input w-14 py-0.5" type="number" min="2" max="50" :aria-label="t('pos.people')" />
+                    <input v-model.number="people" class="input w-16" type="number" inputmode="numeric" min="2" max="50" :aria-label="t('pos.people')" />
                     {{ t('pos.people') }}
                   </label>
-                  <button class="text-indigo-600 hover:underline" type="button" @click="splitByPeople">{{ t('pos.apply') }}</button>
+                  <button class="btn-secondary px-3" type="button" @click="splitByPeople">{{ t('pos.apply') }}</button>
                 </div>
-                <p :class="Math.abs(paidTotal - Number(current.total)) < 0.005 ? 'text-emerald-700' : 'text-rose-600'">
+                <p class="font-medium" :class="Math.abs(paidTotal - Number(current.total)) < 0.005 ? 'text-emerald-700' : 'text-rose-600'">
                   {{ t('pos.paidOf', { paid: money(paidTotal), total: money(current.total) }) }}
                 </p>
                 <input v-model="close.customerTaxId" class="input" :placeholder="t('pos.taxId')" />
               </template>
-              <div class="flex justify-end gap-2">
-                <button class="btn-secondary" type="button" @click="closing = false">{{ t('common.back') }}</button>
-                <button class="btn" type="submit" :disabled="busy || !hasCash">{{ t('common.confirm') }}</button>
-              </div>
             </form>
+
+            <ul v-else class="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto px-3 text-sm">
+              <li v-for="item in current.items" :key="item.id" class="py-2" :class="item.voidedAt ? 'text-slate-400' : ''">
+                <div class="flex items-start justify-between gap-2">
+                  <span class="min-w-0" :class="item.voidedAt ? 'line-through' : ''">
+                    <input
+                      v-if="moving.active && !item.voidedAt"
+                      class="mr-1 size-5 align-middle"
+                      type="checkbox"
+                      :checked="(moving.quantities[item.id] ?? 0) > 0"
+                      :aria-label="t('pos.moveItem', { name: item.description })"
+                      @change="toggleMoveLine(item)"
+                    />
+                    <span class="font-medium">{{ item.description }}</span>
+                    <span
+                      v-if="!item.voidedAt"
+                      class="ml-1 rounded px-1 text-xs"
+                      :class="item.readyAt ? 'bg-sky-100 text-sky-800' : item.sentAt ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
+                    >
+                      {{ item.readyAt ? t('pos.ready') : item.sentAt ? (station(item) === 'BAR' ? t('pos.atBar') : station(item) === 'NONE' ? t('pos.served') : t('pos.atKitchen')) : t('pos.toSend') }}
+                    </span>
+                  </span>
+                  <span class="shrink-0 font-semibold tabular-nums">{{ item.voidedAt ? t('pos.voidedLabel') : money(item.total) }}</span>
+                </div>
+                <div v-if="moving.active && (moving.quantities[item.id] ?? 0) > 0 && Number(item.quantity) > 1" class="mt-1">
+                  <input
+                    v-model.number="moving.quantities[item.id]"
+                    class="input w-24"
+                    type="number"
+                    inputmode="decimal"
+                    min="0.001"
+                    :max="Number(item.quantity)"
+                    step="1"
+                    :aria-label="t('pos.moveQuantity')"
+                  />
+                </div>
+                <div v-else-if="!item.voidedAt && !moving.active" class="mt-1 flex items-center gap-1">
+                  <template v-if="!item.sentAt">
+                    <button class="btn-icon ring-1 ring-slate-200" type="button" :disabled="busy" :aria-label="t('pos.decrease', { name: item.description })" @click="changeQuantity(item, -1)">
+                      {{ Number(item.quantity) > 1 ? '−' : '×' }}
+                    </button>
+                    <span class="min-w-10 text-center text-base font-semibold tabular-nums">{{ Number(item.quantity) }}</span>
+                    <button class="btn-icon ring-1 ring-slate-200" type="button" :disabled="busy" :aria-label="t('pos.increase', { name: item.description })" @click="changeQuantity(item, 1)">+</button>
+                    <button class="btn-secondary ml-auto min-h-11 px-3 text-xs" type="button" :disabled="busy" @click="addNote(item)">{{ t('pos.note') }}</button>
+                  </template>
+                  <template v-else>
+                    <span class="text-slate-500 tabular-nums">{{ Number(item.quantity) }} ×</span>
+                    <button v-if="isManager" class="btn-secondary ml-auto min-h-11 px-3 text-xs text-rose-600" type="button" :disabled="busy" @click="voidItem(item)">{{ t('pos.void') }}</button>
+                  </template>
+                </div>
+                <p v-if="item.notes" class="text-xs text-slate-500">&gt; {{ item.notes }}</p>
+                <p v-if="item.voidedAt" class="text-xs">
+                  {{ t('pos.voidedBy', { reason: item.voidReason, name: item.voidedBy?.name }) }}
+                  <PaperLinks class="ml-1" :params="{ document: 'VOID', orderId: current.id, itemId: item.id }" :title="t('print.documents.VOID')" @error="error = $event" />
+                </p>
+              </li>
+            </ul>
+
+            <div class="shrink-0 space-y-2 border-t border-slate-200 p-3">
+              <p class="flex justify-between text-lg font-semibold">
+                {{ t('common.total') }} <span class="tabular-nums">{{ money(current.total) }}</span>
+              </p>
+
+              <div v-if="moving.active" class="space-y-2 text-sm">
+                <p class="text-xs text-slate-500">{{ t('pos.moveHint') }}</p>
+                <select v-model="moving.target" class="input">
+                  <option value="split">{{ current.tableId ? t('pos.splitTable') : t('pos.splitSale') }}</option>
+                  <option v-for="target in moveTargets" :key="target.value" :value="target.value">{{ t('pos.transferTo', { target: target.label }) }}</option>
+                </select>
+                <div class="grid grid-cols-2 gap-2">
+                  <button class="btn-secondary" type="button" @click="moving.active = false">{{ t('common.back') }}</button>
+                  <button class="btn" type="button" :disabled="busy || !movingCount" @click="confirmMove">{{ t('pos.moveLines', { n: movingCount }) }}</button>
+                </div>
+              </div>
+
+              <div v-else-if="closing" class="grid grid-cols-2 gap-2">
+                <button class="btn-secondary" type="button" @click="closing = false">{{ t('common.back') }}</button>
+                <button class="btn" type="submit" form="pos-close" :disabled="busy || !hasCash">{{ t('common.confirm') }}</button>
+              </div>
+
+              <div v-else class="grid grid-cols-2 gap-2">
+                <button class="btn col-span-2" type="button" :disabled="busy || !pendingCount" @click="sendOrder">
+                  {{ t('pos.send') }}{{ pendingCount ? ` (${pendingCount})` : '' }}
+                </button>
+                <button class="btn-secondary" type="button" :disabled="!activeItems" @click="prebill">{{ t('pos.prebill') }}</button>
+                <button class="btn" type="button" :disabled="!activeItems" @click="startClose">{{ t('pos.closeBill') }}</button>
+                <button class="btn-secondary col-span-2" type="button" :disabled="!activeItems" @click="startMove">{{ t('pos.splitMove') }}</button>
+                <details class="col-span-2 text-sm">
+                  <summary class="flex min-h-11 cursor-pointer touch-manipulation items-center rounded-lg px-2 text-slate-600 select-none hover:bg-slate-50">{{ t('pos.documents') }}</summary>
+                  <div class="space-y-2 px-2 pt-1 pb-2">
+                    <div class="flex flex-wrap items-center gap-2">
+                      {{ t('pos.prebill') }}
+                      <PaperLinks :params="{ document: 'PREBILL', orderId: current.id }" :title="t('print.documents.PREBILL')" @error="error = $event" />
+                    </div>
+                    <div v-if="current.items.some((i) => i.sentAt)" class="flex flex-wrap items-center gap-2">
+                      {{ t('print.documents.ORDER') }} · {{ t('pos.atKitchen') }}
+                      <PaperLinks :params="{ document: 'ORDER', orderId: current.id, station: 'KITCHEN' }" :title="t('print.documents.ORDER')" @error="error = $event" />
+                      · {{ t('pos.atBar') }}
+                      <PaperLinks :params="{ document: 'ORDER', orderId: current.id, station: 'BAR' }" :title="t('print.documents.ORDER')" @error="error = $event" />
+                    </div>
+                    <div v-if="current.items.some((i) => i.sentAt)" class="flex flex-wrap items-center gap-2">
+                      {{ t('pos.reprint') }}
+                      <button class="btn-secondary min-h-11 px-3 text-xs" type="button" @click="reprint('KITCHEN')">{{ t('pos.atKitchen') }}</button>
+                      <button class="btn-secondary min-h-11 px-3 text-xs" type="button" @click="reprint('BAR')">{{ t('pos.atBar') }}</button>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            </div>
           </template>
-          <p v-else class="text-sm text-slate-500">{{ t('pos.noneSelected') }}</p>
-        </div>
+          <p v-else class="p-6 text-center text-sm text-slate-500">{{ t('pos.noneSelected') }}</p>
+        </aside>
       </div>
     </template>
   </section>

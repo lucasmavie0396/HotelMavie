@@ -12,7 +12,7 @@ test('processa os salarios do mes, mostra o recibo e fecha o mes', async ({ page
   await expect(row).toContainText('900,00');
   await expect(row).toContainText('756,00');
 
-  await row.getByRole('button', { name: 'Recibo' }).click();
+  await row.getByRole('button', { name: 'A4' }).click();
   const preview = page.getByRole('dialog');
   await expect(preview).toContainText('Recibo Rita Costa Marco 2026');
   await preview.getByRole('button', { name: 'Fechar' }).click();

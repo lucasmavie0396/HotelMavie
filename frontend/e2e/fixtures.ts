@@ -13,6 +13,6 @@ export async function login(page: Page) {
   await page.goto('/login');
   await page.getByLabel('Email').fill(MANAGER.email);
   await page.getByLabel('Password').fill(MANAGER.password);
-  await page.getByRole('button', { name: 'Entrar' }).click();
+  await page.locator('form').getByRole('button', { name: 'Entrar' }).click();
   await expect(page).toHaveURL(/\/$/);
 }

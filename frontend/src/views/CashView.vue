@@ -134,10 +134,10 @@ onMounted(load);
           <button class="btn w-full" type="button" @click="showSession(register.sessions[0].id)">{{ t('cash.view') }}</button>
         </template>
         <form v-else class="flex gap-2" @submit.prevent="openRegister(register.id)">
-          <input v-model.number="opening[register.id]" class="input" type="number" min="0" step="0.01" :placeholder="t('cash.float')" />
+          <input v-model.number="opening[register.id]" class="input" type="number" inputmode="decimal" min="0" step="0.01" :placeholder="t('cash.float')" />
           <button class="btn whitespace-nowrap" type="submit" :disabled="busy">{{ t('cash.openAction') }}</button>
         </form>
-        <button class="text-xs text-indigo-600 hover:underline" type="button" @click="showHistory(register.id)">{{ t('stock.history') }}</button>
+        <button class="inline-flex min-h-9 touch-manipulation items-center rounded-md px-2 text-xs text-indigo-600 hover:bg-indigo-50 hover:underline touch:min-h-11" type="button" @click="showHistory(register.id)">{{ t('stock.history') }}</button>
       </div>
 
       <form v-if="isManager" class="card flex items-end gap-2" @submit.prevent="createRegister">
@@ -155,10 +155,10 @@ onMounted(load);
           {{ detail.register.name }} · {{ t('cash.session', { date: formatDateTime(detail.openedAt) }) }}
           <span v-if="detail.closedAt" class="text-sm font-normal text-slate-500">({{ t('cash.closedAt', { date: formatDateTime(detail.closedAt) }) }})</span>
         </h2>
-        <button class="text-sm text-slate-500 hover:underline" type="button" @click="detail = null">{{ t('cash.closePanel') }}</button>
+        <button class="btn-secondary px-3 text-sm" type="button" @click="detail = null">{{ t('cash.closePanel') }}</button>
       </div>
 
-      <div class="grid gap-4 sm:grid-cols-4">
+      <div class="grid gap-4 grid-cols-2 xl:grid-cols-4">
         <div><p class="text-xs text-slate-500">{{ t('cash.openingAmount') }}</p><p class="font-semibold">{{ money(detail.openingAmount) }}</p></div>
         <div><p class="text-xs text-slate-500">{{ t('cash.cashReceived') }}</p><p class="font-semibold">{{ money(detail.payments.reduce((s, p) => s + Number(p.amount), 0)) }}</p></div>
         <div><p class="text-xs text-slate-500">{{ t('cash.expected') }}</p><p class="text-lg font-semibold">{{ money(detail.expected) }}</p></div>
@@ -211,21 +211,21 @@ onMounted(load);
       </div>
 
       <template v-if="!detail.closedAt">
-        <form class="grid gap-3 sm:grid-cols-4" @submit.prevent="addMovement">
+        <form class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" @submit.prevent="addMovement">
           <select v-model="movement.type" class="input">
             <option value="OUT">{{ t('cash.outOption') }}</option>
             <option value="IN">{{ t('cash.inOption') }}</option>
           </select>
-          <input v-model.number="movement.amount" class="input" type="number" min="0.01" step="0.01" :placeholder="t('common.value')" required />
+          <input v-model.number="movement.amount" class="input" type="number" inputmode="decimal" min="0.01" step="0.01" :placeholder="t('common.value')" required />
           <input v-model="movement.description" class="input" :placeholder="t('common.description')" required />
           <button class="btn-secondary" type="submit" :disabled="busy">{{ t('cash.addMovement') }}</button>
         </form>
-        <form class="grid gap-3 border-t border-slate-200 pt-4 sm:grid-cols-4" @submit.prevent="closeSession">
+        <form class="grid gap-3 border-t border-slate-200 pt-4 sm:grid-cols-2 xl:grid-cols-4" @submit.prevent="closeSession">
           <label class="text-sm">
             {{ t('cash.counted') }}
-            <input v-model.number="closing.countedAmount" class="input" type="number" min="0" step="0.01" required />
+            <input v-model.number="closing.countedAmount" class="input" type="number" inputmode="decimal" min="0" step="0.01" required />
           </label>
-          <input v-model="closing.notes" class="input self-end sm:col-span-2" :placeholder="t('cash.closeNotes')" />
+          <input v-model="closing.notes" class="input self-end sm:col-span-2 xl:col-span-2" :placeholder="t('cash.closeNotes')" />
           <button class="btn self-end" type="submit" :disabled="busy">{{ t('cash.close') }}</button>
         </form>
       </template>

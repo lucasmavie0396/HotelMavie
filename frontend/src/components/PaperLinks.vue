@@ -18,6 +18,6 @@ function show(paper: PaperWidth, label: string) {
 
 <template>
   <span class="inline-flex gap-2 text-xs">
-    <button v-for="item in PAPERS" :key="item.paper" class="text-indigo-600 hover:underline" type="button" @click="show(item.paper, item.label)">{{ item.label }}</button>
+    <button v-for="item in PAPERS" :key="item.paper" class="inline-flex min-h-9 touch-manipulation items-center rounded-md px-2 text-indigo-600 hover:bg-indigo-50 hover:underline touch:min-h-11" type="button" @click="show(item.paper, item.label)">{{ item.label }}</button>
   </span>
 </template>

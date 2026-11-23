@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseEnumPipe, ParseIntPipe, Post, Query, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseEnumPipe, ParseIntPipe, Patch, Post, Query, Res } from '@nestjs/common';
 import { PrepStation } from '@prisma/client';
 import { IsString, Length } from 'class-validator';
 import type { Response } from 'express';
@@ -7,7 +7,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { SalesAccess } from '../common/decorators/roles.decorator';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { resolveHotelScope } from '../common/hotel-scope';
-import { CloseOrderDto, KdsQueryDto, KdsReadyDto, MoveItemsDto, OpenOrderDto, OrderItemDto, OrderQueryDto, PosService } from './pos.service';
+import { CloseOrderDto, ItemQuantityDto, KdsQueryDto, KdsReadyDto, MoveItemsDto, OpenOrderDto, OrderItemDto, OrderQueryDto, PosService } from './pos.service';
 
 class VoidItemDto {
   @IsString()
@@ -70,6 +70,16 @@ export class PosController {
   @Post(':id/items')
   addItem(@Param('id', ParseIntPipe) id: number, @Body() dto: OrderItemDto, @CurrentUser() user: JwtPayload) {
     return this.pos.addItem(id, dto, user);
+  }
+
+  @Patch(':id/items/:itemId')
+  updateItemQuantity(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('itemId', ParseIntPipe) itemId: number,
+    @Body() dto: ItemQuantityDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.pos.updateItemQuantity(id, itemId, dto.quantity, user);
   }
 
   @Delete(':id/items/:itemId')

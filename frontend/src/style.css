@@ -1,16 +1,26 @@
 @import "tailwindcss";
 
+@custom-variant touch (&:where([data-touch], [data-touch] *));
+
 @layer components {
   .input {
-    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none;
+    @apply min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none;
   }
 
   .btn {
-    @apply inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-indigo-500/25 transition hover:brightness-110 hover:shadow-md disabled:opacity-50 disabled:hover:brightness-100;
+    @apply inline-flex min-h-11 touch-manipulation items-center justify-center rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-indigo-500/25 transition select-none hover:brightness-110 hover:shadow-md disabled:opacity-50 disabled:hover:brightness-100;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-50;
+    @apply inline-flex min-h-11 touch-manipulation items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition select-none hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-50;
+  }
+
+  .btn-icon {
+    @apply inline-flex size-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-slate-600 transition select-none hover:bg-slate-100 active:bg-slate-200 disabled:opacity-40;
+  }
+
+  .chip {
+    @apply inline-flex min-h-11 shrink-0 touch-manipulation items-center rounded-full px-4 text-sm font-medium whitespace-nowrap select-none;
   }
 
   .card {
@@ -35,5 +45,19 @@
 
   .page-header .input {
     @apply border-white/40 shadow-sm;
+  }
+
+  html[data-touch] .btn,
+  html[data-touch] .btn-secondary,
+  html[data-touch] .input {
+    @apply min-h-12 text-base;
+  }
+
+  html[data-touch] .btn-icon {
+    @apply size-12;
+  }
+
+  html[data-touch] .chip {
+    @apply min-h-12 text-base;
   }
 }

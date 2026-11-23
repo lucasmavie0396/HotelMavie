@@ -59,11 +59,11 @@ Object.assign(process.env, {
   DATABASE_URL: url.toString(),
   PORT: process.env.UI_TEST_PORT ?? '3100',
   HOST: '127.0.0.1',
-  FRONTEND_DIR: resolve(backend, '..', 'frontend', 'dist'),
+  FRONTEND_DIR: process.env.UI_FRONTEND_DIR || resolve(backend, '..', 'frontend', 'dist'),
   UPLOAD_DIR: uploads,
   SMTP_HOST: '',
   NODE_ENV: 'test',
   JWT_SECRET: process.env.JWT_SECRET || 'segredo-de-teste-access',
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || 'segredo-de-teste-refresh',
 });
-await import(pathToFileURL(join(backend, 'dist', 'main.js')).href);
+await import(pathToFileURL(join(process.env.UI_BACKEND_DIST || join(backend, 'dist'), 'main.js')).href);

@@ -182,14 +182,14 @@ onBeforeUnmount(() => {
   <section ref="root" class="space-y-4 overflow-y-auto bg-slate-100 p-1">
     <PageHeader section="kitchen" :subtitle="t('kitchen.subtitle', { orders: pending.length, items: waiting })">
       <div class="flex rounded-lg bg-white p-0.5 text-sm text-slate-700 shadow">
-        <button type="button" class="rounded px-4 py-1.5" :class="station === 'KITCHEN' ? 'bg-indigo-600 text-white' : ''" @click="setStation('KITCHEN')">{{ t('labels.prepStation.KITCHEN') }}</button>
-        <button type="button" class="rounded px-4 py-1.5" :class="station === 'BAR' ? 'bg-indigo-600 text-white' : ''" @click="setStation('BAR')">{{ t('labels.prepStation.BAR') }}</button>
+        <button type="button" class="min-h-10 touch-manipulation rounded px-4 py-1.5 touch:min-h-11" :class="station === 'KITCHEN' ? 'bg-indigo-600 text-white' : ''" @click="setStation('KITCHEN')">{{ t('labels.prepStation.KITCHEN') }}</button>
+        <button type="button" class="min-h-10 touch-manipulation rounded px-4 py-1.5 touch:min-h-11" :class="station === 'BAR' ? 'bg-indigo-600 text-white' : ''" @click="setStation('BAR')">{{ t('labels.prepStation.BAR') }}</button>
       </div>
       <button class="btn-secondary" type="button" @click="fullscreen">{{ t('kitchen.fullscreen') }}</button>
     </PageHeader>
 
-    <label class="flex items-center gap-2 text-sm text-slate-700" :title="t('kitchen.printHint')">
-      <input type="checkbox" :checked="printing" @change="setPrinting(($event.target as HTMLInputElement).checked)" />
+    <label class="flex min-h-11 w-fit cursor-pointer items-center gap-2 text-sm text-slate-700" :title="t('kitchen.printHint')">
+      <input class="size-5" type="checkbox" :checked="printing" @change="setPrinting(($event.target as HTMLInputElement).checked)" />
       {{ t('kitchen.print') }}
     </label>
     <p v-if="printing" class="text-xs text-slate-500">{{ t('kitchen.printHint') }}</p>
@@ -209,19 +209,19 @@ onBeforeUnmount(() => {
           <li v-for="item in card.items" :key="item.id" class="flex items-start justify-between gap-2">
             <button
               type="button"
-              class="text-left text-lg leading-tight"
+              class="min-h-11 w-full touch-manipulation rounded-lg py-1 text-left text-lg leading-tight select-none active:bg-black/5 touch:text-xl"
               :class="item.voided ? 'text-rose-600 line-through' : item.readyAt ? 'text-slate-400 line-through' : 'font-semibold'"
               :disabled="busy || item.voided"
               :title="item.readyAt ? t('kitchen.undo') : t('kitchen.markItem')"
               @click="mark([item.id], Boolean(item.readyAt))"
             >
-              {{ Number(item.quantity) }}x {{ item.description }}
+              <span class="tabular-nums touch:text-2xl">{{ Number(item.quantity) }}x</span> {{ item.description }}
               <span v-if="item.voided" class="ml-1 text-xs font-bold no-underline">{{ t('kitchen.voided') }}</span>
               <span v-if="item.notes" class="block text-sm font-normal text-amber-700">&gt; {{ item.notes }}</span>
             </button>
           </li>
         </ul>
-        <button class="btn mt-3 w-full justify-center py-3 text-base" type="button" :disabled="busy" @click="mark(open(card))">{{ t('kitchen.ready') }}</button>
+        <button class="btn mt-3 min-h-12 w-full justify-center py-3 text-base" type="button" :disabled="busy" @click="mark(open(card))">{{ t('kitchen.ready') }}</button>
       </article>
     </div>
     <p v-else class="rounded-2xl bg-white p-10 text-center text-lg text-slate-500 shadow">{{ t('kitchen.empty') }}</p>
@@ -233,7 +233,7 @@ onBeforeUnmount(() => {
           v-for="card in done"
           :key="card.key"
           type="button"
-          class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-sm shadow-sm hover:border-indigo-400"
+          class="min-h-11 touch-manipulation rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-sm shadow-sm select-none hover:border-indigo-400"
           :title="t('kitchen.undo')"
           :disabled="busy"
           @click="mark(card.items.map((item) => item.id), true)"

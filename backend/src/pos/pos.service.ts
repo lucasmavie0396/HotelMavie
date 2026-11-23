@@ -76,6 +76,12 @@ export class OrderItemDto {
   notes?: string;
 }
 
+export class ItemQuantityDto {
+  @IsNumber({ maxDecimalPlaces: 3 })
+  @Min(0.001)
+  quantity: number;
+}
+
 export class OrderPaymentDto {
   @IsOptional()
   @IsEnum(PaymentMethod)
@@ -274,6 +280,24 @@ export class PosService {
           notes: dto.notes,
         },
       });
+      return this.recalculate(tx, orderId);
+    });
+  }
+
+  async updateItemQuantity(orderId: number, itemId: number, quantity: number, user: JwtPayload) {
+    const order = await this.openOrder(orderId, user);
+    const item = order.items.find((line) => line.id === itemId);
+    if (!item) {
+      throw new NotFoundException('Linha nao encontrada');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.orderItem.updateMany({
+        where: { id: itemId, orderId, sentAt: null, voidedAt: null },
+        data: { quantity, total: toMoney(new Prisma.Decimal(quantity).mul(item.unitPrice)) },
+      });
+      if (!count) {
+        throw new ConflictException('Esta linha ja foi enviada para preparacao: tem de ser anulada');
+      }
       return this.recalculate(tx, orderId);
     });
   }

@@ -73,6 +73,25 @@ describe('Pedidos a cozinha e bar, anulacoes e taloes', () => {
     await ctx.http().get(`/api/orders/${orderId}/ticket?station=BAR&sentAt=${encodeURIComponent(second.body.sentAt)}`).set(auth).expect(404);
   });
 
+  it('a quantidade de uma linha por enviar muda no proprio pedido e a de uma enviada nao', async () => {
+    const { beer, dish, orderId } = await setup();
+    const first = await add(orderId, beer, 1);
+    const line = first.body.items[0];
+    await ctx.http().patch(`/api/orders/${orderId}/items/${line.id}`).set(auth).send({ quantity: 0 }).expect(400);
+    const changed = await ctx.http().patch(`/api/orders/${orderId}/items/${line.id}`).set(auth).send({ quantity: 3 }).expect(200);
+    expect(changed.body.total).toBe('7.5');
+    expect(changed.body.items[0]).toMatchObject({ quantity: '3', total: '7.5' });
+
+    const other = await createHotel(ctx.prisma);
+    const outsider = await createUser(ctx.prisma, UserRole.MANAGER, other.hotel.id);
+    await ctx.http().patch(`/api/orders/${orderId}/items/${line.id}`).set((await login(ctx, outsider.email)).auth).send({ quantity: 2 }).expect(404);
+
+    await add(orderId, dish, 1);
+    await ctx.http().post(`/api/orders/${orderId}/send`).set(auth).expect(200);
+    await ctx.http().patch(`/api/orders/${orderId}/items/${line.id}`).set(auth).send({ quantity: 1 }).expect(409);
+    expect((await ctx.prisma.order.findUniqueOrThrow({ where: { id: orderId } })).total.toString()).toBe('19.5');
+  });
+
   it('linhas enviadas so se anulam com motivo e por gestor, e saem do total, da fatura e do stock', async () => {
     const { hotel, beer, dish, warehouse, orderId } = await setup();
     await add(orderId, dish, 1);
