@@ -234,6 +234,7 @@ const EXACT: Record<string, string> = {
   'So um gestor pode recusar um pedido ja aceite': 'Only a manager can reject an order that was already accepted',
   'O pedido nao tem estadia associada: abre-o no POS para o cobrar': 'The order has no stay linked: open it in the POS to charge it',
   'Horario invalido: usa HH:MM-HH:MM': 'Invalid hours: use HH:MM-HH:MM',
+  'A app Android ainda nao esta neste servidor': 'The Android app is not on this server yet',
   'Erro interno': 'Internal error',
   'Forbidden resource': 'Not allowed to perform this operation',
   Unauthorized: 'Unauthorized',

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AppAndroidController } from './app-android/app-android.controller';
 import { BillingModule } from './billing/billing.module';
 import { CatalogController } from './catalog/catalog.controller';
 import { ImageSearchService } from './catalog/image-search';
@@ -18,7 +19,7 @@ import { StockService } from './stock/stock.service';
 
 @Module({
   imports: [BillingModule, ReportsModule],
-  controllers: [CatalogController, StockController, PurchasesController, PosController, KdsController, TablesController, PrintingController, RoomDeviceController, RoomDevicesController, RoomOrdersController, ReservationRoomServiceController],
+  controllers: [CatalogController, StockController, PurchasesController, PosController, KdsController, TablesController, PrintingController, RoomDeviceController, RoomDevicesController, RoomOrdersController, ReservationRoomServiceController, AppAndroidController],
   providers: [ImageSearchService, StockService, StockDocumentsService, PurchasesService, PosService, RecipesService, PrintService, RoomServiceService],
 })
 export class OperationsModule {}

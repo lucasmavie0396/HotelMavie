@@ -75,6 +75,26 @@ Copy-Folder (Split-Path $PSScriptRoot) (Join-Path $stage 'deploy\windows') @('in
 Copy-Folder (Join-Path $Raiz 'print-agent') (Join-Path $stage 'print-agent') @('node_modules')
 Copy-Item -LiteralPath (Join-Path $Raiz 'README.md') -Destination $stage
 
+Write-Step 'App Android (APK da release app-android)'
+$apkName = 'MAVIE-HGest.apk'
+$apkRepo = Join-Path $Raiz "android\$apkName"
+try {
+  $apkNew = Save-Installer "https://github.com/lucasmavie0396/HotelMavie/releases/download/app-android/$apkName" $apkName
+  Copy-Item -LiteralPath $apkNew -Destination $apkRepo -Force
+} catch {
+  Write-Warning "Nao foi possivel transferir a APK ($($_.Exception.Message)). Uso a copia local, se existir."
+}
+if (-not (Test-Path $apkRepo) -or (Get-Item $apkRepo).Length -lt 100KB) {
+  throw "Falta $apkRepo. Compile a app em GitHub Actions (App Android) ou copie a APK para esse caminho."
+}
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$apkZip = [IO.Compression.ZipFile]::OpenRead($apkRepo)
+try { if (-not $apkZip.GetEntry('AndroidManifest.xml')) { throw "$apkRepo nao e uma APK (sem AndroidManifest.xml)." } }
+finally { $apkZip.Dispose() }
+New-Item -ItemType Directory -Force (Join-Path $stage 'android') | Out-Null
+Copy-Item -LiteralPath $apkRepo -Destination (Join-Path $stage "android\$apkName") -Force
+Write-Ok "$apkName ($([math]::Round((Get-Item $apkRepo).Length / 1MB, 1)) MB)"
+
 if (-not $SemInstaladores) {
   Write-Step 'Instaladores incluidos (Node.js e MariaDB, verificados por SHA-256)'
   $bundle = Join-Path $stage 'instaladores'

@@ -2,7 +2,7 @@ export const adminViews = {
   pt: {
     settings: {
       tabsLabel: 'Separadores da configuracao',
-      tabs: { fiscal: 'Dados do hotel', site: 'Site e reservas', taxes: 'IVA', payments: 'Pagamentos', printers: 'Impressoras', tables: 'Mesas', tablets: 'Tablets dos quartos', at: 'Autoridade Tributaria', emails: 'Emails' },
+      tabs: { fiscal: 'Dados do hotel', site: 'Site e reservas', taxes: 'IVA', payments: 'Pagamentos', printers: 'Impressoras', tables: 'Mesas', tablets: 'Tablets dos quartos', app: 'App Android', at: 'Autoridade Tributaria', emails: 'Emails' },
       categories: { RED: 'Reduzida', INT: 'Intermedia', NOR: 'Normal', ISE: 'Isento' },
       emailKinds: {
         BOOKING_REQUEST: 'Pedido de reserva (hospede)',
@@ -402,7 +402,7 @@ export const adminViews = {
   en: {
     settings: {
       tabsLabel: 'Settings tabs',
-      tabs: { fiscal: 'Hotel details', site: 'Website and bookings', taxes: 'VAT', payments: 'Payments', printers: 'Printers', tables: 'Tables', tablets: 'Room tablets', at: 'Tax Authority', emails: 'Emails' },
+      tabs: { fiscal: 'Hotel details', site: 'Website and bookings', taxes: 'VAT', payments: 'Payments', printers: 'Printers', tables: 'Tables', tablets: 'Room tablets', app: 'Android app', at: 'Tax Authority', emails: 'Emails' },
       categories: { RED: 'Reduced', INT: 'Intermediate', NOR: 'Standard', ISE: 'Exempt' },
       emailKinds: {
         BOOKING_REQUEST: 'Booking request (guest)',

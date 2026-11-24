@@ -61,6 +61,7 @@ Source: "{#Stage}\instaladores\mariadb-*"; DestDir: "{app}\instaladores"; Flags:
 Source: "{#Stage}\instaladores\node-*"; DestDir: "{app}\instaladores"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#Stage}\deploy\*"; DestDir: "{app}\deploy"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "{#Stage}\print-agent\*"; DestDir: "{app}\print-agent"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#Stage}\android\MAVIE-HGest.apk"; DestDir: "{app}\android"; Flags: ignoreversion; Components: sistema
 Source: "{#Stage}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Dirs]
