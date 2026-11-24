@@ -28,6 +28,12 @@ describe('traducao das mensagens da API', () => {
   it('traduz mensagens com valores e mantem o portugues por omissao', () => {
     expect(translateMessage('So ha 3 de Cerveja em Economato', 'en')).toBe('Only 3 of Cerveja at Economato');
     expect(translateMessage('So ha 3 em stock em Bar', 'en')).toBe('Only 3 in stock at Bar');
+    expect(translateMessage('Stock insuficiente de Cerveja em Bar: disponivel 2 un, a retirar 3 un. Regista a entrada de stock ou pede autorizacao', 'en')).toBe(
+      'Not enough stock of Cerveja at Bar: available 2 un, to remove 3 un. Record the stock entry or ask for authorisation',
+    );
+    expect(translateMessage('Ja existe um inventario aberto neste armazem (INV #4). Lanca-o ou cancela-o primeiro', 'en')).toBe(
+      'There is already an open stock count in this warehouse (INV #4). Post or cancel it first',
+    );
     expect(translateMessage('O quarto 101 nao esta pronto (CLEANING)', 'en')).toBe('Room 101 is not ready (CLEANING)');
     expect(translateMessage('Os pagamentos (15.00) tem de igualar o total (20.00)', 'en')).toBe('Payments (15.00) must equal the total (20.00)');
     expect(translateMessage('Credenciais invalidas', 'pt')).toBe('Credenciais invalidas');

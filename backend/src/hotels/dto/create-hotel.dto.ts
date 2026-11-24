@@ -45,6 +45,10 @@ export class CreateHotelDto {
   currency?: string;
 
   @IsOptional()
+  @IsBoolean()
+  allowNegativeStock?: boolean;
+
+  @IsOptional()
   @IsString()
   @MaxLength(200)
   legalName?: string;

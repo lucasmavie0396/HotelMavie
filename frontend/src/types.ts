@@ -36,6 +36,7 @@ export interface Hotel {
   phone: string | null;
   address: string | null;
   currency: string;
+  allowNegativeStock: boolean;
   legalName: string | null;
   taxId: string | null;
   invoiceFooter: string | null;
@@ -319,6 +320,7 @@ export interface Product {
   sellable: boolean;
   trackStock: boolean;
   trackExpiry: boolean;
+  allowNegativeStock: boolean;
   minStock: string;
   active: boolean;
   imageFile: string | null;
@@ -346,7 +348,7 @@ export interface StockLevelRow extends Product {
 
 export interface StockMovement {
   id: number;
-  type: 'PURCHASE' | 'SALE' | 'ADJUSTMENT' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'WASTE' | 'RETURN';
+  type: 'PURCHASE' | 'SALE' | 'ADJUSTMENT' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'WASTE' | 'RETURN' | 'PURCHASE_VOID';
   quantity: string;
   balance: string;
   reason: string | null;
@@ -382,7 +384,13 @@ export interface StockDocument {
   toWarehouse: { id: number; name: string } | null;
   supplier: { id: number; name: string } | null;
   createdBy: { name: string } | null;
-  items: { id: number; productId: number; quantity: string; previousQuantity: string | null; product: { name: string; unit: string } }[];
+  items: {
+    id: number;
+    productId: number;
+    quantity: string;
+    previousQuantity: string | null;
+    product: { name: string; unit: string; cost: string; active: boolean; category: { id: number; name: string } | null };
+  }[];
 }
 
 export interface Supplier {
@@ -392,13 +400,23 @@ export interface Supplier {
   email: string | null;
   phone: string | null;
   active: boolean;
+  purchaseCount: number;
+  purchaseTotal: string;
 }
 
 export interface Purchase {
   id: number;
   status: 'DRAFT' | 'PARTIAL' | 'RECEIVED' | 'CANCELLED';
   supplierRef: string | null;
+  documentDate: string | null;
+  dueDate: string | null;
+  notes: string | null;
+  subtotal: string;
+  discount: string;
+  taxTotal: string;
   total: string;
+  cancelReason: string | null;
+  cancelledAt: string | null;
   orderedAt: string;
   sentAt: string | null;
   receivedAt: string | null;
@@ -410,6 +428,9 @@ export interface Purchase {
     quantity: string;
     receivedQuantity: string;
     unitCost: string;
+    discount: string;
+    taxRate: string;
+    taxAmount: string;
     total: string;
     product: { name: string; unit: string; trackExpiry: boolean };
   }[];

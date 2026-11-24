@@ -25,8 +25,15 @@ describe('Restaurante/bar, stocks e compras', () => {
   const stockOf = async (warehouseId: number, productId: number) =>
     Number((await ctx.prisma.stockLevel.findUnique({ where: { warehouseId_productId: { warehouseId, productId } } }))?.quantity ?? 0);
 
+  let documents = 0;
+  const nextRef = () => `FT ${++documents}`;
+
   async function receive(supplierId: number, warehouseId: number, productId: number, quantity: number, unitCost: number) {
-    const purchase = await ctx.http().post('/api/purchases').set(auth).send({ supplierId, warehouseId, items: [{ productId, quantity, unitCost }] }).expect(201);
+    const purchase = await ctx.http()
+      .post('/api/purchases')
+      .set(auth)
+      .send({ supplierId, warehouseId, supplierRef: nextRef(), items: [{ productId, quantity, unitCost }] })
+      .expect(201);
     return ctx.http().post(`/api/purchases/${purchase.body.id}/receive`).set(auth).expect(200);
   }
 
@@ -154,14 +161,14 @@ describe('Restaurante/bar, stocks e compras', () => {
     expect(await stockOf(main.body.id, beer.id)).toBe(12);
     expect(await stockOf(bar.body.id, beer.id)).toBe(8);
 
-    const adjust = await ctx.http().post(`/api/warehouses/${main.body.id}/adjust`).set(auth).send({ productId: beer.id, countedQuantity: 10 }).expect(201);
+    const adjust = await ctx.http().post(`/api/warehouses/${main.body.id}/adjust`).set(auth).send({ productId: beer.id, countedQuantity: 10, reason: 'Contagem' }).expect(201);
     expect(adjust.body).toMatchObject({ quantity: '-2', balance: '10' });
     await ctx.http().post(`/api/warehouses/${bar.body.id}/waste`).set(auth).send({ productId: beer.id, quantity: 1, reason: 'Partida' }).expect(201);
     expect(await stockOf(bar.body.id, beer.id)).toBe(7);
 
     const other = await createHotel(ctx.prisma);
     const foreign = await ctx.prisma.product.create({ data: { hotelId: other.hotel.id, name: 'Alheio', trackStock: true } });
-    await ctx.http().post(`/api/warehouses/${main.body.id}/adjust`).set(auth).send({ productId: foreign.id, countedQuantity: 5 }).expect(404);
+    await ctx.http().post(`/api/warehouses/${main.body.id}/adjust`).set(auth).send({ productId: foreign.id, countedQuantity: 5, reason: 'Contagem' }).expect(404);
   });
 
   it('documentos de stock agrupam linhas e so mexem no stock ao lancar', async () => {
@@ -268,7 +275,7 @@ describe('Restaurante/bar, stocks e compras', () => {
     const purchase = await ctx.http()
       .post('/api/purchases')
       .set(auth)
-      .send({ supplierId: supplier.id, warehouseId: main.body.id, items: [{ productId: milk.id, quantity: 10, unitCost: 1 }] })
+      .send({ supplierId: supplier.id, warehouseId: main.body.id, supplierRef: nextRef(), items: [{ productId: milk.id, quantity: 10, unitCost: 1 }] })
       .expect(201);
     const itemId = purchase.body.items[0].id;
     const partial = await ctx.http()
@@ -333,11 +340,132 @@ describe('Restaurante/bar, stocks e compras', () => {
     await ctx.http()
       .post(`/api/purchases/${order.body.id}/receive`)
       .set(auth)
-      .send({ items: [{ itemId: order.body.items[0].id, quantity: 10 }] })
+      .send({ supplierRef: nextRef(), items: [{ itemId: order.body.items[0].id, quantity: 10 }] })
       .expect(200);
-    await ctx.http().post(`/api/purchases/${order.body.id}/cancel`).set(auth).expect(409);
+    await ctx.http().post(`/api/purchases/${order.body.id}/cancel`).set(auth).send({}).expect(400);
     const closed = await ctx.http().post(`/api/purchases/${order.body.id}/close`).set(auth).expect(200);
     expect(closed.body.status).toBe('RECEIVED');
     expect(await stockOf(main.body.id, beer.id)).toBe(14);
+  });
+
+  it('compras com desconto e IVA por linha, documento unico do fornecedor e anulacao com estorno', async () => {
+    const { hotel, beer, supplier } = await setup();
+    const main = await ctx.http().post('/api/warehouses').set(auth).send({ hotelId: hotel.id, name: 'Economato' }).expect(201);
+    const base = { supplierId: supplier.id, warehouseId: main.body.id };
+
+    await ctx.http().post('/api/purchases').set(auth).send({ ...base, items: [{ productId: beer.id, quantity: 2, unitCost: 1, discount: 3 }] }).expect(400);
+    await ctx.http().post('/api/purchases').set(auth).send({ ...base, documentDate: day(2), items: [{ productId: beer.id, quantity: 1, unitCost: 1 }] }).expect(400);
+    await ctx.http()
+      .post('/api/purchases')
+      .set(auth)
+      .send({ ...base, documentDate: day(0), dueDate: day(-1), items: [{ productId: beer.id, quantity: 1, unitCost: 1 }] })
+      .expect(400);
+
+    const draft = await ctx.http()
+      .post('/api/purchases')
+      .set(auth)
+      .send({ ...base, documentDate: day(0), dueDate: day(30), items: [{ productId: beer.id, quantity: 10, unitCost: 2, discount: 4, taxRate: 16 }] })
+      .expect(201);
+    expect(draft.body).toMatchObject({ subtotal: '20', discount: '4', taxTotal: '2.56', total: '18.56' });
+    expect(draft.body.items[0]).toMatchObject({ discount: '4', taxRate: '16', taxAmount: '2.56', total: '18.56' });
+
+    await ctx.http().post(`/api/purchases/${draft.body.id}/receive`).set(auth).send({}).expect(400);
+    const received = await ctx.http().post(`/api/purchases/${draft.body.id}/receive`).set(auth).send({ supplierRef: 'FT A/1' }).expect(200);
+    expect(received.body.status).toBe('RECEIVED');
+    expect(Number((await ctx.prisma.product.findUniqueOrThrow({ where: { id: beer.id } })).cost)).toBeCloseTo(1.6, 4);
+    await ctx.http().post('/api/purchases').set(auth).send({ ...base, supplierRef: 'FT A/1', items: [{ productId: beer.id, quantity: 1, unitCost: 1 }] }).expect(409);
+
+    const suppliers = await ctx.http().get('/api/suppliers').query({ hotelId: hotel.id }).set(auth).expect(200);
+    expect(suppliers.body.find((row: { id: number }) => row.id === supplier.id)).toMatchObject({ purchaseCount: 1, purchaseTotal: '18.56' });
+
+    await ctx.http().post(`/api/warehouses/${main.body.id}/waste`).set(auth).send({ productId: beer.id, quantity: 4, reason: 'Partida' }).expect(201);
+    await ctx.http().post(`/api/purchases/${draft.body.id}/cancel`).set(auth).send({}).expect(400);
+    await ctx.http().post(`/api/purchases/${draft.body.id}/cancel`).set(auth).send({ reason: 'Fatura errada' }).expect(409);
+    expect(await stockOf(main.body.id, beer.id)).toBe(6);
+
+    const second = await receive(supplier.id, main.body.id, beer.id, 5, 1);
+    const voided = await ctx.http().post(`/api/purchases/${second.body.id}/cancel`).set(auth).send({ reason: 'Fatura errada' }).expect(200);
+    expect(voided.body).toMatchObject({ status: 'CANCELLED', cancelReason: 'Fatura errada' });
+    expect(await stockOf(main.body.id, beer.id)).toBe(6);
+    expect(await ctx.prisma.stockMovement.count({ where: { purchaseId: second.body.id, type: 'PURCHASE_VOID' } })).toBe(1);
+    await ctx.http().post(`/api/purchases/${second.body.id}/cancel`).set(auth).send({ reason: 'De novo' }).expect(409);
+    await ctx.http().post('/api/purchases').set(auth).send({ ...base, supplierRef: voided.body.supplierRef, items: [{ productId: beer.id, quantity: 1, unitCost: 1 }] }).expect(201);
+  });
+
+  it('fornecedores com NUIT unico e sem desativar com compras por receber', async () => {
+    const { hotel, beer, supplier } = await setup();
+    const main = await ctx.http().post('/api/warehouses').set(auth).send({ hotelId: hotel.id, name: 'Economato' }).expect(201);
+    await ctx.http().patch(`/api/suppliers/${supplier.id}`).set(auth).send({ taxId: '400123456' }).expect(200);
+    await ctx.http().post('/api/suppliers').set(auth).send({ hotelId: hotel.id, name: 'Outro', taxId: '400123456' }).expect(409);
+    await ctx.http().post('/api/purchases').set(auth).send({ supplierId: supplier.id, warehouseId: main.body.id, items: [{ productId: beer.id, quantity: 1, unitCost: 1 }] }).expect(201);
+    await ctx.http().patch(`/api/suppliers/${supplier.id}`).set(auth).send({ active: false }).expect(409);
+  });
+
+  it('stock negativo recusado salvo autorizacao do produto ou do hotel; ajuste com sinal e motivo', async () => {
+    const { hotel, beer, supplier } = await setup();
+    const main = await ctx.http().post('/api/warehouses').set(auth).send({ hotelId: hotel.id, name: 'Economato' }).expect(201);
+    await receive(supplier.id, main.body.id, beer.id, 2, 1);
+
+    const waste = await ctx.http().post(`/api/warehouses/${main.body.id}/waste`).set(auth).send({ productId: beer.id, quantity: 3, reason: 'Partida' }).expect(409);
+    expect(waste.body.message).toContain('Stock insuficiente de Cerveja');
+    await ctx.http().post(`/api/warehouses/${main.body.id}/adjust`).set(auth).send({ productId: beer.id, quantity: 5 }).expect(400);
+    await ctx.http().post(`/api/warehouses/${main.body.id}/adjust`).set(auth).send({ productId: beer.id, quantity: -3, reason: 'Erro' }).expect(409);
+    const plus = await ctx.http().post(`/api/warehouses/${main.body.id}/adjust`).set(auth).send({ productId: beer.id, quantity: 1, reason: 'Encontrada' }).expect(201);
+    expect(plus.body).toMatchObject({ quantity: '1', balance: '3' });
+
+    const order = await ctx.http().post('/api/orders').set(auth).send({ hotelId: hotel.id, outlet: 'BAR' }).expect(201);
+    await ctx.http().post(`/api/orders/${order.body.id}/items`).set(auth).send({ productId: beer.id, quantity: 4 }).expect(201);
+    await ctx.http().post(`/api/orders/${order.body.id}/close`).set(auth).send({ mode: 'PAY', payments: [{ method: 'CARD', amount: 10 }] }).expect(409);
+    expect((await ctx.prisma.order.findUniqueOrThrow({ where: { id: order.body.id } })).status).toBe('OPEN');
+    expect(await stockOf(main.body.id, beer.id)).toBe(3);
+
+    await ctx.http().patch(`/api/products/${beer.id}`).set(auth).send({ allowNegativeStock: true }).expect(200);
+    await ctx.http().post(`/api/orders/${order.body.id}/close`).set(auth).send({ mode: 'PAY', payments: [{ method: 'CARD', amount: 10 }] }).expect(200);
+    expect(await stockOf(main.body.id, beer.id)).toBe(-1);
+
+    await ctx.prisma.product.update({ where: { id: beer.id }, data: { allowNegativeStock: false } });
+    await ctx.http().post(`/api/warehouses/${main.body.id}/waste`).set(auth).send({ productId: beer.id, quantity: 1, reason: 'Partida' }).expect(409);
+    await ctx.http().patch(`/api/hotels/${hotel.id}`).set(auth).send({ allowNegativeStock: true }).expect(200);
+    await ctx.http().post(`/api/warehouses/${main.body.id}/waste`).set(auth).send({ productId: beer.id, quantity: 1, reason: 'Partida' }).expect(201);
+    expect(await stockOf(main.body.id, beer.id)).toBe(-2);
+  });
+
+  it('inventario abre com todos os produtos e o saldo, um aberto por armazem, e inventario a zero', async () => {
+    const { hotel, beer, supplier } = await setup();
+    const water = await ctx.prisma.product.create({ data: { hotelId: hotel.id, name: 'Agua', trackStock: true } });
+    const main = await ctx.http().post('/api/warehouses').set(auth).send({ hotelId: hotel.id, name: 'Economato' }).expect(201);
+    await receive(supplier.id, main.body.id, beer.id, 10, 1);
+    await receive(supplier.id, main.body.id, water.id, 4, 0.5);
+
+    const inventory = await ctx.http().post('/api/stock-documents/inventory').set(auth).send({ warehouseId: main.body.id }).expect(201);
+    expect(inventory.body).toMatchObject({ type: 'INVENTORY', status: 'DRAFT' });
+    const lines = (inventory.body.items as { productId: number; quantity: string; previousQuantity: string }[]).map((item) => [item.productId, item.quantity, item.previousQuantity]);
+    expect(lines.sort((a, b) => Number(a[0]) - Number(b[0]))).toEqual([
+      [beer.id, '10', '10'],
+      [water.id, '4', '4'],
+    ]);
+    await ctx.http().post('/api/stock-documents/inventory').set(auth).send({ warehouseId: main.body.id }).expect(409);
+    await ctx.http()
+      .post('/api/stock-documents')
+      .set(auth)
+      .send({ type: 'INVENTORY', warehouseId: main.body.id, items: [{ productId: beer.id, quantity: 1 }] })
+      .expect(409);
+
+    const counted = await ctx.http()
+      .patch(`/api/stock-documents/${inventory.body.id}`)
+      .set(auth)
+      .send({ type: 'INVENTORY', warehouseId: main.body.id, items: [{ productId: beer.id, quantity: 8 }, { productId: water.id, quantity: 4 }] })
+      .expect(200);
+    expect(counted.body.items.find((item: { productId: number }) => item.productId === beer.id).previousQuantity).toBe('10');
+    await ctx.http().post(`/api/stock-documents/${inventory.body.id}/post`).set(auth).expect(200);
+    expect(await stockOf(main.body.id, beer.id)).toBe(8);
+    expect(await stockOf(main.body.id, water.id)).toBe(4);
+
+    const zero = await ctx.http().post('/api/stock-documents/inventory').set(auth).send({ warehouseId: main.body.id, zero: true }).expect(201);
+    expect(zero.body.reason).toContain('a zero');
+    expect(zero.body.items.every((item: { quantity: string }) => item.quantity === '0')).toBe(true);
+    await ctx.http().post(`/api/stock-documents/${zero.body.id}/post`).set(auth).expect(200);
+    expect(await stockOf(main.body.id, beer.id)).toBe(0);
+    expect(await stockOf(main.body.id, water.id)).toBe(0);
   });
 });

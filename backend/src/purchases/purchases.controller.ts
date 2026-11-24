@@ -6,7 +6,7 @@ import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { HotelQueryDto } from '../common/hotel-query.dto';
-import { PurchaseDto, PurchaseQueryDto, PurchasesService, ReceiveDto, SuggestionQueryDto, SupplierDto, UpdateSupplierDto } from './purchases.service';
+import { CancelPurchaseDto, PurchaseDto, PurchaseQueryDto, PurchasesService, ReceiveDto, SuggestionQueryDto, SupplierDto, UpdateSupplierDto } from './purchases.service';
 
 @Roles(UserRole.ADMIN, UserRole.MANAGER)
 @Controller()
@@ -81,7 +81,7 @@ export class PurchasesController {
 
   @Post('purchases/:id/cancel')
   @HttpCode(HttpStatus.OK)
-  cancel(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
-    return this.purchases.cancel(id, user);
+  cancel(@Param('id', ParseIntPipe) id: number, @Body() dto: CancelPurchaseDto, @CurrentUser() user: JwtPayload) {
+    return this.purchases.cancel(id, dto, user);
   }
 }

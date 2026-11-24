@@ -25,7 +25,7 @@ const check = ref<DomainCheck | null>(null);
 const checking = ref(false);
 
 function emptyForm() {
-  return { name: '', publicSlug: '', publicEnabled: false, customDomain: '', currency: 'EUR', email: '', phone: '', address: '' };
+  return { name: '', publicSlug: '', publicEnabled: false, customDomain: '', currency: 'EUR', allowNegativeStock: false, email: '', phone: '', address: '' };
 }
 
 const form = reactive(emptyForm());
@@ -47,6 +47,7 @@ function edit(hotel: Hotel) {
     publicEnabled: hotel.publicEnabled,
     customDomain: hotel.customDomain ?? '',
     currency: hotel.currency,
+    allowNegativeStock: hotel.allowNegativeStock,
     email: hotel.email ?? '',
     phone: hotel.phone ?? '',
     address: hotel.address ?? '',
@@ -112,6 +113,7 @@ async function verify(hotel: Hotel) {
       <input v-model="form.email" class="input" type="email" placeholder="Email" />
       <input v-model="form.phone" class="input" :placeholder="t('common.phone')" />
       <input v-model="form.address" class="input sm:col-span-3" :placeholder="t('hotels.address')" />
+      <label class="flex items-center gap-2 text-sm sm:col-span-4"><input v-model="form.allowNegativeStock" type="checkbox" />{{ t('hotels.allowNegativeStock') }}</label>
 
       <fieldset class="grid gap-3 rounded-xl bg-slate-50 p-4 ring-1 ring-slate-100 sm:col-span-4 sm:grid-cols-3">
         <legend class="px-1 text-sm font-semibold text-slate-700">{{ t('hotels.publicSite') }}</legend>

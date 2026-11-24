@@ -30,7 +30,7 @@ const filtered = computed(() => {
 });
 
 function emptyProduct() {
-  return { name: '', sku: '', unit: 'un', categoryId: 0, price: 0, cost: 0, taxRateId: 0, sellable: true, trackStock: false, trackExpiry: false, minStock: 0, active: true };
+  return { name: '', sku: '', unit: 'un', categoryId: 0, price: 0, cost: 0, taxRateId: 0, sellable: true, trackStock: false, trackExpiry: false, allowNegativeStock: false, minStock: 0, active: true };
 }
 
 const form = reactive(emptyProduct());
@@ -87,6 +87,7 @@ function edit(product: Product) {
     sellable: product.sellable,
     trackStock: product.trackStock,
     trackExpiry: product.trackExpiry,
+    allowNegativeStock: product.allowNegativeStock,
     minStock: Number(product.minStock),
     active: product.active,
   });
@@ -204,6 +205,7 @@ onMounted(load);
             {{ t('products.minStock') }} <input v-model.number="form.minStock" class="input w-24" type="number" min="0" step="0.001" />
           </label>
           <label v-if="form.trackStock" class="flex items-center gap-2"><input v-model="form.trackExpiry" type="checkbox" />{{ t('products.trackExpiry') }}</label>
+          <label v-if="form.trackStock" class="flex items-center gap-2"><input v-model="form.allowNegativeStock" type="checkbox" />{{ t('products.allowNegativeStock') }}</label>
         </div>
         <div class="flex justify-end gap-2 sm:col-span-2">
           <button v-if="editingId" class="btn-secondary" type="button" @click="reset">{{ t('common.cancel') }}</button>

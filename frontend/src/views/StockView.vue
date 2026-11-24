@@ -8,10 +8,12 @@ import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
 import { previewPdfFrom } from '@/services/print';
+import { askConfirm, askText } from '@/services/dialog';
 import type { PaperWidth, StockDocument, StockDocumentType, StockLevelRow, StockLot, StockMovement, Supplier, Warehouse } from '@/types';
 import { formatDate, formatDateTime, formatMoney } from '@/utils/format';
 
-const MOVEMENT_LABELS = translated<StockMovement['type']>('stock.movements', ['PURCHASE', 'SALE', 'ADJUSTMENT', 'TRANSFER_IN', 'TRANSFER_OUT', 'WASTE', 'RETURN']);
+const MOVEMENT_LABELS = translated<StockMovement['type']>('stock.movements', ['PURCHASE', 'SALE', 'ADJUSTMENT', 'TRANSFER_IN', 'TRANSFER_OUT', 'WASTE', 'RETURN', 'PURCHASE_VOID']);
+const ZERO_PHRASE = 'ZERAR';
 const TYPE_LABELS = translated<StockDocumentType>('stock.types', ['INVENTORY', 'WASTE', 'TRANSFER', 'RETURN']);
 const TYPE_PREFIX: Record<StockDocumentType, string> = { INVENTORY: 'INV', WASTE: 'QB', TRANSFER: 'TR', RETURN: 'DV' };
 const STATUS_LABELS = translated<StockDocument['status']>('stock.statuses', ['DRAFT', 'POSTED', 'CANCELLED']);
@@ -46,6 +48,39 @@ const form = reactive({
   supplierId: 0,
   reason: '',
   items: [] as { productId: number; quantity: number }[],
+});
+
+const inventory = ref<StockDocument | null>(null);
+const counts = reactive<Record<number, number>>({});
+const countFilter = reactive({ search: '', categoryId: 0 });
+const adjustForm = reactive({ open: false, product: null as StockLevelRow | null, quantity: 0, reason: '' });
+const openInventory = computed(() => documents.value.find((d) => d.type === 'INVENTORY' && d.status === 'DRAFT'));
+const normalize = (text: string) => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const inventoryCategories = computed(() => {
+  const map = new Map<number, string>();
+  for (const item of inventory.value?.items ?? []) {
+    if (item.product.category) map.set(item.product.category.id, item.product.category.name);
+  }
+  return [...map].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+});
+const inventoryLines = computed(() =>
+  (inventory.value?.items ?? []).map((item) => {
+    const system = Number(item.previousQuantity ?? 0);
+    const counted = Number(counts[item.productId] ?? 0);
+    const difference = Math.round((counted - system) * 1000) / 1000;
+    return { item, system, counted, difference, value: difference * Number(item.product.cost) };
+  }),
+);
+const inventoryRows = computed(() => {
+  const search = normalize(countFilter.search.trim());
+  return inventoryLines.value
+    .filter(({ item }) => !countFilter.categoryId || item.product.category?.id === countFilter.categoryId)
+    .filter(({ item }) => !search || normalize(item.product.name).includes(search))
+    .sort((a, b) => (a.item.product.category?.name ?? '~').localeCompare(b.item.product.category?.name ?? '~') || a.item.product.name.localeCompare(b.item.product.name));
+});
+const inventoryTotals = computed(() => {
+  const changed = inventoryLines.value.filter((line) => line.difference !== 0);
+  return { changed: changed.length, value: changed.reduce((sum, line) => sum + line.value, 0) };
 });
 
 const isManager = computed(() => auth.isManager);
@@ -113,9 +148,82 @@ async function run(fn: () => Promise<unknown>) {
 
 function changeWarehouse() {
   form.open = false;
+  inventory.value = null;
+  adjustForm.open = false;
   history.value = null;
   load();
 }
+
+function startInventory(d: StockDocument) {
+  for (const key of Object.keys(counts)) delete counts[Number(key)];
+  for (const item of d.items) counts[item.productId] = Number(item.quantity);
+  Object.assign(countFilter, { search: '', categoryId: 0 });
+  inventory.value = d;
+  form.open = false;
+  tab.value = 'documents';
+}
+
+async function newInventory(zero: boolean) {
+  const warehouse = warehouses.value.find((w) => w.id === warehouseId.value)?.name ?? '';
+  if (zero) {
+    const phrase = await askText({
+      title: t('stock.zeroTitle', { name: warehouse }),
+      message: t('stock.zeroHint', { phrase: ZERO_PHRASE }),
+      confirmLabel: t('stock.zeroInventory'),
+      required: true,
+      danger: true,
+    });
+    if (phrase === null) return;
+    if (phrase.trim().toUpperCase() !== ZERO_PHRASE) {
+      error.value = t('stock.zeroWrong', { phrase: ZERO_PHRASE });
+      return;
+    }
+  }
+  await run(async () => {
+    const { data } = await api.post<StockDocument>('/stock-documents/inventory', { warehouseId: warehouseId.value, zero });
+    startInventory(data);
+  });
+}
+
+async function saveInventory(post: boolean) {
+  const current = inventory.value;
+  if (!current) return;
+  if (post && !(await askConfirm({ title: t('stock.confirmInventory'), message: t('stock.confirmInventoryAsk', { number: docNumber(current) }) }))) return;
+  await run(async () => {
+    const { data } = await api.patch<StockDocument>(`/stock-documents/${current.id}`, {
+      type: 'INVENTORY',
+      warehouseId: current.warehouse.id,
+      reason: current.reason ?? undefined,
+      items: current.items.map((item) => ({ productId: item.productId, quantity: Number(counts[item.productId] ?? 0) })),
+    });
+    if (post) {
+      await api.post(`/stock-documents/${current.id}/post`);
+      inventory.value = null;
+    } else {
+      inventory.value = data;
+    }
+  });
+}
+
+async function cancelInventory() {
+  const current = inventory.value;
+  if (!current || !(await askConfirm({ title: t('stock.cancelInventory'), message: t('stock.confirmCancel', { number: docNumber(current) }), danger: true }))) return;
+  await run(async () => {
+    await api.post(`/stock-documents/${current.id}/cancel`);
+    inventory.value = null;
+  });
+}
+
+function openAdjust(row: StockLevelRow) {
+  Object.assign(adjustForm, { open: true, product: row, quantity: 0, reason: '' });
+}
+
+const saveAdjust = () =>
+  run(async () => {
+    if (!adjustForm.product) return;
+    await api.post(`/warehouses/${warehouseId.value}/adjust`, { productId: adjustForm.product.id, quantity: adjustForm.quantity, reason: adjustForm.reason });
+    adjustForm.open = false;
+  });
 
 function newDocument(type: StockDocumentType) {
   const first = levels.value[0];
@@ -137,6 +245,11 @@ function newDocument(type: StockDocumentType) {
 }
 
 function editDocument(d: StockDocument) {
+  if (d.type === 'INVENTORY') {
+    startInventory(d);
+    return;
+  }
+  inventory.value = null;
   Object.assign(form, {
     open: true,
     editingId: d.id,
@@ -248,7 +361,10 @@ onMounted(load);
           </button>
         </div>
         <div v-if="levels.length" class="flex flex-wrap gap-2">
-          <button v-if="isManager" class="btn-secondary" type="button" @click="newDocument('INVENTORY')">{{ t('stock.newInventory') }}</button>
+          <button v-if="isManager" class="btn-secondary" type="button" :disabled="busy" @click="openInventory ? startInventory(openInventory) : newInventory(false)">
+            {{ openInventory ? t('stock.continueInventory', { number: docNumber(openInventory) }) : t('stock.newInventory') }}
+          </button>
+          <button v-if="isManager && !openInventory" class="btn-secondary text-rose-700" type="button" :disabled="busy" @click="newInventory(true)">{{ t('stock.zeroInventory') }}</button>
           <button class="btn-secondary" type="button" @click="newDocument('WASTE')">{{ t('stock.newWaste') }}</button>
           <button v-if="isManager && otherWarehouses.length" class="btn-secondary" type="button" @click="newDocument('TRANSFER')">{{ t('stock.newTransfer') }}</button>
           <button v-if="isManager && suppliers.length" class="btn-secondary" type="button" @click="newDocument('RETURN')">{{ t('stock.newReturn') }}</button>
@@ -264,6 +380,25 @@ onMounted(load);
             <span v-if="isManager">{{ t('stock.countSheetQty') }} <PaperLinks :path="`/warehouses/${warehouseId}/count-sheet`" :params="{ withQuantities: true }" :title="t('stock.countSheetQty')" @error="error = $event" /></span>
           </span>
         </div>
+
+        <form v-if="adjustForm.open && adjustForm.product" class="card space-y-3" @submit.prevent="saveAdjust">
+          <h2 class="font-semibold">{{ t('stock.adjustTitle', { name: adjustForm.product.name }) }}</h2>
+          <p class="text-xs text-slate-500">{{ t('stock.adjustHint', { n: qty(adjustForm.product.quantity), unit: adjustForm.product.unit }) }}</p>
+          <div class="grid gap-3 sm:grid-cols-[12rem_1fr]">
+            <label class="text-sm">
+              <span class="mb-1 block text-slate-600">{{ t('stock.adjustQty') }}</span>
+              <input v-model.number="adjustForm.quantity" class="input" type="number" step="0.001" inputmode="decimal" required />
+            </label>
+            <label class="text-sm">
+              <span class="mb-1 block text-slate-600">{{ t('stock.adjustReason') }}</span>
+              <input v-model="adjustForm.reason" class="input" maxlength="200" required />
+            </label>
+          </div>
+          <div class="flex justify-end gap-2">
+            <button class="btn-secondary" type="button" @click="adjustForm.open = false">{{ t('common.cancel') }}</button>
+            <button class="btn" type="submit" :disabled="busy || !adjustForm.quantity || !adjustForm.reason.trim()">{{ t('stock.adjust') }}</button>
+          </div>
+        </form>
 
         <div v-if="history" class="card overflow-x-auto p-0">
           <div class="flex items-center justify-between px-4 pt-4">
@@ -323,6 +458,7 @@ onMounted(load);
                 <td class="px-4 py-3 text-right">{{ formatMoney(row.cost, hotels.currency) }}</td>
                 <td class="px-4 py-3 text-right text-xs">
                   <button class="text-indigo-600 hover:underline" type="button" @click="openHistory(row)">{{ t('stock.history') }}</button>
+                  <button v-if="isManager" class="ml-3 text-indigo-600 hover:underline" type="button" @click="openAdjust(row)">{{ t('stock.adjust') }}</button>
                 </td>
               </tr>
               <tr v-if="!shown.length">
@@ -334,6 +470,76 @@ onMounted(load);
       </template>
 
       <template v-else>
+        <form v-if="inventory" class="card space-y-3" @submit.prevent="saveInventory(false)">
+          <div class="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 class="font-semibold">
+              {{ t('stock.inventoryTitle', { number: docNumber(inventory), name: inventory.warehouse.name }) }}
+            </h2>
+            <span class="text-sm text-slate-600">
+              {{ t('stock.inventoryChanged', { n: inventoryTotals.changed }) }} ·
+              <strong :class="inventoryTotals.value < 0 ? 'text-rose-700' : ''">{{ formatMoney(inventoryTotals.value, hotels.currency) }}</strong>
+            </span>
+          </div>
+          <p v-if="inventory.reason" class="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">{{ inventory.reason }}</p>
+          <div class="grid gap-2 sm:grid-cols-[1fr_14rem]">
+            <input v-model="countFilter.search" class="input" type="search" :placeholder="t('stock.filterProducts')" :aria-label="t('stock.filterProducts')" />
+            <select v-model.number="countFilter.categoryId" class="input" :aria-label="t('products.category')">
+              <option :value="0">{{ t('stock.allCategories') }}</option>
+              <option v-for="c in inventoryCategories" :key="c.id" :value="c.id">{{ c.name }}</option>
+            </select>
+          </div>
+          <div class="max-h-[60vh] overflow-auto">
+            <table class="w-full min-w-[36rem] text-left text-sm">
+              <thead class="sticky top-0 bg-white text-slate-600">
+                <tr>
+                  <th class="py-2">{{ t('common.product') }}</th>
+                  <th class="py-2 text-right">{{ t('stock.system') }}</th>
+                  <th class="w-36 py-2 text-right">{{ t('stock.counted') }}</th>
+                  <th class="py-2 text-right">{{ t('stock.difference') }}</th>
+                  <th class="py-2 text-right">{{ t('stock.differenceValue') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in inventoryRows" :key="row.item.productId" class="border-t border-slate-100">
+                  <td class="py-1.5">
+                    <span class="font-medium" :class="row.item.product.active ? '' : 'text-slate-400'">{{ row.item.product.name }}</span>
+                    <span class="block text-xs text-slate-500">{{ row.item.product.category?.name ?? t('stock.noCategory') }}</span>
+                  </td>
+                  <td class="py-1.5 text-right tabular-nums text-slate-500">{{ qty(row.system) }} {{ row.item.product.unit }}</td>
+                  <td class="py-1.5 pl-2">
+                    <input
+                      v-model.number="counts[row.item.productId]"
+                      class="input text-right"
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      inputmode="decimal"
+                      required
+                      :aria-label="t('stock.countedOf', { name: row.item.product.name })"
+                    />
+                  </td>
+                  <td class="py-1.5 text-right tabular-nums" :class="row.difference < 0 ? 'text-rose-600' : row.difference > 0 ? 'text-emerald-700' : 'text-slate-400'">
+                    {{ row.difference > 0 ? '+' : '' }}{{ qty(row.difference) }}
+                  </td>
+                  <td class="py-1.5 text-right tabular-nums" :class="row.value < 0 ? 'text-rose-600' : row.value > 0 ? 'text-emerald-700' : 'text-slate-400'">
+                    {{ row.difference ? formatMoney(row.value, hotels.currency) : '-' }}
+                  </td>
+                </tr>
+                <tr v-if="!inventoryRows.length">
+                  <td colspan="5" class="py-6 text-center text-slate-500">{{ t('stock.noProducts') }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="text-xs text-slate-500">{{ t('stock.inventoryHint') }}</p>
+          <div class="flex flex-wrap justify-end gap-2">
+            <button class="btn-secondary mr-auto text-rose-700" type="button" :disabled="busy" @click="cancelInventory">{{ t('stock.cancelInventory') }}</button>
+            <button class="btn-secondary" type="button" @click="inventory = null">{{ t('common.close') }}</button>
+            <button class="btn-secondary" type="submit" :disabled="busy">{{ t('stock.saveCount') }}</button>
+            <button class="btn" type="button" :disabled="busy" @click="saveInventory(true)">{{ t('stock.confirmInventory') }}</button>
+          </div>
+        </form>
+
         <form v-if="form.open" class="card space-y-3" @submit.prevent="saveDocument(false)">
           <h2 class="font-semibold">
             {{ editingDocument ? t('stock.editDocument', { number: docNumber(editingDocument) }) : t('stock.newDocument', { type: TYPE_LABELS[form.type].toLowerCase() }) }}

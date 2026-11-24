@@ -5,7 +5,7 @@ import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { HotelQueryDto } from '../common/hotel-query.dto';
-import { CountSheetQueryDto, StockDocumentDto, StockDocumentQueryDto, StockDocumentsService, StockPdfQueryDto } from './stock-documents.service';
+import { CountSheetQueryDto, InventoryDto, StockDocumentDto, StockDocumentQueryDto, StockDocumentsService, StockPdfQueryDto } from './stock-documents.service';
 import { AdjustStockDto, CreateWarehouseDto, LotQueryDto, MovementQueryDto, StockService, TransferDto, WasteDto } from './stock.service';
 
 @Controller()
@@ -44,6 +44,11 @@ export class StockController {
   @Get('warehouses/:id/lots')
   lots(@Param('id', ParseIntPipe) id: number, @Query() query: LotQueryDto, @CurrentUser() user: JwtPayload) {
     return this.stock.lots(id, query.productId, user);
+  }
+
+  @Post('stock-documents/inventory')
+  openInventory(@Body() dto: InventoryDto, @CurrentUser() user: JwtPayload) {
+    return this.documents.openInventory(dto, user);
   }
 
   @Post('stock-documents')

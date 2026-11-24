@@ -50,6 +50,20 @@ export class StockDocumentDto {
   items: StockDocumentItemDto[];
 }
 
+export class InventoryDto {
+  @IsInt()
+  warehouseId: number;
+
+  @IsOptional()
+  @IsBoolean()
+  zero?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  reason?: string;
+}
+
 export class StockDocumentQueryDto extends HotelQueryDto {
   @IsOptional()
   @Type(() => Number)
@@ -83,7 +97,10 @@ const documentInclude = {
   toWarehouse: { select: { id: true, name: true } },
   supplier: { select: { id: true, name: true } },
   createdBy: { select: { name: true } },
-  items: { include: { product: { select: { id: true, name: true, unit: true, cost: true, taxRate: { select: { rate: true } } } } }, orderBy: { id: 'asc' } },
+  items: {
+    include: { product: { select: { id: true, name: true, unit: true, cost: true, active: true, taxRate: { select: { rate: true } }, category: { select: { id: true, name: true } } } } },
+    orderBy: { id: 'asc' },
+  },
 } satisfies Prisma.StockDocumentInclude;
 
 type FullDocument = Prisma.StockDocumentGetPayload<{ include: typeof documentInclude }>;
@@ -138,8 +155,63 @@ export class StockDocumentsService {
     return document;
   }
 
+  async openInventory(dto: InventoryDto, user: JwtPayload) {
+    this.allow(StockDocumentType.INVENTORY, user);
+    const warehouse = await this.prisma.warehouse.findUnique({ where: { id: dto.warehouseId } });
+    if (!warehouse || !canAccessHotel(user, warehouse.hotelId) || !warehouse.active) {
+      throw new NotFoundException('Armazem nao encontrado');
+    }
+    await this.singleOpenInventory(warehouse.id, null);
+    const [products, levels] = [
+      await this.prisma.product.findMany({ where: { hotelId: warehouse.hotelId, trackStock: true, active: true }, select: { id: true } }),
+      await this.prisma.stockLevel.findMany({ where: { warehouseId: warehouse.id, product: { trackStock: true } }, select: { productId: true, quantity: true } }),
+    ];
+    const onHand = new Map(levels.map((level) => [level.productId, level.quantity]));
+    const ids = new Set(products.map((product) => product.id));
+    if (dto.zero) {
+      for (const level of levels) {
+        if (!level.quantity.isZero()) ids.add(level.productId);
+      }
+    }
+    if (!ids.size) {
+      throw new BadRequestException('Nao ha produtos com controlo de stock para inventariar');
+    }
+    const zero = new Prisma.Decimal(0);
+    const reason = dto.reason?.trim() || (dto.zero ? 'Inventario a zero: todo o stock deste armazem passa a 0' : null);
+    return this.prisma.stockDocument.create({
+      data: {
+        hotelId: warehouse.hotelId,
+        type: StockDocumentType.INVENTORY,
+        warehouseId: warehouse.id,
+        reason,
+        createdById: user.sub,
+        items: {
+          createMany: {
+            data: [...ids].map((productId) => {
+              const current = onHand.get(productId) ?? zero;
+              return { productId, previousQuantity: current, quantity: dto.zero ? zero : Prisma.Decimal.max(current, zero) };
+            }),
+          },
+        },
+      },
+      include: documentInclude,
+    });
+  }
+
+  private async singleOpenInventory(warehouseId: number, exceptId: number | null) {
+    const open = await this.prisma.stockDocument.findFirst({
+      where: { warehouseId, type: StockDocumentType.INVENTORY, status: StockDocumentStatus.DRAFT, ...(exceptId ? { id: { not: exceptId } } : {}) },
+    });
+    if (open) {
+      throw new ConflictException(`Ja existe um inventario aberto neste armazem (${stockDocumentNumber(open)}). Lanca-o ou cancela-o primeiro`);
+    }
+  }
+
   async create(dto: StockDocumentDto, user: JwtPayload) {
     const hotelId = await this.validate(dto, user);
+    if (dto.type === StockDocumentType.INVENTORY) {
+      await this.singleOpenInventory(dto.warehouseId, null);
+    }
     return this.prisma.stockDocument.create({
       data: {
         hotelId,
@@ -164,6 +236,12 @@ export class StockDocumentsService {
       throw new BadRequestException('Nao e possivel mudar o tipo do documento');
     }
     await this.validate(dto, user);
+    if (dto.type === StockDocumentType.INVENTORY) {
+      await this.singleOpenInventory(dto.warehouseId, id);
+    }
+    const snapshot = new Map(
+      document.warehouseId === dto.warehouseId ? document.items.map((item) => [item.productId, item.previousQuantity] as const) : [],
+    );
     return this.prisma.$transaction(async (tx) => {
       await tx.stockDocumentItem.deleteMany({ where: { documentId: id } });
       return tx.stockDocument.update({
@@ -172,7 +250,11 @@ export class StockDocumentsService {
           warehouseId: dto.warehouseId,
           ...this.links(dto),
           reason: dto.reason ?? null,
-          items: { createMany: { data: dto.items.map(({ productId, quantity }) => ({ productId, quantity })) } },
+          items: {
+            createMany: {
+              data: dto.items.map(({ productId, quantity }) => ({ productId, quantity, previousQuantity: snapshot.get(productId) ?? null })),
+            },
+          },
         },
         include: documentInclude,
       });

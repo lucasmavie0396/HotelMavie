@@ -26,14 +26,18 @@ export class AdjustStockDto {
   @IsInt()
   productId: number;
 
+  @IsOptional()
   @IsNumber({ maxDecimalPlaces: 3 })
-  @Min(0)
-  countedQuantity: number;
+  quantity?: number;
 
   @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 3 })
+  @Min(0)
+  countedQuantity?: number;
+
   @IsString()
   @MaxLength(200)
-  reason?: string;
+  reason: string;
 }
 
 export class WasteDto {
@@ -97,6 +101,7 @@ export interface MoveInput {
   createdById?: number;
   lot?: { code?: string | null; expiryDate?: Date | null };
   lots?: LotPart[];
+  allowNegative?: boolean;
 }
 
 export interface LotPart {
@@ -166,9 +171,21 @@ export class StockService {
 
   async adjust(warehouseId: number, dto: AdjustStockDto, user: JwtPayload) {
     await this.findWarehouse(warehouseId, user);
+    const reason = dto.reason?.trim();
+    if (!reason) {
+      throw new BadRequestException('Indica o motivo do ajuste');
+    }
+    if ((dto.quantity === undefined) === (dto.countedQuantity === undefined)) {
+      throw new BadRequestException('Indica a quantidade a somar ou a retirar');
+    }
+    if (dto.quantity !== undefined && dto.quantity === 0) {
+      throw new BadRequestException('A quantidade do ajuste nao pode ser zero');
+    }
     return this.prisma.$transaction(async (tx) => {
-      const current = await this.currentQuantity(tx, warehouseId, dto.productId);
-      const difference = new Prisma.Decimal(dto.countedQuantity).sub(current);
+      const difference =
+        dto.quantity !== undefined
+          ? new Prisma.Decimal(dto.quantity)
+          : new Prisma.Decimal(dto.countedQuantity!).sub(await this.currentQuantity(tx, warehouseId, dto.productId));
       if (difference.isZero()) {
         return null;
       }
@@ -177,7 +194,7 @@ export class StockService {
         productId: dto.productId,
         type: StockMovementType.ADJUSTMENT,
         quantity: difference,
-        reason: dto.reason ?? 'Contagem de inventario',
+        reason,
         createdById: user.sub,
       });
     });
@@ -185,6 +202,9 @@ export class StockService {
 
   async waste(warehouseId: number, dto: WasteDto, user: JwtPayload) {
     await this.findWarehouse(warehouseId, user);
+    if (!dto.reason?.trim()) {
+      throw new BadRequestException('Indica o motivo da quebra');
+    }
     return this.prisma.$transaction((tx) =>
       this.move(tx, {
         warehouseId,
@@ -229,10 +249,8 @@ export class StockService {
   }
 
   async move(tx: Prisma.TransactionClient, input: MoveInput) {
-    const [product, warehouse] = await Promise.all([
-      tx.product.findUnique({ where: { id: input.productId } }),
-      tx.warehouse.findUniqueOrThrow({ where: { id: input.warehouseId } }),
-    ]);
+    const product = await tx.product.findUnique({ where: { id: input.productId } });
+    const warehouse = await tx.warehouse.findUniqueOrThrow({ where: { id: input.warehouseId }, include: { hotel: { select: { allowNegativeStock: true } } } });
     if (!product || product.hotelId !== warehouse.hotelId) {
       throw new NotFoundException('Produto nao encontrado neste hotel');
     }
@@ -245,6 +263,12 @@ export class StockService {
       update: { quantity: { increment: quantity } },
       create: { warehouseId: input.warehouseId, productId: input.productId, quantity },
     });
+    if (quantity.isNegative() && level.quantity.isNegative() && !input.allowNegative && !product.allowNegativeStock && !warehouse.hotel.allowNegativeStock) {
+      const available = level.quantity.sub(quantity);
+      throw new ConflictException(
+        `Stock insuficiente de ${product.name} em ${warehouse.name}: disponivel ${available.toString()} ${product.unit}, a retirar ${quantity.neg().toString()} ${product.unit}. Regista a entrada de stock ou pede autorizacao`,
+      );
+    }
     let lots: LotPart[] = [];
     if (product.trackExpiry && quantity.greaterThan(0)) {
       await this.addLots(tx, input.warehouseId, input.productId, quantity, input.lots ?? [{ code: input.lot?.code ?? null, expiryDate: input.lot?.expiryDate ?? null, quantity }]);

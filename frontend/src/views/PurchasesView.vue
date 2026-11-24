@@ -6,8 +6,9 @@ import { translated } from '@/i18n';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
 import { previewPdfFrom } from '@/services/print';
-import type { PaperWidth, Product, Purchase, PurchaseSuggestion, Supplier, Warehouse } from '@/types';
-import { formatDateTime, formatMoney } from '@/utils/format';
+import { askConfirm, askText } from '@/services/dialog';
+import type { PaperWidth, Product, Purchase, PurchaseSuggestion, Supplier, TaxRate, Warehouse } from '@/types';
+import { formatDate, formatDateTime, formatMoney } from '@/utils/format';
 
 const STATUS_LABELS = translated<Purchase['status']>('purchases.statuses', ['DRAFT', 'PARTIAL', 'RECEIVED', 'CANCELLED']);
 const STATUS_CLASSES: Record<Purchase['status'], string> = {
@@ -24,6 +25,7 @@ const purchases = ref<Purchase[]>([]);
 const suppliers = ref<Supplier[]>([]);
 const warehouses = ref<Warehouse[]>([]);
 const products = ref<Product[]>([]);
+const taxRates = ref<TaxRate[]>([]);
 const error = ref('');
 const busy = ref(false);
 const editingId = ref<number | null>(null);
@@ -34,12 +36,26 @@ const purchase = reactive({
   supplierId: 0,
   warehouseId: 0,
   supplierRef: '',
-  items: [] as { productId: number; quantity: number; unitCost: number }[],
+  documentDate: '',
+  dueDate: '',
+  notes: '',
+  items: [] as PurchaseLine[],
 });
+
+interface PurchaseLine {
+  productId: number;
+  quantity: number;
+  unitCost: number;
+  discount: number;
+  taxRate: number;
+}
 
 const notice = ref('');
 const reception = ref<{
   purchase: Purchase;
+  supplierRef: string;
+  documentDate: string;
+  dueDate: string;
   lines: { itemId: number; name: string; unit: string; remaining: number; quantity: number; trackExpiry: boolean; lot: string; expiryDate: string }[];
 } | null>(null);
 const suggest = reactive({
@@ -51,18 +67,41 @@ const suggest = reactive({
 const money = (value: string | number) => formatMoney(value, hotels.currency);
 const qty = (value: string | number) => Number(value).toLocaleString('pt-PT', { maximumFractionDigits: 3 });
 const purchaseNumber = (item: Purchase) => `ENC ${new Date(item.orderedAt).getUTCFullYear()}/${item.id}`;
-const draftTotal = computed(() => purchase.items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0));
+const round2 = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+const lineGross = (line: PurchaseLine) => round2((line.quantity || 0) * (line.unitCost || 0));
+const lineTax = (line: PurchaseLine) => round2((lineGross(line) - (line.discount || 0)) * (line.taxRate || 0) / 100);
+const lineTotal = (line: PurchaseLine) => round2(lineGross(line) - (line.discount || 0) + lineTax(line));
+const draftTotals = computed(() => ({
+  subtotal: round2(purchase.items.reduce((sum, line) => sum + lineGross(line), 0)),
+  discount: round2(purchase.items.reduce((sum, line) => sum + (line.discount || 0), 0)),
+  tax: round2(purchase.items.reduce((sum, line) => sum + lineTax(line), 0)),
+  total: round2(purchase.items.reduce((sum, line) => sum + lineTotal(line), 0)),
+}));
+const today = () => new Date().toLocaleDateString('en-CA');
+const productRate = (productId: number) => {
+  const rateId = products.value.find((p) => p.id === productId)?.taxRateId;
+  return Number(taxRates.value.find((rate) => rate.id === rateId)?.rate ?? 0);
+};
+const newLine = (product?: Product): PurchaseLine => ({
+  productId: product?.id ?? 0,
+  quantity: 1,
+  unitCost: Number(product?.cost ?? 0),
+  discount: 0,
+  taxRate: product ? productRate(product.id) : 0,
+});
 
 async function load() {
   error.value = '';
   try {
     const params = { hotelId: hotels.selectedId };
-    const [p, s, w, pr] = await Promise.all([
+    const [p, s, w, pr, tr] = await Promise.all([
       api.get<Purchase[]>('/purchases', { params }),
       api.get<Supplier[]>('/suppliers', { params }),
       api.get<Warehouse[]>('/warehouses', { params }),
       api.get<Product[]>('/products', { params }),
+      api.get<TaxRate[]>('/tax-rates', { params }),
     ]);
+    taxRates.value = tr.data;
     purchases.value = p.data;
     suppliers.value = s.data;
     warehouses.value = w.data;
@@ -92,7 +131,10 @@ function newPurchase() {
     supplierId: suppliers.value.find((s) => s.active)?.id ?? 0,
     warehouseId: warehouses.value[0]?.id ?? 0,
     supplierRef: '',
-    items: [{ productId: products.value[0]?.id ?? 0, quantity: 1, unitCost: Number(products.value[0]?.cost ?? 0) }],
+    documentDate: '',
+    dueDate: '',
+    notes: '',
+    items: [newLine(products.value[0])],
   });
   showForm.value = true;
 }
@@ -103,18 +145,34 @@ function editPurchase(item: Purchase) {
     supplierId: item.supplier.id,
     warehouseId: item.warehouse.id,
     supplierRef: item.supplierRef ?? '',
-    items: item.items.map((line) => ({ productId: line.productId, quantity: Number(line.quantity), unitCost: Number(line.unitCost) })),
+    documentDate: item.documentDate?.slice(0, 10) ?? '',
+    dueDate: item.dueDate?.slice(0, 10) ?? '',
+    notes: item.notes ?? '',
+    items: item.items.map((line) => ({
+      productId: line.productId,
+      quantity: Number(line.quantity),
+      unitCost: Number(line.unitCost),
+      discount: Number(line.discount),
+      taxRate: Number(line.taxRate),
+    })),
   });
   showForm.value = true;
 }
 
-function onProductChange(line: { productId: number; unitCost: number }) {
+function onProductChange(line: PurchaseLine) {
   line.unitCost = Number(products.value.find((p) => p.id === line.productId)?.cost ?? 0);
+  line.taxRate = productRate(line.productId);
 }
 
 const savePurchase = () =>
   run(async () => {
-    const payload = { ...purchase, supplierRef: purchase.supplierRef || undefined };
+    const payload = {
+      ...purchase,
+      supplierRef: purchase.supplierRef || undefined,
+      documentDate: purchase.documentDate || undefined,
+      dueDate: purchase.dueDate || undefined,
+      notes: purchase.notes || undefined,
+    };
     if (editingId.value) {
       await api.patch(`/purchases/${editingId.value}`, payload);
     } else {
@@ -127,6 +185,9 @@ function startReception(item: Purchase) {
   showForm.value = false;
   reception.value = {
     purchase: item,
+    supplierRef: item.supplierRef ?? '',
+    documentDate: item.documentDate?.slice(0, 10) ?? today(),
+    dueDate: item.dueDate?.slice(0, 10) ?? '',
     lines: item.items
       .map((line) => {
         const remaining = Number(line.quantity) - Number(line.receivedQuantity);
@@ -154,7 +215,12 @@ const confirmReception = () =>
       lot: line.trackExpiry && line.lot ? line.lot : undefined,
       expiryDate: line.trackExpiry && line.expiryDate ? line.expiryDate : undefined,
     }));
-    await api.post(`/purchases/${reception.value.purchase.id}/receive`, { items });
+    await api.post(`/purchases/${reception.value.purchase.id}/receive`, {
+      supplierRef: reception.value.supplierRef,
+      documentDate: reception.value.documentDate || undefined,
+      dueDate: reception.value.dueDate || undefined,
+      items,
+    });
     reception.value = null;
   });
 
@@ -208,19 +274,29 @@ const createFromSuggestions = () =>
       await api.post('/purchases', {
         supplierId,
         warehouseId: suggest.warehouseId,
-        items: rows.map((row) => ({ productId: row.productId, quantity: row.order, unitCost: row.cost })),
+        items: rows.map((row) => ({ productId: row.productId, quantity: row.order, unitCost: row.cost, taxRate: productRate(row.productId) })),
       });
     }
     suggest.open = false;
     notice.value = t('purchases.draftsCreated', { n: bySupplier.size });
   });
 
-const cancel = (item: Purchase) =>
-  run(async () => {
-    if (window.confirm(t('purchases.confirmCancel'))) {
-      await api.post(`/purchases/${item.id}/cancel`);
-    }
+async function cancel(item: Purchase) {
+  if (!(await askConfirm({ title: t('purchases.confirmCancel'), danger: true }))) return;
+  await run(() => api.post(`/purchases/${item.id}/cancel`, {}));
+}
+
+async function voidPurchase(item: Purchase) {
+  const reason = await askText({
+    title: t('purchases.voidTitle', { number: item.supplierRef ?? purchaseNumber(item) }),
+    message: t('purchases.voidHint'),
+    confirmLabel: t('purchases.void'),
+    required: true,
+    danger: true,
   });
+  if (!reason?.trim()) return;
+  await run(() => api.post(`/purchases/${item.id}/cancel`, { reason: reason.trim() }));
+}
 
 const addSupplier = () =>
   run(async () => {
@@ -317,6 +393,20 @@ onMounted(load);
 
       <form v-if="reception" class="card space-y-3" @submit.prevent="confirmReception">
         <h2 class="font-semibold">{{ t('purchases.reception') }} · {{ purchaseNumber(reception.purchase) }} · {{ reception.purchase.supplier.name }}</h2>
+        <div class="grid gap-3 sm:grid-cols-3">
+          <label class="text-sm">
+            <span class="mb-1 block text-slate-600">{{ t('purchases.documentRef') }}</span>
+            <input v-model="reception.supplierRef" class="input" maxlength="60" required />
+          </label>
+          <label class="text-sm">
+            <span class="mb-1 block text-slate-600">{{ t('purchases.documentDate') }}</span>
+            <input v-model="reception.documentDate" class="input" type="date" :max="today()" required />
+          </label>
+          <label class="text-sm">
+            <span class="mb-1 block text-slate-600">{{ t('purchases.dueDate') }}</span>
+            <input v-model="reception.dueDate" class="input" type="date" :min="reception.documentDate" />
+          </label>
+        </div>
         <p class="text-xs text-slate-500">{{ t('purchases.receptionHint') }}</p>
         <div v-for="line in reception.lines" :key="line.itemId" class="grid items-center gap-2 sm:grid-cols-[1fr_110px_120px_150px]">
           <span class="text-sm">
@@ -336,35 +426,81 @@ onMounted(load);
       </form>
 
       <form v-if="showForm" class="card space-y-3" @submit.prevent="savePurchase">
-        <div class="grid gap-3 sm:grid-cols-3">
-          <select v-model.number="purchase.supplierId" class="input" required>
-            <option v-for="s in suppliers.filter((x) => x.active)" :key="s.id" :value="s.id">{{ s.name }}</option>
-          </select>
-          <select v-model.number="purchase.warehouseId" class="input" required>
-            <option v-for="w in warehouses" :key="w.id" :value="w.id">{{ t('purchases.into', { name: w.name }) }}</option>
-          </select>
-          <input v-model="purchase.supplierRef" class="input" :placeholder="t('purchases.supplierRef')" />
+        <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <label class="text-sm">
+            <span class="mb-1 block text-slate-600">{{ t('purchases.supplier') }}</span>
+            <select v-model.number="purchase.supplierId" class="input" required>
+              <option v-for="s in suppliers.filter((x) => x.active)" :key="s.id" :value="s.id">{{ s.name }}</option>
+            </select>
+          </label>
+          <label class="text-sm">
+            <span class="mb-1 block text-slate-600">{{ t('stock.warehouse') }}</span>
+            <select v-model.number="purchase.warehouseId" class="input" required>
+              <option v-for="w in warehouses" :key="w.id" :value="w.id">{{ t('purchases.into', { name: w.name }) }}</option>
+            </select>
+          </label>
+          <label class="text-sm">
+            <span class="mb-1 block text-slate-600">{{ t('purchases.supplierRef') }}</span>
+            <input v-model="purchase.supplierRef" class="input" maxlength="60" />
+          </label>
+          <label class="text-sm">
+            <span class="mb-1 block text-slate-600">{{ t('purchases.documentDate') }}</span>
+            <input v-model="purchase.documentDate" class="input" type="date" :max="today()" />
+          </label>
+          <label class="text-sm">
+            <span class="mb-1 block text-slate-600">{{ t('purchases.dueDate') }}</span>
+            <input v-model="purchase.dueDate" class="input" type="date" :min="purchase.documentDate || undefined" />
+          </label>
         </div>
-        <div v-for="(line, index) in purchase.items" :key="index" class="grid grid-cols-[1fr_100px_120px_32px] items-center gap-2">
-          <select v-model.number="line.productId" class="input" @change="onProductChange(line)">
-            <option v-for="p in products" :key="p.id" :value="p.id">{{ p.name }} ({{ p.unit }})</option>
-          </select>
-          <input v-model.number="line.quantity" class="input" type="number" min="0.001" step="0.001" :aria-label="t('common.quantity')" />
-          <input v-model.number="line.unitCost" class="input" type="number" min="0" step="0.0001" :aria-label="t('purchases.unitCost')" />
-          <button class="text-rose-600" type="button" :disabled="purchase.items.length === 1" :aria-label="t('common.removeLine')" @click="purchase.items.splice(index, 1)">
-            &times;
-          </button>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[46rem] text-left text-sm">
+            <thead class="text-slate-600">
+              <tr>
+                <th class="py-1">{{ t('common.product') }}</th>
+                <th class="w-24 py-1">{{ t('common.quantity') }}</th>
+                <th class="w-28 py-1">{{ t('purchases.costExVat') }}</th>
+                <th class="w-24 py-1">{{ t('purchases.discount') }}</th>
+                <th class="w-20 py-1">{{ t('purchases.vat') }}</th>
+                <th class="w-28 py-1 text-right">{{ t('common.total') }}</th>
+                <th class="w-10 py-1"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(line, index) in purchase.items" :key="index">
+                <td class="py-1 pr-2">
+                  <select v-model.number="line.productId" class="input" @change="onProductChange(line)">
+                    <option v-for="p in products" :key="p.id" :value="p.id">{{ p.name }} ({{ p.unit }})</option>
+                  </select>
+                </td>
+                <td class="py-1 pr-2"><input v-model.number="line.quantity" class="input" type="number" min="0.001" step="0.001" inputmode="decimal" :aria-label="t('common.quantity')" /></td>
+                <td class="py-1 pr-2"><input v-model.number="line.unitCost" class="input" type="number" min="0" step="0.0001" inputmode="decimal" :aria-label="t('purchases.costExVat')" /></td>
+                <td class="py-1 pr-2"><input v-model.number="line.discount" class="input" type="number" min="0" step="0.01" inputmode="decimal" :aria-label="t('purchases.discount')" /></td>
+                <td class="py-1 pr-2"><input v-model.number="line.taxRate" class="input" type="number" min="0" max="100" step="0.01" inputmode="decimal" :aria-label="t('purchases.vat')" /></td>
+                <td class="py-1 pr-2 text-right tabular-nums">{{ money(lineTotal(line)) }}</td>
+                <td class="py-1">
+                  <button class="btn-icon text-rose-600" type="button" :disabled="purchase.items.length === 1" :aria-label="t('common.removeLine')" @click="purchase.items.splice(index, 1)">
+                    &times;
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <button
-            class="text-sm text-indigo-600 hover:underline"
-            type="button"
-            @click="purchase.items.push({ productId: products[0].id, quantity: 1, unitCost: Number(products[0].cost) })"
-          >
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <button class="text-sm text-indigo-600 hover:underline" type="button" @click="purchase.items.push(newLine(products[0]))">
             {{ t('common.addLine') }}
           </button>
-          <span class="font-semibold">{{ t('common.total') }} {{ money(draftTotal) }}</span>
+          <dl class="min-w-56 space-y-1 text-sm tabular-nums">
+            <div class="flex justify-between gap-6"><dt>{{ t('purchases.subtotal') }}</dt><dd>{{ money(draftTotals.subtotal) }}</dd></div>
+            <div class="flex justify-between gap-6"><dt>{{ t('purchases.discounts') }}</dt><dd>-{{ money(draftTotals.discount) }}</dd></div>
+            <div class="flex justify-between gap-6"><dt>{{ t('purchases.vatTotal') }}</dt><dd>{{ money(draftTotals.tax) }}</dd></div>
+            <div class="flex justify-between gap-6 text-base font-semibold"><dt>{{ t('common.total') }}</dt><dd>{{ money(draftTotals.total) }}</dd></div>
+          </dl>
         </div>
+        <label class="block text-sm">
+          <span class="mb-1 block text-slate-600">{{ t('purchases.notes') }}</span>
+          <textarea v-model="purchase.notes" class="input" rows="2"></textarea>
+        </label>
         <div class="flex justify-end gap-2">
           <button class="btn-secondary" type="button" @click="showForm = false">{{ t('common.cancel') }}</button>
           <button class="btn" type="submit" :disabled="busy">{{ t('stock.saveDraft') }}</button>
@@ -394,7 +530,11 @@ onMounted(load);
                 <span v-if="item.sentAt" class="block text-xs text-slate-500">{{ t('purchases.sentAt', { date: formatDateTime(item.sentAt) }) }}</span>
               </td>
               <td class="px-4 py-3 font-medium">{{ item.supplier.name }}</td>
-              <td class="px-4 py-3">{{ item.supplierRef ?? '-' }}</td>
+              <td class="px-4 py-3">
+                {{ item.supplierRef ?? '-' }}
+                <span v-if="item.documentDate" class="block text-xs text-slate-500">{{ formatDate(item.documentDate.slice(0, 10)) }}</span>
+                <span v-if="item.dueDate" class="block text-xs text-slate-500">{{ t('purchases.dueDate') }} {{ formatDate(item.dueDate.slice(0, 10)) }}</span>
+              </td>
               <td class="px-4 py-3">{{ item.warehouse.name }}</td>
               <td class="px-4 py-3 text-slate-600">
                 <span v-for="(line, index) in item.items" :key="line.id">
@@ -404,6 +544,7 @@ onMounted(load);
               <td class="px-4 py-3 text-right">{{ money(item.total) }}</td>
               <td class="px-4 py-3">
                 <span class="rounded-full px-2 py-0.5 text-xs whitespace-nowrap" :class="STATUS_CLASSES[item.status]">{{ STATUS_LABELS[item.status] }}</span>
+                <span v-if="item.cancelReason" class="mt-1 block text-xs text-slate-500">{{ t('purchases.voided', { reason: item.cancelReason }) }}</span>
               </td>
               <td class="space-x-3 px-4 py-3 text-right text-xs whitespace-nowrap">
                 <button class="text-slate-600 hover:underline" type="button" @click="previewPurchase(item, 'A4')">PDF</button>
@@ -425,6 +566,9 @@ onMounted(load);
                   <button class="font-semibold text-emerald-700 hover:underline" type="button" @click="startReception(item)">{{ t('purchases.receiveRest') }}</button>
                   <button class="text-slate-600 hover:underline" type="button" @click="closePurchase(item)">{{ t('purchases.complete') }}</button>
                 </template>
+                <button v-if="item.status === 'PARTIAL' || item.status === 'RECEIVED'" class="text-rose-600 hover:underline" type="button" @click="voidPurchase(item)">
+                  {{ t('purchases.void') }}
+                </button>
               </td>
             </tr>
             <tr v-if="!purchases.length">
@@ -446,13 +590,22 @@ onMounted(load);
       <div class="card overflow-x-auto p-0">
         <table class="w-full text-left text-sm">
           <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
-            <tr><th class="px-4 py-3">{{ t('common.name') }}</th><th class="px-4 py-3">{{ t('purchases.taxId') }}</th><th class="px-4 py-3">{{ t('purchases.contact') }}</th><th class="px-4 py-3"></th></tr>
+            <tr>
+              <th class="px-4 py-3">{{ t('common.name') }}</th>
+              <th class="px-4 py-3">{{ t('purchases.taxId') }}</th>
+              <th class="px-4 py-3">{{ t('purchases.contact') }}</th>
+              <th class="px-4 py-3 text-right">{{ t('purchases.purchaseCount') }}</th>
+              <th class="px-4 py-3 text-right">{{ t('purchases.purchaseTotal') }}</th>
+              <th class="px-4 py-3"></th>
+            </tr>
           </thead>
           <tbody>
             <tr v-for="item in suppliers" :key="item.id" class="border-b border-slate-100" :class="item.active ? '' : 'text-slate-400'">
               <td class="px-4 py-3 font-medium">{{ item.name }}</td>
               <td class="px-4 py-3">{{ item.taxId ?? '-' }}</td>
               <td class="px-4 py-3">{{ [item.email, item.phone].filter(Boolean).join(' · ') || '-' }}</td>
+              <td class="px-4 py-3 text-right tabular-nums">{{ item.purchaseCount }}</td>
+              <td class="px-4 py-3 text-right tabular-nums">{{ money(item.purchaseTotal) }}</td>
               <td class="px-4 py-3 text-right">
                 <button class="text-xs text-indigo-600 hover:underline" type="button" @click="toggleSupplier(item)">
                   {{ item.active ? t('purchases.deactivate') : t('purchases.activate') }}
