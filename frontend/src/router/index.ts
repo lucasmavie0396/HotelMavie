@@ -28,6 +28,11 @@ const router = createRouter({
       component: () => import('@/views/ResetPasswordView.vue'),
     },
     {
+      path: '/quarto',
+      name: 'room-tablet',
+      component: () => import('@/views/RoomTabletView.vue'),
+    },
+    {
       path: '/h/:slug',
       name: 'public-hotel',
       component: () => import('@/views/PublicHotelView.vue'),

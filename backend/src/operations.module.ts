@@ -8,6 +8,8 @@ import { PosService } from './pos/pos.service';
 import { TablesController } from './pos/tables';
 import { PrintingController, PrintService } from './printing/printing';
 import { ReportsModule } from './reports/reports.module';
+import { ReservationRoomServiceController, RoomDeviceController, RoomDevicesController, RoomOrdersController } from './room-service/room-service.controller';
+import { RoomServiceService } from './room-service/room-service.service';
 import { PurchasesController } from './purchases/purchases.controller';
 import { PurchasesService } from './purchases/purchases.service';
 import { StockDocumentsService } from './stock/stock-documents.service';
@@ -16,7 +18,7 @@ import { StockService } from './stock/stock.service';
 
 @Module({
   imports: [BillingModule, ReportsModule],
-  controllers: [CatalogController, StockController, PurchasesController, PosController, KdsController, TablesController, PrintingController],
-  providers: [ImageSearchService, StockService, StockDocumentsService, PurchasesService, PosService, RecipesService, PrintService],
+  controllers: [CatalogController, StockController, PurchasesController, PosController, KdsController, TablesController, PrintingController, RoomDeviceController, RoomDevicesController, RoomOrdersController, ReservationRoomServiceController],
+  providers: [ImageSearchService, StockService, StockDocumentsService, PurchasesService, PosService, RecipesService, PrintService, RoomServiceService],
 })
 export class OperationsModule {}

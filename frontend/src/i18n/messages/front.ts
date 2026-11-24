@@ -1,6 +1,12 @@
 export const front = {
   pt: {
     reservation: {
+      roomService: 'Pedidos do quarto (tablet)',
+      roomServiceHint: 'Bloqueie os pedidos do hospede pelo tablet do quarto ou defina um limite de consumo para a estadia.',
+      roomServiceBlocked: 'Bloquear pedidos do quarto',
+      roomServiceLimit: 'Limite de consumo da estadia',
+      noLimit: 'Sem limite',
+      roomServiceSaved: 'Pedidos do quarto guardados',
       actions: { confirm: 'Confirmar', 'check-in': 'Check-in', 'check-out': 'Check-out', cancel: 'Cancelar', 'no-show': 'No-show' },
       confirmCancel: 'Cancelar esta reserva?',
       confirmNoShow: 'Marcar esta reserva como no-show?',
@@ -165,6 +171,12 @@ export const front = {
   },
   en: {
     reservation: {
+      roomService: 'Orders from the room (tablet)',
+      roomServiceHint: 'Block the guest orders from the room tablet or set a spending limit for the stay.',
+      roomServiceBlocked: 'Block room orders',
+      roomServiceLimit: 'Spending limit for the stay',
+      noLimit: 'No limit',
+      roomServiceSaved: 'Room orders saved',
       actions: { confirm: 'Confirm', 'check-in': 'Check in', 'check-out': 'Check out', cancel: 'Cancel', 'no-show': 'No-show' },
       confirmCancel: 'Cancel this booking?',
       confirmNoShow: 'Mark this booking as no-show?',

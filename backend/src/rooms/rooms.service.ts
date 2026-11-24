@@ -45,7 +45,10 @@ export class RoomsService {
 
   async remove(id: number, user: JwtPayload) {
     const room = await this.findOne(id, user);
-    await this.prisma.room.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.order.updateMany({ where: { roomId: id }, data: { roomId: null } });
+      await tx.room.delete({ where: { id } });
+    });
     for (const image of room.images) await this.uploads.remove(image.file);
   }
 

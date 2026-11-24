@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import RoomAccountPanel from '@/components/RoomAccountPanel.vue';
+import RoomOrdersPanel from '@/components/RoomOrdersPanel.vue';
 import CashRequired from '@/components/CashRequired.vue';
 import PaperLinks from '@/components/PaperLinks.vue';
 import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
@@ -12,15 +13,16 @@ import { fileUrl } from '@/services/files';
 import { printDocument } from '@/services/print';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
-import type { CashRegister, DiningTable, Order, OrderItem, Outlet, Product, Reservation } from '@/types';
+import type { CashRegister, DiningTable, Order, OrderItem, Outlet, Product, Reservation, RoomOrder } from '@/types';
 import { formatMoney } from '@/utils/format';
 import { localeTag } from '@/i18n';
 
-type Mode = Outlet | 'ROOMS';
+type Mode = Outlet | 'ROOMS' | 'ROOM_ORDERS';
 
 const MODES: { value: Mode; label: string }[] = [
   { value: 'RESTAURANT', label: 'labels.outlet.RESTAURANT' },
   { value: 'BAR', label: 'labels.outlet.BAR' },
+  { value: 'ROOM_ORDERS', label: 'roomOrders.tab' },
   { value: 'ROOMS', label: 'pos.roomAccounts' },
 ];
 
@@ -40,7 +42,12 @@ const busy = ref(false);
 const newTable = ref('');
 const tables = ref<DiningTable[]>([]);
 const activeTables = computed(() => tables.value.filter((table) => table.active || table.openOrder));
-const looseOrders = computed(() => orders.value.filter((order) => !order.tableId));
+const looseOrders = computed(() => orders.value.filter((order) => !order.tableId && !order.roomServiceStatus));
+const roomOrders = ref<RoomOrder[]>([]);
+const pendingRoomOrders = computed(() => roomOrders.value.filter((order) => order.roomServiceStatus === 'PENDING').length);
+const roomSearch = ref('');
+let seenRoomOrders: Set<number> | null = null;
+let roomTimer = 0;
 const categoryFilter = ref<number | 0>(0);
 const search = ref('');
 const menuOpen = ref(false);
@@ -55,8 +62,13 @@ const moving = reactive({ active: false, target: 'split', quantities: {} as Reco
 const tableChecks = computed(() => (current.value?.tableId ? orders.value.filter((order) => order.tableId === current.value!.tableId) : []));
 const moveTargets = computed(() => [
   ...activeTables.value.filter((table) => table.id !== current.value?.tableId && table.active).map((table) => ({ value: `table:${table.id}`, label: `${table.label}${table.openOrder ? ` (${t('pos.busy')})` : ''}` })),
-  ...orders.value.filter((order) => order.id !== current.value?.id && !order.tableId).map((order) => ({ value: `order:${order.id}`, label: order.tableLabel ?? t('pos.order', { id: order.id }) })),
+  ...orders.value.filter((order) => order.id !== current.value?.id && !order.tableId && !order.roomServiceStatus).map((order) => ({ value: `order:${order.id}`, label: order.tableLabel ?? t('pos.order', { id: order.id }) })),
+  ...inHouse.value.map((reservation) => ({ value: `room:${reservation.id}`, label: `${t('pos.roomBill', { number: reservation.room.number })} · ${reservation.guest.firstName} ${reservation.guest.lastName}` })),
 ]);
+const roomChoices = computed(() => {
+  const term = normalize(roomSearch.value);
+  return term ? inHouse.value.filter((reservation) => normalize(`${reservation.room.number} ${reservation.guest.firstName} ${reservation.guest.lastName}`).includes(term)) : inHouse.value;
+});
 const movingCount = computed(() => Object.values(moving.quantities).filter((quantity) => quantity > 0).length);
 
 const close = reactive({
@@ -99,8 +111,40 @@ function station(item: OrderItem) {
   return item.product.category?.prepStation ?? (current.value?.outlet === 'BAR' ? 'BAR' : 'KITCHEN');
 }
 
+function beep() {
+  try {
+    const context = new AudioContext();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.frequency.value = 880;
+    gain.gain.value = 0.15;
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start();
+    oscillator.stop(context.currentTime + 0.3);
+    oscillator.onended = () => context.close();
+  } catch {
+    return;
+  }
+}
+
+async function loadRoomOrders() {
+  try {
+    roomOrders.value = (await api.get<RoomOrder[]>('/room-orders', { params: { hotelId: hotels.selectedId } })).data;
+    const pending = roomOrders.value.filter((order) => order.roomServiceStatus === 'PENDING');
+    const fresh = seenRoomOrders ? pending.filter((order) => !seenRoomOrders!.has(order.id)) : [];
+    if (fresh.length) {
+      beep();
+      notice.value = fresh.map((order) => t('roomOrders.newAlert', { room: order.room?.number ?? '-' })).join(' · ');
+    }
+    seenRoomOrders = new Set(roomOrders.value.map((order) => order.id));
+  } catch {
+    return;
+  }
+}
+
 async function load() {
-  if (mode.value === 'ROOMS') return;
+  if (mode.value === 'ROOMS' || mode.value === 'ROOM_ORDERS') return;
   error.value = '';
   try {
     const params = { hotelId: hotels.selectedId };
@@ -320,6 +364,11 @@ const confirmMove = () =>
       .filter(([, quantity]) => quantity > 0)
       .map(([itemId, quantity]) => ({ itemId: Number(itemId), quantity }));
     const [kind, id] = moving.target.split(':');
+    if (kind === 'room') {
+      const { data } = await api.post<{ from: Order; charged: Order }>(`/orders/${order.id}/charge-to-room`, { reservationId: Number(id), items });
+      moving.active = false;
+      return data.from;
+    }
     const { data } = await api.post<{ from: Order; to: Order }>(`/orders/${order.id}/move-items`, {
       items,
       toTableId: kind === 'table' ? Number(id) : undefined,
@@ -359,13 +408,18 @@ const confirmClose = () =>
 
 onMounted(() => {
   load();
+  loadRoomOrders();
+  roomTimer = window.setInterval(loadRoomOrders, 15_000);
   document.addEventListener('pointerdown', closeMenuOutside);
 });
-onBeforeUnmount(() => document.removeEventListener('pointerdown', closeMenuOutside));
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', closeMenuOutside);
+  window.clearInterval(roomTimer);
+});
 </script>
 
 <template>
-  <section class="flex flex-col gap-3" :class="mode === 'ROOMS' ? '' : 'h-full min-h-[34rem]'">
+  <section class="flex flex-col gap-3" :class="mode === 'ROOMS' || mode === 'ROOM_ORDERS' ? '' : 'h-full min-h-[34rem]'">
     <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
       <h1 class="text-xl font-semibold text-slate-900">{{ t('pos.title') }}</h1>
       <div class="flex gap-2" role="tablist">
@@ -380,11 +434,17 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeMenuOutsi
           @click="switchMode(item.value)"
         >
           {{ t(item.label) }}
+          <span v-if="item.value === 'ROOM_ORDERS' && pendingRoomOrders" class="ml-1 rounded-full bg-amber-400 px-2 text-xs font-bold text-amber-950" data-testid="room-orders-badge">{{ pendingRoomOrders }}</span>
         </button>
       </div>
     </div>
 
     <RoomAccountPanel v-if="mode === 'ROOMS'" />
+
+    <template v-else-if="mode === 'ROOM_ORDERS'">
+      <p v-if="notice" class="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">{{ notice }}</p>
+      <RoomOrdersPanel :orders="roomOrders" @changed="loadRoomOrders" />
+    </template>
 
     <template v-else>
       <p v-if="error" class="shrink-0 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{{ error }}</p>
@@ -601,8 +661,9 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeMenuOutsi
                   {{ t('pos.chargeRoom') }}
                 </button>
               </div>
-              <select v-if="close.mode === 'ROOM'" v-model.number="close.reservationId" class="input">
-                <option v-for="reservation in inHouse" :key="reservation.id" :value="reservation.id">
+              <input v-if="close.mode === 'ROOM'" v-model="roomSearch" class="input" type="search" :placeholder="t('pos.roomSearch')" :aria-label="t('pos.roomSearch')" @input="close.reservationId = roomChoices[0]?.id ?? close.reservationId" />
+              <select v-if="close.mode === 'ROOM'" v-model.number="close.reservationId" class="input" :aria-label="t('pos.chargeRoom')">
+                <option v-for="reservation in roomChoices" :key="reservation.id" :value="reservation.id">
                   {{ t('dashboard.room', { number: reservation.room.number }) }} · {{ reservation.guest.firstName }} {{ reservation.guest.lastName }}
                 </option>
               </select>

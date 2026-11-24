@@ -8,6 +8,7 @@ import DepositPanel from '@/components/DepositPanel.vue';
 import FolioPanel from '@/components/FolioPanel.vue';
 import GroupPanel from '@/components/GroupPanel.vue';
 import ReservationActions from '@/components/ReservationActions.vue';
+import RoomServicePanel from '@/components/RoomServicePanel.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { api, errorMessage } from '@/services/api';
 import { useHotelsStore } from '@/stores/hotels';
@@ -124,6 +125,8 @@ onMounted(load);
     <CompanionsPanel :reservation="reservation" @updated="fill" />
 
     <DepositPanel :reservation="reservation" @updated="fill" />
+
+    <RoomServicePanel v-if="editable" :reservation="reservation" />
 
     <FolioPanel ref="folioPanel" :reservation="reservation" />
 

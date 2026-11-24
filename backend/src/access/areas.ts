@@ -9,7 +9,7 @@ const ROUTE_AREAS: [RegExp, AccessArea][] = [
   [/^\/(reservations|reservation-groups)(\/|$)/, 'reservations'],
   [/^\/guests(\/|$)/, 'guests'],
   [/^\/rooms(\/|$)/, 'rooms'],
-  [/^\/(orders|kds|dining-tables)(\/|$)/, 'pos'],
+  [/^\/(orders|kds|dining-tables|room-orders)(\/|$)/, 'pos'],
   [/^\/(invoices|charges|payments|invoice-series|at|saft)(\/|$)/, 'invoices'],
   [/^\/(accounts|invoices-open|receipts)(\/|$)/, 'accounts'],
   [/^\/(cash-registers|cash-sessions)(\/|$)/, 'cash'],
@@ -19,7 +19,7 @@ const ROUTE_AREAS: [RegExp, AccessArea][] = [
   [/^\/hr(\/|$)/, 'hr'],
   [/^\/reports(\/|$)/, 'reports'],
   [/^\/audit-logs(\/|$)/, 'audit'],
-  [/^\/(tax-rates|payment-types|printers|email-logs)(\/|$)/, 'settings'],
+  [/^\/(tax-rates|payment-types|printers|email-logs|room-devices)(\/|$)/, 'settings'],
 ];
 
 const REFERENCE_READS = /^\/(tax-rates|payment-types|printers)(\/|$)/;

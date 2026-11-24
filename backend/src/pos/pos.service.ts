@@ -156,6 +156,17 @@ export class MoveItemsDto {
   toTableId?: number;
 }
 
+export class ChargeToRoomDto {
+  @IsInt()
+  reservationId: number;
+
+  @IsArray()
+  @ArrayNotEmpty()
+  @ValidateNested({ each: true })
+  @Type(() => MoveLineDto)
+  items: MoveLineDto[];
+}
+
 export class KdsQueryDto extends HotelQueryDto {
   @IsEnum(PrepStation)
   station: PrepStation;
@@ -516,6 +527,20 @@ export class PosService {
       const [from, to] = [await this.recalculate(tx, orderId), await this.recalculate(tx, targetId)];
       return { from, to };
     });
+  }
+
+  async chargeToRoom(orderId: number, dto: ChargeToRoomDto, user: JwtPayload) {
+    const source = await this.openOrder(orderId, user);
+    const reservation = await this.prisma.reservation.findUnique({ where: { id: dto.reservationId } });
+    if (!reservation || reservation.hotelId !== source.hotelId || reservation.status !== ReservationStatus.CHECKED_IN) {
+      throw new BadRequestException('Escolhe um hospede em casa para lancar no quarto');
+    }
+    await requireOpenCash(this.prisma, source.hotelId, user.sub);
+    const { to } = await this.moveItems(orderId, { items: dto.items }, user);
+    await this.prisma.order.update({ where: { id: to.id }, data: { tableLabel: source.tableLabel } });
+    const charged = await this.close(to.id, { mode: 'ROOM', reservationId: reservation.id }, user);
+    const from = await this.findOne(orderId, user);
+    return { from, charged };
   }
 
   printingStations(hotelId: number) {

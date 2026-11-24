@@ -30,7 +30,7 @@ const filtered = computed(() => {
 });
 
 function emptyProduct() {
-  return { name: '', sku: '', unit: 'un', categoryId: 0, price: 0, cost: 0, taxRateId: 0, sellable: true, trackStock: false, trackExpiry: false, allowNegativeStock: false, minStock: 0, active: true };
+  return { name: '', sku: '', unit: 'un', categoryId: 0, price: 0, cost: 0, taxRateId: 0, sellable: true, trackStock: false, trackExpiry: false, allowNegativeStock: false, roomService: true, minStock: 0, active: true };
 }
 
 const form = reactive(emptyProduct());
@@ -88,6 +88,7 @@ function edit(product: Product) {
     trackStock: product.trackStock,
     trackExpiry: product.trackExpiry,
     allowNegativeStock: product.allowNegativeStock,
+    roomService: product.roomService,
     minStock: Number(product.minStock),
     active: product.active,
   });
@@ -199,6 +200,7 @@ onMounted(load);
         <label class="text-sm">{{ t('products.cost') }}<input v-model.number="form.cost" class="input" type="number" min="0" step="0.0001" /></label>
         <div class="flex flex-wrap gap-4 text-sm sm:col-span-2">
           <label class="flex items-center gap-2"><input v-model="form.sellable" type="checkbox" />{{ t('products.sellable') }}</label>
+          <label v-if="form.sellable" class="flex items-center gap-2"><input v-model="form.roomService" type="checkbox" />{{ t('products.roomService') }}</label>
           <label class="flex items-center gap-2"><input v-model="form.trackStock" type="checkbox" />{{ t('products.trackStock') }}</label>
           <label class="flex items-center gap-2"><input v-model="form.active" type="checkbox" />{{ t('common.active') }}</label>
           <label v-if="form.trackStock" class="flex items-center gap-2">

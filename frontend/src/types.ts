@@ -116,6 +116,8 @@ export interface Reservation {
   companions: Companion[];
   groupId: number | null;
   group: ReservationGroupInfo | null;
+  roomServiceBlocked: boolean;
+  roomServiceLimit: string | null;
 }
 
 export type BookingKind = 'INDIVIDUAL' | 'CORPORATE';
@@ -321,6 +323,7 @@ export interface Product {
   trackStock: boolean;
   trackExpiry: boolean;
   allowNegativeStock: boolean;
+  roomService: boolean;
   minStock: string;
   active: boolean;
   imageFile: string | null;
@@ -508,6 +511,48 @@ export interface Order {
   reservation: { id: number; code: string; room: { number: string } } | null;
   openedBy: { name: string } | null;
   charges: { id: number; invoice: { id: number; fullNumber: string } | null }[];
+  roomServiceStatus: RoomServiceStatus | null;
+}
+
+export type RoomServiceStatus = 'PENDING' | 'ACCEPTED' | 'ON_THE_WAY' | 'DELIVERED' | 'REJECTED';
+
+export interface RoomOrder {
+  id: number;
+  outlet: Outlet;
+  status: 'OPEN' | 'CLOSED' | 'CANCELLED';
+  roomServiceStatus: RoomServiceStatus;
+  tableLabel: string | null;
+  total: string;
+  notes: string | null;
+  rejectReason: string | null;
+  openedAt: string;
+  acceptedAt: string | null;
+  dispatchedAt: string | null;
+  deliveredAt: string | null;
+  room: { id: number; number: string } | null;
+  reservation: { id: number; code: string; guest: { firstName: string; lastName: string } } | null;
+  roomDevice: { id: number; name: string | null } | null;
+  items: { id: number; description: string; quantity: string; unitPrice: string; total: string; notes: string | null; sentAt: string | null; readyAt: string | null; voidedAt: string | null }[];
+}
+
+export interface RoomDevice {
+  id: number;
+  hotelId: number;
+  roomId: number;
+  name: string | null;
+  active: boolean;
+  paired: boolean;
+  pairedAt: string | null;
+  lastSeenAt: string | null;
+  pairingCode: string | null;
+  pairingExpiresAt: string | null;
+  room: { id: number; number: string };
+}
+
+export interface RoomServiceSettings {
+  autoAccept: boolean;
+  restaurantHours: string | null;
+  barHours: string | null;
 }
 
 export interface OpenInvoice {

@@ -76,6 +76,7 @@ export const REPORTS: ReportDefinition[] = [
   { key: 'cash', title: 'Caixa', description: 'Sessoes de caixa: fundo, recebimentos em numerario, entradas, saidas e diferencas no fecho.', group: 'Financeiro', params: 'period', roles: MANAGERS },
   { key: 'accounts', title: 'Contas correntes', description: 'Divida de clientes por antiguidade (0-30, 31-60, 61-90 e mais de 90 dias).', group: 'Financeiro', params: 'none', roles: MANAGERS },
   { key: 'pos', title: 'Restaurante e bar', description: 'Vendas por produto, categoria e ponto de venda, ticket medio e anulacoes.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
+  { key: 'room-service', title: 'Vendas por origem e servico de quartos', description: 'Vendas de mesas, balcao e quartos, pedidos dos tablets recusados e tempo medio ate a entrega.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
   { key: 'staff', title: 'Vendas por empregado e por hora', description: 'Contas, ticket medio e anulacoes de cada empregado e as horas com mais vendas no restaurante e bar.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
   { key: 'stock', title: 'Existencias', description: 'Quantidades e valor de stock por armazem, com os produtos abaixo do minimo.', group: 'Restauracao e stocks', params: 'stock', roles: MANAGERS },
   { key: 'inventory', title: 'Diferencas de inventario', description: 'Acertos dos inventarios lancados no periodo, por produto, com o valor das faltas e sobras.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
@@ -204,6 +205,8 @@ export class ReportBuilderService {
         return this.cancellations(range, context);
       case 'staff':
         return this.staff(range, context);
+      case 'room-service':
+        return this.roomService(range, context);
       case 'occupancy':
         return this.occupancy(range, context);
       case 'management':
@@ -412,6 +415,78 @@ export class ReportBuilderService {
           empty: 'Sem cancelamentos nem no-shows com entrada no periodo',
         },
         note: 'Reservas canceladas ou marcadas como no-show com entrada prevista no periodo. Recebido e Devolvido sao os pagamentos e estornos registados em cada reserva.',
+      },
+    ];
+  }
+
+  private async roomService(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
+    const orders = await this.prisma.order.findMany({
+      where: { hotelId: hotel.id, status: OrderStatus.CLOSED, closedAt: { gte: range.from, lt: range.to } },
+      include: { items: { select: { total: true, voidedAt: true } } },
+    });
+    const rejected = await this.prisma.order.findMany({
+      where: { hotelId: hotel.id, roomServiceStatus: 'REJECTED', closedAt: { gte: range.from, lt: range.to } },
+      include: { room: { select: { number: true } } },
+      orderBy: { closedAt: 'asc' },
+    });
+    const origins = new Map<string, { orders: number; total: Prisma.Decimal }>([
+      ['Mesas', { orders: 0, total: new Prisma.Decimal(0) }],
+      ['Balcao', { orders: 0, total: new Prisma.Decimal(0) }],
+      ['Quartos (tablet)', { orders: 0, total: new Prisma.Decimal(0) }],
+    ]);
+    const minutes: number[] = [];
+    let total = new Prisma.Decimal(0);
+    for (const order of orders) {
+      const value = sumMoney(order.items.filter((item) => !item.voidedAt).map((item) => item.total));
+      total = total.add(value);
+      const key = order.roomServiceStatus ? 'Quartos (tablet)' : order.tableId ? 'Mesas' : 'Balcao';
+      const row = origins.get(key)!;
+      origins.set(key, { orders: row.orders + 1, total: row.total.add(value) });
+      if (order.roomServiceStatus === 'DELIVERED' && order.deliveredAt) {
+        minutes.push((order.deliveredAt.getTime() - order.openedAt.getTime()) / 60_000);
+      }
+    }
+    const average = minutes.length ? Math.round(minutes.reduce((sum, value) => sum + value, 0) / minutes.length) : null;
+    const share = (value: Prisma.Decimal) => percent(total.isZero() ? 0 : Number(value.div(total).mul(100)));
+    const rooms = origins.get('Quartos (tablet)')!;
+    return [
+      {
+        title: 'Resumo',
+        kpis: [
+          { label: 'Vendas', value: money(total) },
+          { label: 'Vendas dos quartos', value: money(rooms.total) },
+          { label: 'Pedidos dos quartos entregues', value: String(minutes.length) },
+          { label: 'Tempo medio ate a entrega', value: average === null ? '-' : `${average} min` },
+          { label: 'Pedidos recusados', value: String(rejected.length) },
+        ],
+      },
+      {
+        title: 'Por origem',
+        table: {
+          columns: [
+            { label: 'Origem', weight: 2 },
+            { label: 'Contas', align: 'right' },
+            { label: 'Ticket medio', align: 'right' },
+            { label: 'Total', align: 'right' },
+            { label: 'Peso', align: 'right', weight: 0.7 },
+          ],
+          rows: [...origins.entries()].map(([name, row]) => [name, String(row.orders), money(row.orders ? row.total.div(row.orders) : 0), money(row.total), share(row.total)]),
+          totals: ['Total', String(orders.length), money(orders.length ? total.div(orders.length) : 0), money(total), '100%'],
+        },
+        note: 'Mesas: contas abertas numa mesa. Balcao: contas sem mesa abertas no POS. Quartos: pedidos feitos no tablet do quarto e lancados na conta do hospede.',
+      },
+      {
+        title: 'Pedidos dos quartos recusados',
+        table: {
+          columns: [
+            { label: 'Data', weight: 1.2 },
+            { label: 'Quarto', weight: 0.8 },
+            { label: 'Motivo', weight: 3 },
+            { label: 'Valor', align: 'right' },
+          ],
+          rows: rejected.map((order) => [localParts(order.closedAt!).dateTime.replace('T', ' ').slice(0, 16), order.room?.number ?? '-', order.rejectReason ?? '-', money(order.total)]),
+          empty: 'Sem pedidos recusados no periodo',
+        },
       },
     ];
   }

@@ -7,7 +7,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { SalesAccess } from '../common/decorators/roles.decorator';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { resolveHotelScope } from '../common/hotel-scope';
-import { CloseOrderDto, ItemQuantityDto, KdsQueryDto, KdsReadyDto, MoveItemsDto, OpenOrderDto, OrderItemDto, OrderQueryDto, PosService } from './pos.service';
+import { ChargeToRoomDto, CloseOrderDto, ItemQuantityDto, KdsQueryDto, KdsReadyDto, MoveItemsDto, OpenOrderDto, OrderItemDto, OrderQueryDto, PosService } from './pos.service';
 
 class VoidItemDto {
   @IsString()
@@ -132,6 +132,12 @@ export class PosController {
   @Get(':id/prebill')
   async prebill(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload, @Res() res: Response) {
     sendPdf(res, await this.pos.prebill(id, user), `consulta-${id}`);
+  }
+
+  @Post(':id/charge-to-room')
+  @HttpCode(HttpStatus.OK)
+  chargeToRoom(@Param('id', ParseIntPipe) id: number, @Body() dto: ChargeToRoomDto, @CurrentUser() user: JwtPayload) {
+    return this.pos.chargeToRoom(id, dto, user);
   }
 
   @Post(':id/move-items')

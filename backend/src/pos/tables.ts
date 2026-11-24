@@ -137,7 +137,10 @@ export class TablesController {
     if (await this.prisma.order.count({ where: { tableId: id, status: OrderStatus.OPEN } })) {
       throw new ConflictException('A mesa tem uma conta aberta: feche-a antes de apagar a mesa');
     }
-    await this.prisma.diningTable.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.order.updateMany({ where: { tableId: id }, data: { tableId: null } });
+      await tx.diningTable.delete({ where: { id } });
+    });
   }
 
   private async find(id: number, user: JwtPayload) {

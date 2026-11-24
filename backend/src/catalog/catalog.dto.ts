@@ -91,6 +91,10 @@ export class CreateProductDto {
   allowNegativeStock?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  roomService?: boolean;
+
+  @IsOptional()
   @IsNumber({ maxDecimalPlaces: 3 })
   @Min(0)
   minStock?: number;

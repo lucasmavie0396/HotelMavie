@@ -8,6 +8,7 @@ import PaymentTypesTab from '@/components/settings/PaymentTypesTab.vue';
 import PrintersTab from '@/components/settings/PrintersTab.vue';
 import PublicSiteTab from '@/components/settings/PublicSiteTab.vue';
 import TablesTab from '@/components/settings/TablesTab.vue';
+import TabletsTab from '@/components/settings/TabletsTab.vue';
 import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
@@ -22,7 +23,7 @@ const error = ref('');
 const saved = ref('');
 const busy = ref(false);
 
-type Tab = 'fiscal' | 'site' | 'taxes' | 'payments' | 'printers' | 'tables' | 'at' | 'emails';
+type Tab = 'fiscal' | 'site' | 'taxes' | 'payments' | 'printers' | 'tables' | 'tablets' | 'at' | 'emails';
 const TABS: { value: Tab; label: string }[] = [
   { value: 'fiscal', label: 'settings.tabs.fiscal' },
   { value: 'site', label: 'settings.tabs.site' },
@@ -30,6 +31,7 @@ const TABS: { value: Tab; label: string }[] = [
   { value: 'payments', label: 'settings.tabs.payments' },
   { value: 'printers', label: 'settings.tabs.printers' },
   { value: 'tables', label: 'settings.tabs.tables' },
+  { value: 'tablets', label: 'settings.tabs.tablets' },
   { value: 'at', label: 'settings.tabs.at' },
   { value: 'emails', label: 'settings.tabs.emails' },
 ];
@@ -194,6 +196,7 @@ onMounted(load);
     <PaymentTypesTab v-if="tab === 'payments'" />
     <PrintersTab v-if="tab === 'printers'" />
     <TablesTab v-if="tab === 'tables'" />
+    <TabletsTab v-if="tab === 'tablets'" />
 
     <form v-if="tab === 'fiscal'" class="card grid gap-3 sm:grid-cols-2" @submit.prevent="saveFiscal">
       <h2 class="font-semibold sm:col-span-2">{{ t('settings.fiscal') }}</h2>
