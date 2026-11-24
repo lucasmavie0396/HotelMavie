@@ -203,6 +203,8 @@ model Room {
   type          String        @db.VarChar(60)
   capacity      Int           @default(2)
   pricePerNight Decimal       @db.Decimal(10, 2)
+  taxRateId     Int?
+  taxRate       TaxRate?      @relation("RoomTaxRate", fields: [taxRateId], references: [id], onDelete: SetNull)
   status        RoomStatus    @default(AVAILABLE)
   floor         Int?
   description   String?       @db.Text
@@ -433,6 +435,7 @@ model TaxRate {
   updatedAt           DateTime    @updatedAt
   accommodationHotels Hotel[]     @relation("AccommodationTaxRate")
   products            Product[]
+  rooms               Room[]      @relation("RoomTaxRate")
   orderItems          OrderItem[]
   charges             Charge[]
 

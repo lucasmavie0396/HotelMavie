@@ -66,6 +66,8 @@ export interface Room {
   type: string;
   capacity: number;
   pricePerNight: string;
+  taxRateId: number | null;
+  taxRate: { id: number; name: string; rate: string } | null;
   status: RoomStatus;
   floor: number | null;
   description: string | null;

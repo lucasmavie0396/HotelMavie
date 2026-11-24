@@ -210,6 +210,7 @@ export class FolioService {
 
   async syncAccommodationCharge(tx: Prisma.TransactionClient, reservation: Reservation, createdById?: number) {
     const hotel = await tx.hotel.findUniqueOrThrow({ where: { id: reservation.hotelId } });
+    const room = await tx.room.findUnique({ where: { id: reservation.roomId }, select: { taxRateId: true } });
     const existing = await tx.charge.findMany({
       where: { reservationId: reservation.id, type: ChargeType.ACCOMMODATION, sourceRef: ACCOMMODATION_REF },
     });
@@ -231,7 +232,7 @@ export class FolioService {
       description: existing.length ? 'Ajuste de alojamento' : `Alojamento ${nights} ${nights === 1 ? 'noite' : 'noites'}`,
       quantity: existing.length ? 1 : nights,
       unitPrice: existing.length ? difference : reservation.pricePerNight,
-      taxRateId: hotel.accommodationTaxRateId,
+      taxRateId: room?.taxRateId ?? hotel.accommodationTaxRateId,
       sourceRef: ACCOMMODATION_REF,
       createdById,
     });

@@ -1,5 +1,5 @@
 import { RoomStatus } from '@prisma/client';
-import { IsEnum, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsEnum, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min, ValidateIf } from 'class-validator';
 
 export class CreateRoomDto {
   @IsInt()
@@ -21,6 +21,11 @@ export class CreateRoomDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   pricePerNight: number;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsInt()
+  taxRateId?: number | null;
 
   @IsOptional()
   @IsEnum(RoomStatus)

@@ -132,4 +132,69 @@ describe('Relatorios', () => {
     const a4 = await ctx.http().get('/api/print/pdf').query({ document: 'REPORT', report: 'sales', hotelId: hotel.id, from: day(-1), to: day(0), paper: 'A4' }).set(manager).buffer(true).expect(200);
     expect((a4.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
   });
+
+  it('compras, quartos, margem, movimentos de stock, hospedes e recursos humanos com os valores do periodo', async () => {
+    const { hotel, manager } = await setup();
+    const params = { hotelId: hotel.id, from: day(-1), to: day(1) };
+    const view = async (key: string) => (await ctx.http().get(`/api/reports/view/${key}`).query(params).set(manager).expect(200)).body;
+    const kpi = (body: { sections: { kpis?: { label: string; value: string }[] }[] }, label: string) => body.sections[0].kpis!.find((item) => item.label === label)!.value;
+    const money = (value: number) => formatCurrency(value, hotel.currency);
+
+    const rate = await ctx.prisma.taxRate.create({ data: { hotelId: hotel.id, name: 'Normal', rate: 16 } });
+    const supplier = await ctx.prisma.supplier.create({ data: { hotelId: hotel.id, name: 'Distribuidora', taxId: '400111222' } });
+    const warehouse = await ctx.http().post('/api/warehouses').set(manager).send({ hotelId: hotel.id, name: 'Economato' }).expect(201);
+    const beer = await ctx.prisma.product.create({ data: { hotelId: hotel.id, name: 'Cerveja', price: 11.6, taxRateId: rate.id, trackStock: true } });
+    const purchase = await ctx.http()
+      .post('/api/purchases')
+      .set(manager)
+      .send({ supplierId: supplier.id, warehouseId: warehouse.body.id, supplierRef: 'FT 9/1', documentDate: day(0), dueDate: day(0), items: [{ productId: beer.id, quantity: 10, unitCost: 5, discount: 10, taxRate: 16 }] })
+      .expect(201);
+    await ctx.http().post(`/api/purchases/${purchase.body.id}/receive`).set(manager).send({}).expect(200);
+    await ctx.http().post('/api/purchases').set(manager).send({ supplierId: supplier.id, warehouseId: warehouse.body.id, items: [{ productId: beer.id, quantity: 2, unitCost: 5 }] }).expect(201);
+
+    const stay = await ctx.prisma.reservation.findFirstOrThrow({ where: { hotelId: hotel.id, status: 'CHECKED_IN' } });
+    const order = await ctx.http().post('/api/orders').set(manager).send({ hotelId: hotel.id, outlet: 'BAR' }).expect(201);
+    await ctx.http().post(`/api/orders/${order.body.id}/items`).set(manager).send({ productId: beer.id, quantity: 2 }).expect(201);
+    await ctx.http().post(`/api/orders/${order.body.id}/close`).set(manager).send({ mode: 'ROOM', reservationId: stay.id }).expect(200);
+
+    const purchases = await view('purchases');
+    expect(kpi(purchases, 'Compras recebidas')).toBe('1');
+    expect(kpi(purchases, 'Base (sem IVA)')).toBe(money(40));
+    expect(kpi(purchases, 'IVA das compras')).toBe(money(6.4));
+    expect(kpi(purchases, 'Encomendas por receber')).toBe('1');
+    expect(purchases.sections[1].table.rows[0]).toEqual(['Distribuidora', '400111222', '1', money(40), money(6.4), money(46.4), '100%']);
+    expect(purchases.sections[2].table.rows[0]).toEqual(['16%', '1', money(40), money(6.4)]);
+
+    const rooms = await view('rooms');
+    expect(kpi(rooms, 'Noites vendidas')).toBe('2 de 9');
+    const room101 = rooms.sections[2].table.rows.find((row: string[]) => row[0] === '101');
+    expect(room101.slice(4, 7)).toEqual(['1', '2', '66,7%']);
+    expect(room101[3]).toContain('(hotel)');
+
+    const margin = await view('margin');
+    expect(kpi(margin, 'Vendas sem IVA')).toBe(money(20));
+    expect(kpi(margin, 'Custo')).toBe(money(8));
+    expect(kpi(margin, 'Margem %')).toBe('60%');
+
+    const movements = await view('stock-movements');
+    expect(kpi(movements, 'Movimentos')).toBe('2');
+    expect(kpi(movements, 'Valor das entradas')).toBe(money(40));
+    expect(kpi(movements, 'Valor das saidas')).toBe(money(8));
+
+    const guests = await view('guest-stats');
+    expect(kpi(guests, 'Estadias')).toBe('1');
+    expect(guests.sections[1].table.rows[0].slice(0, 2)).toEqual(['Mocambicana', '1']);
+
+    const employee = await ctx.prisma.employee.create({
+      data: { hotelId: hotel.id, fullName: 'Ana Silva', jobTitle: 'Rececionista', startDate: new Date('2020-01-01'), baseSalary: 1000, weeklyHours: 40, irsRate: 10 },
+    });
+    const now = new Date();
+    await ctx.prisma.timeEntry.create({ data: { hotelId: hotel.id, employeeId: employee.id, clockIn: new Date(now.getTime() - 8 * 3_600_000), clockOut: now } });
+    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    await ctx.http().post('/api/hr/payroll/runs').set(manager).send({ hotelId: hotel.id, month }).expect(201);
+    const hr = await view('hr');
+    expect(kpi(hr, 'Funcionarios ativos')).toBe('1');
+    expect(hr.sections[1].table.rows[0][1]).toBe('Ana Silva');
+    expect(hr.sections[2].table.rows[0].slice(0, 4)).toEqual(['Ana Silva', 'Rececionista', '1', '8']);
+  });
 });

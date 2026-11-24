@@ -8,6 +8,7 @@ import {
   OrderStatus,
   PaymentMethod,
   Prisma,
+  PurchaseStatus,
   ReceiptStatus,
   ReservationSource,
   ReservationStatus,
@@ -69,15 +70,21 @@ export const REPORTS: ReportDefinition[] = [
   { key: 'reservations', title: 'Reservas do periodo', description: 'Reservas com entrada no periodo, por estado e origem, com totais e sinais.', group: 'Operacao', params: 'period', roles: EVERYONE },
   { key: 'occupancy', title: 'Ocupacao diaria', description: 'Dia a dia: quartos ocupados, taxa de ocupacao, chegadas, saidas e receita de alojamento.', group: 'Operacao', params: 'period', roles: MANAGERS },
   { key: 'cancellations', title: 'Cancelamentos e no-shows', description: 'Reservas canceladas e no-shows com entrada no periodo, por origem, com o valor perdido e os sinais recebidos e devolvidos.', group: 'Operacao', params: 'period', roles: MANAGERS },
+  { key: 'rooms', title: 'Desempenho por quarto e tipo', description: 'Noites vendidas, ocupacao, preco medio (ADR), receita e taxa de IVA de cada quarto e de cada tipo de quarto.', group: 'Gestao', params: 'period', roles: MANAGERS },
+  { key: 'guest-stats', title: 'Estatistica de hospedes', description: 'Estadias por nacionalidade e por origem, estadia media, pessoas por quarto e hospedes repetentes.', group: 'Operacao', params: 'period', roles: MANAGERS },
   { key: 'management', title: 'Resumo de gestao', description: 'Ocupacao, ADR, RevPAR, receita por area, pagamentos, faturacao e produtos mais vendidos.', group: 'Gestao', params: 'period', roles: MANAGERS },
   { key: 'sales', title: 'Mapa de faturacao', description: 'Todos os documentos emitidos (FT, FR, NC) e recibos, com base, IVA e totais.', group: 'Financeiro', params: 'period', roles: MANAGERS },
   { key: 'vat', title: 'Mapa de IVA', description: 'Base tributavel e imposto por taxa e por motivo de isencao, com notas de credito deduzidas.', group: 'Financeiro', params: 'period', roles: MANAGERS },
   { key: 'payments', title: 'Recebimentos', description: 'Valores recebidos por tipo de pagamento, com o detalhe de cada pagamento.', group: 'Financeiro', params: 'period', roles: MANAGERS },
   { key: 'cash', title: 'Caixa', description: 'Sessoes de caixa: fundo, recebimentos em numerario, entradas, saidas e diferencas no fecho.', group: 'Financeiro', params: 'period', roles: MANAGERS },
+  { key: 'purchases', title: 'Compras e fornecedores', description: 'Compras recebidas por fornecedor, IVA das compras por taxa, documentos com vencimento e encomendas por receber.', group: 'Financeiro', params: 'period', roles: MANAGERS },
+  { key: 'hr', title: 'Recursos humanos', description: 'Mapa de salarios dos meses do periodo (bruto, descontos, liquido e custo da empresa) e horas do ponto por funcionario.', group: 'Gestao', params: 'period', roles: MANAGERS },
   { key: 'accounts', title: 'Contas correntes', description: 'Divida de clientes por antiguidade (0-30, 31-60, 61-90 e mais de 90 dias).', group: 'Financeiro', params: 'none', roles: MANAGERS },
   { key: 'pos', title: 'Restaurante e bar', description: 'Vendas por produto, categoria e ponto de venda, ticket medio e anulacoes.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
   { key: 'room-service', title: 'Vendas por origem e servico de quartos', description: 'Vendas de mesas, balcao e quartos, pedidos dos tablets recusados e tempo medio ate a entrega.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
   { key: 'staff', title: 'Vendas por empregado e por hora', description: 'Contas, ticket medio e anulacoes de cada empregado e as horas com mais vendas no restaurante e bar.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
+  { key: 'margin', title: 'Custo e margem das vendas', description: 'Vendas do restaurante e bar sem IVA contra o custo medio de cada produto (ou da sua ficha tecnica), com a margem por produto e categoria.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
+  { key: 'stock-movements', title: 'Movimentos de stock', description: 'Entradas e saidas do periodo por tipo e por armazem (compras, vendas, quebras, transferencias, inventarios), em quantidade e valor.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
   { key: 'stock', title: 'Existencias', description: 'Quantidades e valor de stock por armazem, com os produtos abaixo do minimo.', group: 'Restauracao e stocks', params: 'stock', roles: MANAGERS },
   { key: 'inventory', title: 'Diferencas de inventario', description: 'Acertos dos inventarios lancados no periodo, por produto, com o valor das faltas e sobras.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
   { key: 'waste', title: 'Quebras e devolucoes', description: 'Quebras por motivo e por produto e devolucoes a fornecedores, ao custo medio.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
@@ -205,6 +212,18 @@ export class ReportBuilderService {
         return this.cancellations(range, context);
       case 'staff':
         return this.staff(range, context);
+      case 'purchases':
+        return this.purchasesReport(range, context);
+      case 'rooms':
+        return this.roomsReport(range, context);
+      case 'margin':
+        return this.margin(range, context);
+      case 'stock-movements':
+        return this.stockMovements(range, context);
+      case 'guest-stats':
+        return this.guestStats(range, context);
+      case 'hr':
+        return this.hr(range, context);
       case 'room-service':
         return this.roomService(range, context);
       case 'occupancy':
@@ -486,6 +505,565 @@ export class ReportBuilderService {
           ],
           rows: rejected.map((order) => [localParts(order.closedAt!).dateTime.replace('T', ' ').slice(0, 16), order.room?.number ?? '-', order.rejectReason ?? '-', money(order.total)]),
           empty: 'Sem pedidos recusados no periodo',
+        },
+      },
+    ];
+  }
+
+  private async purchasesReport(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
+    const inPeriod = { gte: range.from, lt: range.to };
+    const purchases = await this.prisma.purchase.findMany({
+      where: {
+        hotelId: hotel.id,
+        status: { in: [PurchaseStatus.PARTIAL, PurchaseStatus.RECEIVED, PurchaseStatus.CANCELLED] },
+        OR: [{ documentDate: inPeriod }, { documentDate: null, receivedAt: inPeriod }],
+      },
+      include: { supplier: { select: { name: true, taxId: true } }, items: { select: { taxRate: true, taxAmount: true, total: true, discount: true } } },
+      orderBy: [{ documentDate: 'asc' }, { id: 'asc' }],
+    });
+    const pending = await this.prisma.purchase.findMany({
+      where: { hotelId: hotel.id, status: { in: [PurchaseStatus.DRAFT, PurchaseStatus.PARTIAL] } },
+      include: { supplier: { select: { name: true } }, items: { select: { quantity: true, receivedQuantity: true, unitCost: true } } },
+      orderBy: { orderedAt: 'asc' },
+    });
+    const valid = purchases.filter((purchase) => purchase.status !== PurchaseStatus.CANCELLED);
+    const net = (items: { total: Prisma.Decimal; taxAmount: Prisma.Decimal }[]) => sumMoney(items.map((item) => item.total.sub(item.taxAmount)));
+    const totals = { net: new Prisma.Decimal(0), tax: new Prisma.Decimal(0), discount: new Prisma.Decimal(0), total: new Prisma.Decimal(0) };
+    const bySupplier = new Map<string, { taxId: string; documents: number; net: Prisma.Decimal; tax: Prisma.Decimal; total: Prisma.Decimal }>();
+    const byRate = new Map<string, { net: Prisma.Decimal; tax: Prisma.Decimal; lines: number }>();
+    for (const purchase of valid) {
+      const purchaseNet = net(purchase.items);
+      totals.net = totals.net.add(purchaseNet);
+      totals.tax = totals.tax.add(purchase.taxTotal);
+      totals.discount = totals.discount.add(purchase.discount);
+      totals.total = totals.total.add(purchase.total);
+      const row = bySupplier.get(purchase.supplier.name) ?? { taxId: purchase.supplier.taxId ?? '-', documents: 0, net: new Prisma.Decimal(0), tax: new Prisma.Decimal(0), total: new Prisma.Decimal(0) };
+      bySupplier.set(purchase.supplier.name, { ...row, documents: row.documents + 1, net: row.net.add(purchaseNet), tax: row.tax.add(purchase.taxTotal), total: row.total.add(purchase.total) });
+      for (const item of purchase.items) {
+        const key = item.taxRate.toString();
+        const rate = byRate.get(key) ?? { net: new Prisma.Decimal(0), tax: new Prisma.Decimal(0), lines: 0 };
+        byRate.set(key, { net: rate.net.add(item.total.sub(item.taxAmount)), tax: rate.tax.add(item.taxAmount), lines: rate.lines + 1 });
+      }
+    }
+    const today = iso(todayUtc());
+    const share = (value: Prisma.Decimal) => percent(totals.total.isZero() ? 0 : Number(value.div(totals.total).mul(100)));
+    const missing = (purchase: (typeof pending)[number]) =>
+      sumMoney(purchase.items.map((item) => Prisma.Decimal.max(item.quantity.sub(item.receivedQuantity), 0).mul(item.unitCost)));
+    return [
+      {
+        title: 'Resumo',
+        kpis: [
+          { label: 'Compras recebidas', value: String(valid.length) },
+          { label: 'Base (sem IVA)', value: money(totals.net) },
+          { label: 'IVA das compras', value: money(totals.tax) },
+          { label: 'Total', value: money(totals.total) },
+          { label: 'Descontos obtidos', value: money(totals.discount) },
+          { label: 'Anuladas', value: String(purchases.length - valid.length) },
+          { label: 'Encomendas por receber', value: String(pending.length) },
+        ],
+      },
+      {
+        title: 'Por fornecedor',
+        table: {
+          columns: [
+            { label: 'Fornecedor', weight: 2.2 },
+            { label: 'NUIT' },
+            { label: 'Documentos', align: 'right', weight: 0.8 },
+            { label: 'Base', align: 'right' },
+            { label: 'IVA', align: 'right' },
+            { label: 'Total', align: 'right' },
+            { label: 'Peso', align: 'right', weight: 0.7 },
+          ],
+          rows: [...bySupplier.entries()]
+            .sort((a, b) => b[1].total.comparedTo(a[1].total))
+            .map(([name, row]) => [name, row.taxId, String(row.documents), money(row.net), money(row.tax), money(row.total), share(row.total)]),
+          totals: ['Total', '', String(valid.length), money(totals.net), money(totals.tax), money(totals.total), '100%'],
+          empty: 'Sem compras recebidas no periodo',
+        },
+      },
+      {
+        title: 'IVA das compras por taxa',
+        table: {
+          columns: [{ label: 'Taxa', weight: 1 }, { label: 'Linhas', align: 'right' }, { label: 'Base', align: 'right' }, { label: 'IVA', align: 'right' }],
+          rows: [...byRate.entries()]
+            .sort((a, b) => Number(a[0]) - Number(b[0]))
+            .map(([rate, row]) => [`${Number(rate)}%`, String(row.lines), money(row.net), money(row.tax)]),
+          totals: ['Total', '', money(totals.net), money(totals.tax)],
+          empty: 'Sem compras recebidas no periodo',
+        },
+        note: 'O IVA das compras e o indicado em cada linha da compra (IVA dedutivel, a confirmar com o contabilista).',
+      },
+      {
+        title: 'Documentos',
+        table: {
+          columns: [
+            { label: 'Data', weight: 0.9 },
+            { label: 'Fornecedor', weight: 1.8 },
+            { label: 'Documento', weight: 1.2 },
+            { label: 'Vencimento', weight: 0.9 },
+            { label: 'Base', align: 'right' },
+            { label: 'IVA', align: 'right' },
+            { label: 'Total', align: 'right' },
+          ],
+          rows: purchases.map((purchase) => [
+            day(purchase.documentDate ?? purchase.receivedAt ?? purchase.orderedAt),
+            purchase.supplier.name,
+            `${purchase.supplierRef ?? `#${purchase.id}`}${purchase.status === PurchaseStatus.CANCELLED ? ' (anulada)' : purchase.status === PurchaseStatus.PARTIAL ? ' (parcial)' : ''}`,
+            purchase.dueDate ? `${day(purchase.dueDate)}${purchase.status !== PurchaseStatus.CANCELLED && iso(purchase.dueDate) < today ? ' vencido' : ''}` : '-',
+            money(net(purchase.items)),
+            money(purchase.taxTotal),
+            money(purchase.total),
+          ]),
+          empty: 'Sem compras no periodo',
+        },
+      },
+      {
+        title: 'Encomendas por receber',
+        table: {
+          columns: [{ label: 'Encomenda', weight: 1 }, { label: 'Data', weight: 0.9 }, { label: 'Fornecedor', weight: 2 }, { label: 'Estado' }, { label: 'Falta receber (s/ IVA)', align: 'right', weight: 1.2 }],
+          rows: pending.map((purchase) => [
+            `ENC ${purchase.orderedAt.getUTCFullYear()}/${purchase.id}`,
+            day(purchase.orderedAt),
+            purchase.supplier.name,
+            purchase.status === PurchaseStatus.PARTIAL ? 'Recebida em parte' : 'Rascunho',
+            money(missing(purchase)),
+          ]),
+          empty: 'Sem encomendas por receber',
+        },
+      },
+    ];
+  }
+
+  private async roomsReport(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
+    const [rooms, reservations, hotelRate] = [
+      await this.prisma.room.findMany({ where: { hotelId: hotel.id }, include: { taxRate: { select: { name: true, rate: true } } }, orderBy: { number: 'asc' } }),
+      await this.prisma.reservation.findMany({
+        where: { hotelId: hotel.id, status: { in: SOLD_STATUSES }, checkIn: { lt: range.to }, checkOut: { gt: range.from } },
+        select: { roomId: true, checkIn: true, checkOut: true, pricePerNight: true },
+      }),
+      hotel.accommodationTaxRateId ? await this.prisma.taxRate.findUnique({ where: { id: hotel.accommodationTaxRateId }, select: { name: true, rate: true } }) : null,
+    ];
+    const stats = new Map<number, { stays: number; nights: number; revenue: Prisma.Decimal }>();
+    for (const reservation of reservations) {
+      const start = reservation.checkIn > range.from ? reservation.checkIn : range.from;
+      const end = reservation.checkOut < range.to ? reservation.checkOut : range.to;
+      const nights = Math.max(0, nightsBetween(start, end));
+      const row = stats.get(reservation.roomId) ?? { stays: 0, nights: 0, revenue: new Prisma.Decimal(0) };
+      stats.set(reservation.roomId, { stays: row.stays + 1, nights: row.nights + nights, revenue: row.revenue.add(new Prisma.Decimal(reservation.pricePerNight).mul(nights)) });
+    }
+    const rateLabel = (rate: { name: string; rate: Prisma.Decimal } | null) => (rate ? `${rate.name} ${Number(rate.rate)}%` : '-');
+    const byType = new Map<string, { rooms: number; stays: number; nights: number; revenue: Prisma.Decimal }>();
+    let nights = 0;
+    let revenue = new Prisma.Decimal(0);
+    const rows = rooms.map((room) => {
+      const row = stats.get(room.id) ?? { stays: 0, nights: 0, revenue: new Prisma.Decimal(0) };
+      nights += row.nights;
+      revenue = revenue.add(row.revenue);
+      const type = byType.get(room.type) ?? { rooms: 0, stays: 0, nights: 0, revenue: new Prisma.Decimal(0) };
+      byType.set(room.type, { rooms: type.rooms + 1, stays: type.stays + row.stays, nights: type.nights + row.nights, revenue: type.revenue.add(row.revenue) });
+      return [
+        room.number,
+        room.type,
+        money(room.pricePerNight),
+        room.taxRate ? rateLabel(room.taxRate) : `${rateLabel(hotelRate)} (hotel)`,
+        String(row.stays),
+        String(row.nights),
+        percent((row.nights / range.days) * 100),
+        money(row.nights ? row.revenue.div(row.nights) : 0),
+        money(row.revenue),
+      ];
+    });
+    const available = rooms.length * range.days;
+    return [
+      {
+        title: 'Resumo',
+        kpis: [
+          { label: 'Quartos', value: String(rooms.length) },
+          { label: 'Noites vendidas', value: `${nights} de ${available}` },
+          { label: 'Taxa de ocupacao', value: percent(available ? (nights / available) * 100 : 0) },
+          { label: 'Receita de alojamento', value: money(revenue) },
+          { label: 'ADR', value: money(nights ? revenue.div(nights) : 0) },
+          { label: 'RevPAR', value: money(available ? revenue.div(available) : 0) },
+        ],
+      },
+      {
+        title: 'Por tipo de quarto',
+        table: {
+          columns: [
+            { label: 'Tipo', weight: 1.8 },
+            { label: 'Quartos', align: 'right', weight: 0.7 },
+            { label: 'Estadias', align: 'right', weight: 0.8 },
+            { label: 'Noites', align: 'right', weight: 0.8 },
+            { label: 'Ocupacao', align: 'right', weight: 0.8 },
+            { label: 'ADR', align: 'right' },
+            { label: 'RevPAR', align: 'right' },
+            { label: 'Receita', align: 'right' },
+          ],
+          rows: [...byType.entries()]
+            .sort((a, b) => b[1].revenue.comparedTo(a[1].revenue))
+            .map(([type, row]) => [
+              type,
+              String(row.rooms),
+              String(row.stays),
+              String(row.nights),
+              percent((row.nights / (row.rooms * range.days)) * 100),
+              money(row.nights ? row.revenue.div(row.nights) : 0),
+              money(row.revenue.div(row.rooms * range.days)),
+              money(row.revenue),
+            ]),
+          empty: 'Sem quartos',
+        },
+      },
+      {
+        title: 'Por quarto',
+        table: {
+          columns: [
+            { label: 'Quarto', weight: 0.7 },
+            { label: 'Tipo', weight: 1.4 },
+            { label: 'Preco atual', align: 'right' },
+            { label: 'IVA', weight: 1.3 },
+            { label: 'Estadias', align: 'right', weight: 0.7 },
+            { label: 'Noites', align: 'right', weight: 0.7 },
+            { label: 'Ocupacao', align: 'right', weight: 0.8 },
+            { label: 'ADR', align: 'right' },
+            { label: 'Receita', align: 'right' },
+          ],
+          rows,
+          totals: ['Total', '', '', '', String(reservations.length), String(nights), percent(available ? (nights / available) * 100 : 0), money(nights ? revenue.div(nights) : 0), money(revenue)],
+          empty: 'Sem quartos',
+        },
+        note: 'Receita = noites do periodo ao preco de cada reserva (sem extras). Contam as reservas confirmadas, em casa e com saida.',
+      },
+    ];
+  }
+
+  private async margin(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
+    const items = await this.prisma.orderItem.findMany({
+      where: { voidedAt: null, order: { hotelId: hotel.id, status: OrderStatus.CLOSED, closedAt: { gte: range.from, lt: range.to } } },
+      select: {
+        productId: true,
+        description: true,
+        quantity: true,
+        total: true,
+        taxRateRef: { select: { rate: true } },
+        product: {
+          select: {
+            cost: true,
+            category: { select: { name: true } },
+            recipeItems: { select: { quantity: true, ingredient: { select: { cost: true } } } },
+          },
+        },
+      },
+    });
+    const byProduct = new Map<number, { name: string; category: string; quantity: Prisma.Decimal; net: Prisma.Decimal; cost: Prisma.Decimal; noCost: boolean }>();
+    for (const item of items) {
+      const rate = item.taxRateRef ? new Prisma.Decimal(item.taxRateRef.rate) : new Prisma.Decimal(0);
+      const net = new Prisma.Decimal(item.total).mul(100).div(rate.add(100));
+      const unitCost = item.product.recipeItems.length
+        ? item.product.recipeItems.reduce((sum, line) => sum.add(new Prisma.Decimal(line.quantity).mul(line.ingredient.cost)), new Prisma.Decimal(0))
+        : new Prisma.Decimal(item.product.cost);
+      const row = byProduct.get(item.productId) ?? {
+        name: item.description,
+        category: item.product.category?.name ?? 'Sem categoria',
+        quantity: new Prisma.Decimal(0),
+        net: new Prisma.Decimal(0),
+        cost: new Prisma.Decimal(0),
+        noCost: false,
+      };
+      byProduct.set(item.productId, {
+        ...row,
+        quantity: row.quantity.add(item.quantity),
+        net: row.net.add(net),
+        cost: row.cost.add(unitCost.mul(item.quantity)),
+        noCost: row.noCost || unitCost.isZero(),
+      });
+    }
+    const byCategory = new Map<string, { net: Prisma.Decimal; cost: Prisma.Decimal }>();
+    let net = new Prisma.Decimal(0);
+    let cost = new Prisma.Decimal(0);
+    for (const row of byProduct.values()) {
+      net = net.add(row.net);
+      cost = cost.add(row.cost);
+      const category = byCategory.get(row.category) ?? { net: new Prisma.Decimal(0), cost: new Prisma.Decimal(0) };
+      byCategory.set(row.category, { net: category.net.add(row.net), cost: category.cost.add(row.cost) });
+    }
+    const marginPct = (sales: Prisma.Decimal, spent: Prisma.Decimal) => (sales.isZero() ? '-' : percent(Number(sales.sub(spent).div(sales).mul(100))));
+    const noCost = [...byProduct.values()].filter((row) => row.noCost).length;
+    return [
+      {
+        title: 'Resumo',
+        kpis: [
+          { label: 'Vendas sem IVA', value: money(net) },
+          { label: 'Custo', value: money(cost) },
+          { label: 'Margem', value: money(net.sub(cost)) },
+          { label: 'Margem %', value: marginPct(net, cost) },
+          { label: 'Custo / vendas (food cost)', value: net.isZero() ? '-' : percent(Number(cost.div(net).mul(100))) },
+          { label: 'Produtos sem custo', value: String(noCost) },
+        ],
+      },
+      {
+        title: 'Por categoria',
+        table: {
+          columns: [{ label: 'Categoria', weight: 2 }, { label: 'Vendas s/ IVA', align: 'right' }, { label: 'Custo', align: 'right' }, { label: 'Margem', align: 'right' }, { label: 'Margem %', align: 'right', weight: 0.8 }],
+          rows: [...byCategory.entries()]
+            .sort((a, b) => b[1].net.comparedTo(a[1].net))
+            .map(([name, row]) => [name, money(row.net), money(row.cost), money(row.net.sub(row.cost)), marginPct(row.net, row.cost)]),
+          totals: ['Total', money(net), money(cost), money(net.sub(cost)), marginPct(net, cost)],
+          empty: 'Sem vendas no periodo',
+        },
+      },
+      {
+        title: 'Por produto',
+        table: {
+          columns: [
+            { label: 'Produto', weight: 2.2 },
+            { label: 'Categoria', weight: 1.3 },
+            { label: 'Qtd.', align: 'right', weight: 0.7 },
+            { label: 'Vendas s/ IVA', align: 'right' },
+            { label: 'Custo', align: 'right' },
+            { label: 'Margem', align: 'right' },
+            { label: 'Margem %', align: 'right', weight: 0.8 },
+          ],
+          rows: [...byProduct.values()]
+            .sort((a, b) => b.net.sub(b.cost).comparedTo(a.net.sub(a.cost)))
+            .map((row) => [`${row.name}${row.noCost ? ' *' : ''}`, row.category, qty(row.quantity), money(row.net), money(row.cost), money(row.net.sub(row.cost)), marginPct(row.net, row.cost)]),
+          empty: 'Sem vendas no periodo',
+        },
+        note: 'Custo = custo medio atual do produto ou, se tiver ficha tecnica, a soma do custo medio dos ingredientes. * = produto sem custo definido (margem sobrestimada).',
+      },
+    ];
+  }
+
+  private async stockMovements(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
+    const movements = await this.prisma.stockMovement.findMany({
+      where: { warehouse: { hotelId: hotel.id }, createdAt: { gte: range.from, lt: range.to } },
+      select: { type: true, quantity: true, unitCost: true, warehouse: { select: { name: true } }, product: { select: { id: true, name: true, unit: true, cost: true } } },
+    });
+    const labels: Record<StockMovementType, string> = {
+      PURCHASE: 'Compras',
+      SALE: 'Vendas',
+      ADJUSTMENT: 'Ajustes e inventarios',
+      TRANSFER_IN: 'Transferencias (entrada)',
+      TRANSFER_OUT: 'Transferencias (saida)',
+      WASTE: 'Quebras',
+      RETURN: 'Devolucoes a fornecedores',
+      PURCHASE_VOID: 'Anulacao de compras',
+    };
+    const value = (movement: (typeof movements)[number]) => new Prisma.Decimal(movement.quantity).abs().mul(movement.unitCost ?? movement.product.cost);
+    const byType = new Map<StockMovementType, { count: number; inValue: Prisma.Decimal; outValue: Prisma.Decimal }>();
+    const byWarehouse = new Map<string, { inValue: Prisma.Decimal; outValue: Prisma.Decimal; count: number }>();
+    const byProduct = new Map<number, { name: string; unit: string; input: Prisma.Decimal; output: Prisma.Decimal; outValue: Prisma.Decimal }>();
+    let inValue = new Prisma.Decimal(0);
+    let outValue = new Prisma.Decimal(0);
+    for (const movement of movements) {
+      const amount = value(movement);
+      const entering = new Prisma.Decimal(movement.quantity).greaterThan(0);
+      if (entering) inValue = inValue.add(amount);
+      else outValue = outValue.add(amount);
+      const type = byType.get(movement.type) ?? { count: 0, inValue: new Prisma.Decimal(0), outValue: new Prisma.Decimal(0) };
+      byType.set(movement.type, { count: type.count + 1, inValue: entering ? type.inValue.add(amount) : type.inValue, outValue: entering ? type.outValue : type.outValue.add(amount) });
+      const warehouse = byWarehouse.get(movement.warehouse.name) ?? { inValue: new Prisma.Decimal(0), outValue: new Prisma.Decimal(0), count: 0 };
+      byWarehouse.set(movement.warehouse.name, { count: warehouse.count + 1, inValue: entering ? warehouse.inValue.add(amount) : warehouse.inValue, outValue: entering ? warehouse.outValue : warehouse.outValue.add(amount) });
+      const product = byProduct.get(movement.product.id) ?? { name: movement.product.name, unit: movement.product.unit, input: new Prisma.Decimal(0), output: new Prisma.Decimal(0), outValue: new Prisma.Decimal(0) };
+      const quantity = new Prisma.Decimal(movement.quantity);
+      byProduct.set(movement.product.id, {
+        ...product,
+        input: entering ? product.input.add(quantity) : product.input,
+        output: entering ? product.output : product.output.add(quantity.abs()),
+        outValue: entering ? product.outValue : product.outValue.add(amount),
+      });
+    }
+    return [
+      {
+        title: 'Resumo',
+        kpis: [
+          { label: 'Movimentos', value: String(movements.length) },
+          { label: 'Valor das entradas', value: money(inValue) },
+          { label: 'Valor das saidas', value: money(outValue) },
+          { label: 'Variacao', value: money(inValue.sub(outValue)) },
+        ],
+      },
+      {
+        title: 'Por tipo de movimento',
+        table: {
+          columns: [{ label: 'Tipo', weight: 2 }, { label: 'Movimentos', align: 'right' }, { label: 'Entradas', align: 'right' }, { label: 'Saidas', align: 'right' }],
+          rows: [...byType.entries()].map(([type, row]) => [labels[type], String(row.count), money(row.inValue), money(row.outValue)]),
+          totals: ['Total', String(movements.length), money(inValue), money(outValue)],
+          empty: 'Sem movimentos no periodo',
+        },
+      },
+      {
+        title: 'Por armazem',
+        table: {
+          columns: [{ label: 'Armazem', weight: 2 }, { label: 'Movimentos', align: 'right' }, { label: 'Entradas', align: 'right' }, { label: 'Saidas', align: 'right' }],
+          rows: [...byWarehouse.entries()].map(([name, row]) => [name, String(row.count), money(row.inValue), money(row.outValue)]),
+          empty: 'Sem movimentos no periodo',
+        },
+      },
+      {
+        title: 'Por produto',
+        table: {
+          columns: [{ label: 'Produto', weight: 2.2 }, { label: 'Unid.', weight: 0.5 }, { label: 'Entradas', align: 'right' }, { label: 'Saidas', align: 'right' }, { label: 'Valor das saidas', align: 'right' }],
+          rows: [...byProduct.values()]
+            .sort((a, b) => b.outValue.comparedTo(a.outValue))
+            .map((row) => [row.name, row.unit, qty(row.input), qty(row.output), money(row.outValue)]),
+          empty: 'Sem movimentos no periodo',
+        },
+        note: 'Valores ao custo de cada movimento (custo medio na data). As transferencias aparecem como saida num armazem e entrada no outro.',
+      },
+    ];
+  }
+
+  private async guestStats(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
+    const reservations = await this.prisma.reservation.findMany({
+      where: { hotelId: hotel.id, status: { in: SOLD_STATUSES }, checkIn: { lt: range.to }, checkOut: { gt: range.from } },
+      select: { guestId: true, checkIn: true, checkOut: true, adults: true, children: true, source: true, totalAmount: true, guest: { select: { nationality: true } } },
+    });
+    const guestIds = [...new Set(reservations.map((reservation) => reservation.guestId))];
+    const history = guestIds.length
+      ? await this.prisma.reservation.groupBy({ by: ['guestId'], where: { guestId: { in: guestIds }, status: { in: SOLD_STATUSES } }, _count: { _all: true } })
+      : [];
+    const repeat = history.filter((row) => row._count._all > 1).length;
+    const byNationality = new Map<string, { stays: number; nights: number; people: number }>();
+    const bySource = new Map<ReservationSource, { stays: number; nights: number; revenue: Prisma.Decimal }>();
+    let nights = 0;
+    let people = 0;
+    for (const reservation of reservations) {
+      const length = nightsBetween(reservation.checkIn, reservation.checkOut);
+      const persons = reservation.adults + reservation.children;
+      nights += length;
+      people += persons;
+      const nationality = reservation.guest.nationality?.trim() || 'Sem nacionalidade';
+      const row = byNationality.get(nationality) ?? { stays: 0, nights: 0, people: 0 };
+      byNationality.set(nationality, { stays: row.stays + 1, nights: row.nights + length, people: row.people + persons });
+      const source = bySource.get(reservation.source) ?? { stays: 0, nights: 0, revenue: new Prisma.Decimal(0) };
+      bySource.set(reservation.source, { stays: source.stays + 1, nights: source.nights + length, revenue: source.revenue.add(reservation.totalAmount) });
+    }
+    const stays = reservations.length;
+    const average = (value: number) => (stays ? (value / stays).toLocaleString('pt-PT', { maximumFractionDigits: 1 }) : '0');
+    return [
+      {
+        title: 'Resumo',
+        kpis: [
+          { label: 'Estadias', value: String(stays) },
+          { label: 'Hospedes diferentes', value: String(guestIds.length) },
+          { label: 'Hospedes repetentes', value: String(repeat) },
+          { label: 'Estadia media (noites)', value: average(nights) },
+          { label: 'Pessoas por quarto', value: average(people) },
+          { label: 'Nacionalidades', value: String(byNationality.size) },
+        ],
+      },
+      {
+        title: 'Por nacionalidade',
+        table: {
+          columns: [{ label: 'Nacionalidade', weight: 2 }, { label: 'Estadias', align: 'right' }, { label: 'Pessoas', align: 'right' }, { label: 'Noites', align: 'right' }, { label: 'Peso', align: 'right' }],
+          rows: [...byNationality.entries()]
+            .sort((a, b) => b[1].stays - a[1].stays)
+            .map(([name, row]) => [name, String(row.stays), String(row.people), String(row.nights), percent(stays ? (row.stays / stays) * 100 : 0)]),
+          totals: ['Total', String(stays), String(people), String(nights), '100%'],
+          empty: 'Sem estadias no periodo',
+        },
+      },
+      {
+        title: 'Por origem da reserva',
+        table: {
+          columns: [{ label: 'Origem', weight: 2 }, { label: 'Estadias', align: 'right' }, { label: 'Noites', align: 'right' }, { label: 'Estadia media', align: 'right' }, { label: 'Valor das reservas', align: 'right' }],
+          rows: [...bySource.entries()]
+            .sort((a, b) => b[1].stays - a[1].stays)
+            .map(([source, row]) => [SOURCE_LABELS[source], String(row.stays), String(row.nights), (row.nights / row.stays).toLocaleString('pt-PT', { maximumFractionDigits: 1 }), money(row.revenue)]),
+          empty: 'Sem estadias no periodo',
+        },
+        note: 'Contam as reservas confirmadas, em casa e com saida que tem pelo menos uma noite no periodo. Repetente = hospede com mais de uma estadia no hotel.',
+      },
+    ];
+  }
+
+  private async hr(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
+    const months: { year: number; month: number }[] = [];
+    for (let cursor = new Date(Date.UTC(range.from.getUTCFullYear(), range.from.getUTCMonth(), 1)); cursor < range.to; cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1))) {
+      months.push({ year: cursor.getUTCFullYear(), month: cursor.getUTCMonth() + 1 });
+    }
+    const runs = await this.prisma.payrollRun.findMany({
+      where: { hotelId: hotel.id, OR: months.map((month) => ({ year: month.year, month: month.month })) },
+      include: { payslips: { orderBy: { fullName: 'asc' } } },
+      orderBy: [{ year: 'asc' }, { month: 'asc' }],
+    });
+    const [employees, entries] = [
+      await this.prisma.employee.count({ where: { hotelId: hotel.id, active: true } }),
+      await this.prisma.timeEntry.findMany({
+        where: { hotelId: hotel.id, clockIn: { gte: range.from, lt: range.to } },
+        select: { clockIn: true, clockOut: true, employee: { select: { fullName: true, jobTitle: true } } },
+      }),
+    ];
+    const payslips = runs.flatMap((run) => run.payslips.map((payslip) => ({ run, payslip })));
+    const sum = (pick: (payslip: (typeof payslips)[number]['payslip']) => Prisma.Decimal) => sumMoney(payslips.map((row) => pick(row.payslip)));
+    const gross = sum((payslip) => payslip.grossPay);
+    const net = sum((payslip) => payslip.netPay);
+    const employerSs = sum((payslip) => payslip.employerSs);
+    const byEmployee = new Map<string, { job: string; days: Set<string>; hours: number; open: number }>();
+    for (const entry of entries) {
+      const row = byEmployee.get(entry.employee.fullName) ?? { job: entry.employee.jobTitle, days: new Set<string>(), hours: 0, open: 0 };
+      row.days.add(localParts(entry.clockIn).date);
+      if (entry.clockOut) row.hours += (entry.clockOut.getTime() - entry.clockIn.getTime()) / 3_600_000;
+      else row.open += 1;
+      byEmployee.set(entry.employee.fullName, row);
+    }
+    const hours = (value: number) => value.toLocaleString('pt-PT', { maximumFractionDigits: 1 });
+    const totalHours = [...byEmployee.values()].reduce((total, row) => total + row.hours, 0);
+    return [
+      {
+        title: 'Resumo',
+        kpis: [
+          { label: 'Funcionarios ativos', value: String(employees) },
+          { label: 'Meses processados', value: `${runs.length} de ${months.length}` },
+          { label: 'Total bruto', value: money(gross) },
+          { label: 'Total liquido', value: money(net) },
+          { label: 'Seguranca social da empresa', value: money(employerSs) },
+          { label: 'Custo total da empresa', value: money(gross.add(employerSs)) },
+          { label: 'Horas no ponto', value: hours(totalHours) },
+        ],
+      },
+      {
+        title: 'Mapa de salarios',
+        table: {
+          columns: [
+            { label: 'Mes', weight: 0.7 },
+            { label: 'Funcionario', weight: 1.8 },
+            { label: 'Horas', align: 'right', weight: 0.6 },
+            { label: 'Bruto', align: 'right' },
+            { label: 'SS trab.', align: 'right' },
+            { label: 'IRS', align: 'right' },
+            { label: 'Outros desc.', align: 'right' },
+            { label: 'Liquido', align: 'right' },
+            { label: 'SS empresa', align: 'right' },
+            { label: 'Custo', align: 'right' },
+          ],
+          rows: payslips.map(({ run, payslip }) => [
+            `${String(run.month).padStart(2, '0')}/${run.year}${run.status === 'CLOSED' ? '' : ' *'}`,
+            payslip.fullName,
+            hours(Number(payslip.workedHours)),
+            money(payslip.grossPay),
+            money(payslip.employeeSs),
+            money(payslip.irsWithholding),
+            money(payslip.otherDeductions.add(payslip.absenceDeduction)),
+            money(payslip.netPay),
+            money(payslip.employerSs),
+            money(payslip.grossPay.add(payslip.employerSs)),
+          ]),
+          totals: ['Total', '', '', money(gross), money(sum((p) => p.employeeSs)), money(sum((p) => p.irsWithholding)), money(sum((p) => p.otherDeductions.add(p.absenceDeduction))), money(net), money(employerSs), money(gross.add(employerSs))],
+          empty: 'Sem salarios processados nos meses do periodo',
+        },
+        note: 'Meses do periodo que tem processamento de salarios. * = mes ainda nao fechado.',
+      },
+      {
+        title: 'Ponto por funcionario',
+        table: {
+          columns: [{ label: 'Funcionario', weight: 2 }, { label: 'Funcao', weight: 1.4 }, { label: 'Dias', align: 'right', weight: 0.6 }, { label: 'Horas', align: 'right', weight: 0.7 }, { label: 'Media/dia', align: 'right', weight: 0.8 }, { label: 'Sem saida', align: 'right', weight: 0.8 }],
+          rows: [...byEmployee.entries()]
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([name, row]) => [name, row.job, String(row.days.size), hours(row.hours), hours(row.days.size ? row.hours / row.days.size : 0), String(row.open)]),
+          totals: ['Total', '', '', hours(totalHours), '', String([...byEmployee.values()].reduce((total, row) => total + row.open, 0))],
+          empty: 'Sem registos de ponto no periodo',
         },
       },
     ];

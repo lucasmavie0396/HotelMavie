@@ -179,11 +179,13 @@ model AuditLog {
 model Room {
   id            Int           @id @default(autoincrement())
   hotelId       Int
-  hotel         Hotel         @relation(fields: [hotelId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  hotel         Hotel         @relation(fields: [hotelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   number        String        @db.NVarChar(20)
   type          String        @db.NVarChar(60)
   capacity      Int           @default(2)
   pricePerNight Decimal       @db.Decimal(10, 2)
+  taxRateId     Int?
+  taxRate       TaxRate?      @relation("RoomTaxRate", fields: [taxRateId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   status        String        @default("AVAILABLE") @db.NVarChar(40)
   floor         Int?
   description   String?       @db.NVarChar(Max)
@@ -361,6 +363,7 @@ model TaxRate {
   updatedAt           DateTime    @updatedAt
   accommodationHotels Hotel[]     @relation("AccommodationTaxRate")
   products            Product[]
+  rooms               Room[]      @relation("RoomTaxRate")
   orderItems          OrderItem[]
   charges             Charge[]
 
@@ -379,7 +382,7 @@ model Charge {
   quantity      Decimal      @db.Decimal(10, 3)
   unitPrice     Decimal      @db.Decimal(12, 2)
   taxRateId     Int?
-  taxRateRef    TaxRate?     @relation(fields: [taxRateId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  taxRateRef    TaxRate?     @relation(fields: [taxRateId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   taxRate       Decimal      @db.Decimal(5, 2)
   total         Decimal      @db.Decimal(12, 2)
   invoiceId     Int?
@@ -620,7 +623,7 @@ model Order {
   outlet         String @db.NVarChar(40)
   tableLabel     String?         @db.NVarChar(30)
   tableId        Int?
-  table          DiningTable?    @relation(fields: [tableId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  table          DiningTable?    @relation(fields: [tableId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   status         String          @default("OPEN") @db.NVarChar(40)
   reservationId  Int?
   reservation    Reservation?    @relation(fields: [reservationId], references: [id], onDelete: NoAction, onUpdate: NoAction)

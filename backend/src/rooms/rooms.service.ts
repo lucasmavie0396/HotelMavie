@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { isManagerRole } from '../common/decorators/roles.decorator';
 import { JwtPayload } from '../auth/jwt-payload';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { PrismaService } from '../prisma/prisma.service';
@@ -9,6 +10,7 @@ import { UpdateRoomDto } from './dto/update-room.dto';
 
 export const MAX_ROOM_IMAGES = 8;
 const images = { orderBy: [{ sortOrder: 'asc' as const }, { id: 'asc' as const }], select: { id: true, file: true, sortOrder: true } };
+const taxRate = { select: { id: true, name: true, rate: true } };
 
 @Injectable()
 export class RoomsService {
@@ -20,27 +22,41 @@ export class RoomsService {
   findAll(query: RoomQueryDto, user: JwtPayload) {
     return this.prisma.room.findMany({
       where: { hotelId: resolveHotelScope(user, query.hotelId), status: query.status },
-      include: { images },
+      include: { images, taxRate },
       orderBy: [{ hotelId: 'asc' }, { number: 'asc' }],
     });
   }
 
   async findOne(id: number, user: JwtPayload) {
-    const room = await this.prisma.room.findUnique({ where: { id }, include: { images } });
+    const room = await this.prisma.room.findUnique({ where: { id }, include: { images, taxRate } });
     if (!room || !canAccessHotel(user, room.hotelId)) {
       throw new NotFoundException('Quarto nao encontrado');
     }
     return room;
   }
 
-  create(dto: CreateRoomDto, user: JwtPayload) {
+  async create(dto: CreateRoomDto, user: JwtPayload) {
     resolveHotelScope(user, dto.hotelId);
-    return this.prisma.room.create({ data: dto, include: { images } });
+    await this.checkTaxRate(dto.hotelId, dto.taxRateId);
+    return this.prisma.room.create({ data: dto, include: { images, taxRate } });
   }
 
   async update(id: number, dto: UpdateRoomDto, user: JwtPayload) {
-    await this.findOne(id, user);
-    return this.prisma.room.update({ where: { id }, data: dto, include: { images } });
+    const room = await this.findOne(id, user);
+    const { status: _status, ...details } = dto;
+    if (Object.values(details).some((value) => value !== undefined) && !isManagerRole(user.role)) {
+      throw new ForbiddenException('So gestores podem alterar os dados do quarto');
+    }
+    await this.checkTaxRate(room.hotelId, dto.taxRateId);
+    return this.prisma.room.update({ where: { id }, data: dto, include: { images, taxRate } });
+  }
+
+  private async checkTaxRate(hotelId: number, taxRateId: number | null | undefined) {
+    if (!taxRateId) return;
+    const rate = await this.prisma.taxRate.findUnique({ where: { id: taxRateId } });
+    if (!rate || rate.hotelId !== hotelId || !rate.active) {
+      throw new BadRequestException('Taxa de IVA invalida para este hotel');
+    }
   }
 
   async remove(id: number, user: JwtPayload) {

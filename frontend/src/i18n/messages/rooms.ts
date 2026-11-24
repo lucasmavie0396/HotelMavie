@@ -94,6 +94,10 @@ export const roomsViews = {
       empty: 'Sem hospedes',
     },
     rooms: {
+      vat: 'IVA',
+      hotelVat: 'Taxa do hotel {rate}',
+      saved: 'Quarto {number} guardado',
+      editHint: 'O novo preco vale para as reservas novas; as existentes mantem o preco combinado. O IVA vale para o alojamento lancado a partir de agora.',
       subtitle: 'Estado, precos, fotografias e descricao no site',
       number: 'Numero',
       type: 'Tipo',
@@ -210,6 +214,10 @@ export const roomsViews = {
       empty: 'No guests',
     },
     rooms: {
+      vat: 'VAT',
+      hotelVat: 'Hotel rate {rate}',
+      saved: 'Room {number} saved',
+      editHint: 'The new price applies to new bookings; existing ones keep their agreed price. The VAT applies to accommodation charged from now on.',
       subtitle: 'Status, prices, photos and website description',
       number: 'Number',
       type: 'Type',
