@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { User } from '@prisma/client';
+import { User, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import QRCode from 'qrcode';
@@ -17,6 +17,8 @@ import { JwtPayload } from './jwt-payload';
 import { decryptSecret, encryptSecret, generateRecoveryCodes, generateSecret, hashRecoveryCode, otpauthUrl, verifyTotp } from './totp';
 
 const ROTATION_GRACE_MS = 60_000;
+const PIN_MAX_FAILURES = 5;
+const PIN_LOCK_MINUTES = 15;
 const CHALLENGE_SECONDS = 300;
 const RESET_MINUTES = 60;
 
@@ -47,6 +49,47 @@ export class AuthService {
       const challenge = await this.jwt.signAsync({ sub: user.id, purpose: '2fa' }, { secret: this.challengeSecret(), expiresIn: CHALLENGE_SECONDS });
       return { twoFactorRequired: true, challenge };
     }
+    return this.issueTokens(user, undefined, userAgent);
+  }
+
+  touchUsers() {
+    return this.prisma.user.findMany({
+      where: { active: true, pinHash: { not: null }, totpEnabled: false, role: { not: UserRole.ADMIN } },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async loginPin(userId: number, pin: string, userAgent?: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.active || !user.pinHash || user.totpEnabled || user.role === UserRole.ADMIN) {
+      throw new UnauthorizedException('Este utilizador nao entra com codigo: use a password');
+    }
+    if (user.pinLockedUntil && user.pinLockedUntil > new Date()) {
+      const minutes = Math.ceil((user.pinLockedUntil.getTime() - Date.now()) / 60_000);
+      throw new UnauthorizedException(`Codigo bloqueado por tentativas erradas. Tente daqui a ${minutes} min ou entre com a password`);
+    }
+    if (!(await bcrypt.compare(pin, user.pinHash))) {
+      const failures = user.pinFailures + 1;
+      const locked = failures >= PIN_MAX_FAILURES;
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: locked ? { pinFailures: 0, pinLockedUntil: new Date(Date.now() + PIN_LOCK_MINUTES * 60_000) } : { pinFailures: failures },
+      });
+      await this.audit.log({
+        hotelId: user.hotelId,
+        userId: user.id,
+        action: 'AUTH_PIN_FAILED',
+        entity: 'user',
+        entityId: user.id,
+        summary: `Codigo errado no ecra tactil para ${user.name}${locked ? ` (bloqueado ${PIN_LOCK_MINUTES} min)` : ''}`,
+      });
+      throw new UnauthorizedException(locked ? `Codigo errado. O codigo ficou bloqueado ${PIN_LOCK_MINUTES} minutos` : 'Codigo errado');
+    }
+    if (user.pinFailures || user.pinLockedUntil) {
+      await this.prisma.user.update({ where: { id: user.id }, data: { pinFailures: 0, pinLockedUntil: null } });
+    }
+    await this.prisma.userSession.deleteMany({ where: { userId: user.id, expiresAt: { lt: new Date() } } });
     return this.issueTokens(user, undefined, userAgent);
   }
 

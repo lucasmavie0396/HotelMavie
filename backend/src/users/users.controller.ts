@@ -5,6 +5,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { SetPinDto } from '../auth/dto/security.dto';
 import { UsersService } from './users.service';
 
 @Roles(UserRole.ADMIN)
@@ -30,6 +31,11 @@ export class UsersController {
   @Patch(':id')
   update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateUserDto, @CurrentUser() user: JwtPayload) {
     return this.usersService.update(id, dto, user);
+  }
+
+  @Patch(':id/pin')
+  setPin(@Param('id', ParseIntPipe) id: number, @Body() dto: SetPinDto, @CurrentUser() user: JwtPayload) {
+    return this.usersService.setPin(id, dto.pin ?? null, user);
   }
 
   @Post(':id/2fa/reset')

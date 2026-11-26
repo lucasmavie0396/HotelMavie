@@ -27,8 +27,26 @@ export class UsersService {
     return { ...data, role: profile.baseRole };
   }
 
-  findAll() {
-    return this.prisma.user.findMany({ select: publicUserSelect, orderBy: { name: 'asc' } });
+  async findAll() {
+    const users = await this.prisma.user.findMany({ select: { ...publicUserSelect, pinHash: true }, orderBy: { name: 'asc' } });
+    return users.map(({ pinHash, ...user }) => ({ ...user, hasPin: Boolean(pinHash) }));
+  }
+
+  async setPin(id: number, pin: string | null, actor: JwtPayload) {
+    const user = await this.prisma.user.update({
+      where: { id },
+      data: { pinHash: pin ? await bcrypt.hash(pin, 10) : null, pinFailures: 0, pinLockedUntil: null },
+      select: publicUserSelect,
+    });
+    await this.audit.log({
+      hotelId: user.hotelId,
+      userId: actor.sub,
+      action: 'USER_PIN',
+      entity: 'user',
+      entityId: id,
+      summary: `Codigo do ecra tactil de ${user.name} ${pin ? 'definido' : 'removido'}`,
+    });
+    return { ...user, hasPin: Boolean(pin) };
   }
 
   findOne(id: number) {

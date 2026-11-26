@@ -4,6 +4,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { translated } from '@/i18n';
 import { api, errorMessage } from '@/services/api';
+import { askConfirm, askText } from '@/services/dialog';
 import { useHotelsStore } from '@/stores/hotels';
 import type { AccessProfile, BackupStatus, UserRole } from '@/types';
 import { formatDateTime } from '@/utils/format';
@@ -18,6 +19,7 @@ interface StaffUser {
   profileId: number | null;
   profile: { id: number; name: string } | null;
   totpEnabled: boolean;
+  hasPin: boolean;
   createdAt: string;
 }
 
@@ -126,6 +128,21 @@ const resetTwoFactor = (user: StaffUser) =>
     await api.post(`/users/${user.id}/2fa/reset`);
   }, t('users.twoFactorReset'));
 
+async function setPin(user: StaffUser) {
+  const pin = await askText({ title: t('users.pinTitle', { name: user.name }), message: t('users.pinPrompt'), required: true, confirmLabel: t('common.save') });
+  if (pin === null) return;
+  if (!/^\d{4,6}$/.test(pin.trim())) {
+    error.value = t('users.pinInvalid');
+    return;
+  }
+  await run(() => api.patch(`/users/${user.id}/pin`, { pin: pin.trim() }), t('users.pinSaved', { name: user.name }));
+}
+
+async function removePin(user: StaffUser) {
+  if (!(await askConfirm({ title: t('users.pinRemove'), message: t('users.pinRemoveConfirm', { name: user.name }), danger: true, confirmLabel: t('users.pinRemove') }))) return;
+  await run(() => api.patch(`/users/${user.id}/pin`, { pin: null }), t('users.pinRemoved', { name: user.name }));
+}
+
 async function download(name: string) {
   try {
     const { data } = await api.get<Blob>(`/backups/${name}`, { responseType: 'blob' });
@@ -190,6 +207,7 @@ onMounted(load);
             <th class="px-4 py-3">Hotel</th>
             <th class="px-4 py-3">{{ t('common.status') }}</th>
             <th class="px-4 py-3">2FA</th>
+            <th class="px-4 py-3">{{ t('users.pin') }}</th>
             <th class="px-4 py-3"></th>
           </tr>
         </thead>
@@ -204,6 +222,18 @@ onMounted(load);
               <span class="rounded-full px-2 py-0.5 text-xs" :class="user.totpEnabled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'">
                 {{ user.totpEnabled ? t('common.active') : t('common.no') }}
               </span>
+            </td>
+            <td class="px-4 py-3 whitespace-nowrap">
+              <template v-if="user.role === 'ADMIN' || user.totpEnabled">
+                <span class="text-xs text-slate-400" :title="t('users.pinNotAllowed')">{{ t('users.pinPasswordOnly') }}</span>
+              </template>
+              <template v-else>
+                <span class="mr-2 rounded-full px-2 py-0.5 text-xs" :class="user.hasPin ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'">
+                  {{ user.hasPin ? t('users.pinSet') : t('common.no') }}
+                </span>
+                <button class="text-xs text-indigo-600 hover:underline" type="button" :disabled="busy" @click="setPin(user)">{{ user.hasPin ? t('users.pinChange') : t('users.pinDefine') }}</button>
+                <button v-if="user.hasPin" class="ml-2 text-xs text-rose-600 hover:underline" type="button" :disabled="busy" @click="removePin(user)">{{ t('users.pinRemove') }}</button>
+              </template>
             </td>
             <td class="space-x-3 px-4 py-3 text-right whitespace-nowrap">
               <button v-if="user.totpEnabled" class="text-xs text-rose-600 hover:underline" type="button" :disabled="busy" @click="resetTwoFactor(user)">{{ t('users.reset2fa') }}</button>

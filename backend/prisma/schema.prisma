@@ -103,6 +103,9 @@ model User {
   totpEnabled       Boolean         @default(false)
   totpLastStep      Int?
   totpRecoveryCodes Json?
+  pinHash           String?         @db.VarChar(255)
+  pinFailures       Int             @default(0)
+  pinLockedUntil    DateTime?
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   sessions          UserSession[]

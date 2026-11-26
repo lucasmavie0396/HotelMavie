@@ -11,8 +11,11 @@ export async function distinctAddress(page: Page) {
 export async function login(page: Page) {
   await distinctAddress(page);
   await page.goto('/login');
+  const passwordMode = page.getByRole('button', { name: 'Entrar com password' });
+  await page.getByLabel('Email').or(passwordMode).first().waitFor();
+  if (await passwordMode.isVisible()) await passwordMode.click();
   await page.getByLabel('Email').fill(MANAGER.email);
   await page.getByLabel('Password').fill(MANAGER.password);
-  await page.locator('form').getByRole('button', { name: 'Entrar' }).click();
+  await page.locator('form').getByRole('button', { name: 'Entrar', exact: true }).click();
   await expect(page).toHaveURL(/\/$/);
 }

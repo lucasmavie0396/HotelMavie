@@ -4,6 +4,8 @@ import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
 import TouchKeyboard from '@/components/TouchKeyboard.vue';
+import TouchLogin from '@/components/TouchLogin.vue';
+import { readScreen } from '@/utils/screen';
 import { api, errorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 
@@ -12,6 +14,30 @@ const auth = useAuthStore();
 const route = useRoute();
 const router = useRouter();
 
+const TOUCH_KEY = 'mavie.login-tactil';
+function readTouchLogin() {
+  try {
+    const saved = localStorage.getItem(TOUCH_KEY);
+    if (saved !== null) return saved === '1';
+  } catch {
+    return readScreen().touch;
+  }
+  return readScreen().touch;
+}
+function saveTouchLogin(value: boolean) {
+  try {
+    localStorage.setItem(TOUCH_KEY, value ? '1' : '0');
+  } catch {
+    return;
+  }
+}
+const touchLogin = ref(readTouchLogin());
+function useTouch(value: boolean) {
+  touchLogin.value = value;
+  saveTouchLogin(value);
+  error.value = '';
+  if (!value && keyboard.value) focusField('email');
+}
 const step = ref<'password' | 'code' | 'forgot'>('password');
 const email = ref('');
 const password = ref('');
@@ -84,8 +110,10 @@ function show(value: 'password' | 'forgot') {
 }
 
 onMounted(() => {
-  if (keyboard.value) focusField('email');
+  if (keyboard.value && !touchLogin.value) focusField('email');
 });
+
+const afterTouchLogin = () => router.push(safeRedirect());
 
 function typeKey(value: string) {
   fields[active.value].value += value;
@@ -112,10 +140,11 @@ function enterKey() {
 </script>
 
 <template>
-  <div class="relative flex min-h-screen flex-col">
-    <LanguageSwitcher class="absolute top-4 right-4" />
+  <div class="relative flex min-h-screen flex-col bg-gradient-to-br from-indigo-800 to-violet-600">
+    <LanguageSwitcher class="absolute top-4 right-4 rounded-full bg-white/90 p-1" />
     <div class="flex flex-1 items-center justify-center px-4 py-6">
-    <form v-if="step === 'password'" class="card w-full max-w-sm space-y-4" @submit.prevent="submit">
+    <TouchLogin v-if="touchLogin" @done="afterTouchLogin" @password="useTouch(false)" />
+    <form v-else-if="step === 'password'" class="card w-full max-w-sm space-y-4" @submit.prevent="submit">
       <h1 class="text-xl font-semibold">{{ t('login.title') }}</h1>
 
       <label class="block space-y-1">
@@ -134,6 +163,7 @@ function enterKey() {
       <button class="btn w-full" type="submit" :disabled="loading">
         {{ loading ? t('login.submitting') : t('login.submit') }}
       </button>
+      <button class="btn-secondary w-full" type="button" @click="useTouch(true)">{{ t('touchLogin.useTouch') }}</button>
       <button class="w-full text-center text-sm text-indigo-600 hover:underline" type="button" @click="show('forgot')">{{ t('login.forgot') }}</button>
     </form>
 
@@ -162,9 +192,9 @@ function enterKey() {
     </form>
     </div>
 
-    <button class="mx-auto mb-2 touch-manipulation rounded-full bg-slate-100 px-4 py-2 text-sm font-medium text-slate-600 ring-1 ring-slate-200 hover:bg-slate-200" type="button" :aria-pressed="keyboard" @mousedown.prevent @click="keyboard = !keyboard">
+    <button v-if="!touchLogin" class="mx-auto mb-2 touch-manipulation rounded-full bg-white/90 px-4 py-2 text-sm font-medium text-slate-700 ring-1 ring-white/50 hover:bg-white" type="button" :aria-pressed="keyboard" @mousedown.prevent @click="keyboard = !keyboard">
       {{ keyboard ? t('login.keyboardHide') : t('login.keyboard') }}
     </button>
-    <TouchKeyboard v-if="keyboard" :numeric="step === 'code'" :enter-label="step === 'code' ? t('login.confirm') : step === 'forgot' ? t('login.sendLink') : active === 'email' ? t('login.keyNext') : t('login.submit')" @key="typeKey" @backspace="eraseKey" @enter="enterKey" />
+    <TouchKeyboard v-if="keyboard && !touchLogin" :numeric="step === 'code'" :enter-label="step === 'code' ? t('login.confirm') : step === 'forgot' ? t('login.sendLink') : active === 'email' ? t('login.keyNext') : t('login.submit')" @key="typeKey" @backspace="eraseKey" @enter="enterKey" />
   </div>
 </template>

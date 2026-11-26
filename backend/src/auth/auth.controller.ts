@@ -6,7 +6,7 @@ import { SalesAccess } from '../common/decorators/roles.decorator';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
-import { DisableTwoFactorDto, ForgotPasswordDto, ResetPasswordDto, TwoFactorCodeDto, TwoFactorLoginDto } from './dto/security.dto';
+import { DisableTwoFactorDto, ForgotPasswordDto, PinLoginDto, ResetPasswordDto, TwoFactorCodeDto, TwoFactorLoginDto } from './dto/security.dto';
 import { JwtPayload } from './jwt-payload';
 
 @SalesAccess()
@@ -20,6 +20,20 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   login(@Body() dto: LoginDto, @Headers('user-agent') userAgent?: string) {
     return this.authService.login(dto, userAgent);
+  }
+
+  @Public()
+  @Get('touch-users')
+  touchUsers() {
+    return this.authService.touchUsers();
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('login/pin')
+  @HttpCode(HttpStatus.OK)
+  loginPin(@Body() dto: PinLoginDto, @Headers('user-agent') userAgent?: string) {
+    return this.authService.loginPin(dto.userId, dto.pin, userAgent);
   }
 
   @Public()

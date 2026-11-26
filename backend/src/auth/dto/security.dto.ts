@@ -1,4 +1,4 @@
-import { IsEmail, IsString, Length, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsInt, IsOptional, IsString, Length, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator';
 
 export class TwoFactorLoginDto {
   @IsString()
@@ -41,4 +41,21 @@ export class ResetPasswordDto {
   @MinLength(8)
   @MaxLength(200)
   password: string;
+}
+
+export class PinLoginDto {
+  @IsInt()
+  userId: number;
+
+  @IsString()
+  @Matches(/^\d{4,6}$/)
+  pin: string;
+}
+
+export class SetPinDto {
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @Matches(/^\d{4,6}$/, { message: 'O codigo tem de ter 4 a 6 algarismos' })
+  pin: string | null;
 }

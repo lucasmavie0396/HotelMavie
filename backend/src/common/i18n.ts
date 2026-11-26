@@ -236,6 +236,9 @@ const EXACT: Record<string, string> = {
   'Horario invalido: usa HH:MM-HH:MM': 'Invalid hours: use HH:MM-HH:MM',
   'A app Android ainda nao esta neste servidor': 'The Android app is not on this server yet',
   'So gestores podem alterar os dados do quarto': 'Only managers can change the room details',
+  'Este utilizador nao entra com codigo: use a password': 'This user cannot sign in with a code: use the password',
+  'Codigo errado': 'Wrong code',
+  'O codigo tem de ter 4 a 6 algarismos': 'The code must have 4 to 6 digits',
   'Erro interno': 'Internal error',
   'Forbidden resource': 'Not allowed to perform this operation',
   Unauthorized: 'Unauthorized',
@@ -284,6 +287,8 @@ const PATTERNS: [RegExp, string][] = [
   [/^Ja existe um inventario aberto neste armazem \((.+)\)\. Lanca-o ou cancela-o primeiro$/, 'There is already an open stock count in this warehouse ($1). Post or cancel it first'],
   [/^O servico de quartos deste ponto de venda funciona das (.+) as (.+)$/, 'Room service for this outlet runs from $1 to $2'],
   [/^O pedido ultrapassa o limite de consumo do quarto \((.+); ja usado (.+)\)\. Contacte a rececao$/, 'The order exceeds the room spending limit ($1; already used $2). Please contact reception'],
+  [/^Codigo bloqueado por tentativas erradas\. Tente daqui a (\d+) min ou entre com a password$/, 'Code locked after wrong attempts. Try again in $1 min or sign in with the password'],
+  [/^Codigo errado\. O codigo ficou bloqueado (\d+) minutos$/, 'Wrong code. The code is now locked for $1 minutes'],
   [/^Sobrepoe-se ao turno (.+) desse dia$/, 'Overlaps the $1 shift on that day'],
 ];
 

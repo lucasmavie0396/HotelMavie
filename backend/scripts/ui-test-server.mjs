@@ -48,7 +48,7 @@ await prisma.user.create({
   data: { name: 'Gestor Interface', email: 'gestor-ui@teste.local', role: 'MANAGER', hotelId: hotel.id, passwordHash: await bcrypt.hash('Teste-UI-1234', 4) },
 });
 await prisma.user.create({
-  data: { name: 'Caixa Interface', email: 'caixa-ui@teste.local', role: 'CASHIER', hotelId: hotel.id, passwordHash: await bcrypt.hash('Teste-UI-1234', 4) },
+  data: { name: 'Caixa Interface', email: 'caixa-ui@teste.local', role: 'CASHIER', hotelId: hotel.id, passwordHash: await bcrypt.hash('Teste-UI-1234', 4), pinHash: await bcrypt.hash('2468', 4) },
 });
 await prisma.$disconnect();
 

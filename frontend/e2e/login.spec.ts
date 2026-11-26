@@ -7,11 +7,11 @@ test('recusa password errada e entra com a certa', async ({ page }) => {
   await expect(page).toHaveURL(/\/login\?redirect=/);
   await page.getByLabel('Email').fill(MANAGER.email);
   await page.getByLabel('Password').fill('errada-123');
-  await page.getByRole('button', { name: 'Entrar' }).click();
+  await page.getByRole('button', { name: 'Entrar', exact: true }).click();
   await expect(page.locator('form p.text-rose-600')).toBeVisible();
 
   await page.getByLabel('Password').fill(MANAGER.password);
-  await page.getByRole('button', { name: 'Entrar' }).click();
+  await page.getByRole('button', { name: 'Entrar', exact: true }).click();
   await expect(page).toHaveURL(/\/stocks$/);
   await expect(page.getByRole('heading', { name: 'Stocks' })).toBeVisible();
 });
