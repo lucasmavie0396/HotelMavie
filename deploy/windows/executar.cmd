@@ -1,10 +1,12 @@
 @echo off
 setlocal
+set "NoDefaultCurrentDirectoryInExePath=1"
+set "PING=%SystemRoot%\System32\PING.EXE"
 set "LOGS=%~1"
 set "NODE=%~2"
 set "ENVFILE=%~3"
 if "%LOGS%"=="" set "LOGS=%~dp0..\..\dados\logs"
-if "%NODE%"=="" set "NODE=node"
+if "%NODE%"=="" set "NODE=%ProgramFiles%\nodejs\node.exe"
 if not exist "%LOGS%" mkdir "%LOGS%"
 set "ENVARG="
 if not "%ENVFILE%"=="" set ENVARG=--env-file="%ENVFILE%"
@@ -16,5 +18,5 @@ if exist "%LOGS%\api.log" for %%F in ("%LOGS%\api.log") do if %%~zF GTR 10485760
 echo [%date% %time%] a arrancar >> "%LOGS%\api.log"
 "%NODE%" %ENVARG% "%MAIN%" >> "%LOGS%\api.log" 2>&1
 echo [%date% %time%] parou com codigo %errorlevel%, reinicia dentro de 10 segundos >> "%LOGS%\api.log"
-ping -n 11 127.0.0.1 >nul
+"%PING%" -n 11 127.0.0.1 >nul
 goto inicio

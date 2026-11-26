@@ -1,4 +1,5 @@
 @echo off
-set "PS=powershell.exe"
+set "NoDefaultCurrentDirectoryInExePath=1"
+set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 if exist "%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe" set "PS=%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
 start "" "%PS%" -NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File "%~dp0atualizar-base.ps1"

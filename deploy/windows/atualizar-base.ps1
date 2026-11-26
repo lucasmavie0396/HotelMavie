@@ -72,7 +72,7 @@ function Update-SystemDatabase($Target, [string]$User, [string]$Password, [strin
 if ($MyInvocation.InvocationName -eq '.') { return }
 
 if (-not (Test-Administrator)) {
-  Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File `"$PSCommandPath`""
+  Start-Process $PowerShellExe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File `"$PSCommandPath`""
   return
 }
 

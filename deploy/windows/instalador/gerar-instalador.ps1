@@ -52,7 +52,7 @@ Invoke-Native $npm @('run', 'typecheck') $Backend
 Invoke-Native $npm @('run', 'typecheck') $Frontend
 
 Write-Step 'Compilar o backend'
-Invoke-Native $npm @('exec', '--', 'tsc', '-p', 'tsconfig.build.json', '--outDir', (Join-Path $stage 'backend\dist')) $Backend
+Invoke-Native $npm @('exec', '--', 'tsc', '-p', 'tsconfig.build.json', '--outDir', (Join-Path $stage 'backend\dist'), '--sourceMap', 'false') $Backend
 foreach ($file in @('package.json', 'package-lock.json', '.env.example')) {
   Copy-Item -LiteralPath (Join-Path $Backend $file) -Destination (Join-Path $stage 'backend')
 }

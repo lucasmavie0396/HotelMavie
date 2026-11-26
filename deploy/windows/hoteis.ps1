@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('estado', 'novo', 'atalho', 'agente', 'firewall', 'iniciar', 'parar', 'reiniciar', 'logs', 'backup', 'agendar-backups', 'atualizar', 'remover')]
+  [ValidateSet('estado', 'novo', 'atalho', 'agente', 'firewall', 'iniciar', 'parar', 'reiniciar', 'logs', 'backup', 'agendar-backups', 'atualizar', 'remover', 'proteger')]
   [string]$Acao = 'estado',
   [string]$Codigo,
   [string]$Nome,
@@ -313,7 +313,17 @@ switch ($Acao) {
     }
     if ($rows) { $rows | Format-Table -AutoSize } else { Write-Note 'Ainda nao ha hoteis. Cria o primeiro com: hoteis.ps1 -Acao novo -Codigo ... -Nome ... -AdminEmail ...' }
   }
-  'novo' { New-Hotel }
+  'novo' {
+    New-Hotel
+    Write-Step 'Proteger as pastas do sistema'
+    Protect-InstallFolder
+  }
+  'proteger' {
+    Assert-Admin
+    Write-Step 'Proteger as pastas do sistema'
+    Protect-InstallFolder
+    Write-Ok 'Utilizadores so leem o sistema; dados e chaves so para administradores e SYSTEM'
+  }
   'atalho' {
     Assert-Admin
     foreach ($item in Get-Targets) {
@@ -374,7 +384,7 @@ switch ($Acao) {
   'agendar-backups' {
     Assert-Admin
     $script = Join-Path $PSScriptRoot 'hoteis.ps1'
-    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$script`" -Acao backup -DiasBackup $DiasBackup"
+    $action = New-ScheduledTaskAction -Execute $PowerShellExe -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$script`" -Acao backup -DiasBackup $DiasBackup"
     Register-ScheduledTask -TaskName "$NomeTarefa backups hoteis" -Description 'MAVIE-HGest: backup diario de todos os hoteis' -Action $action -Trigger (New-ScheduledTaskTrigger -Daily -At 2am) -User SYSTEM -RunLevel Highest -Force | Out-Null
     Write-Ok "Backup diario as 02:00 de todos os hoteis, guardados $DiasBackup dias"
   }
@@ -433,6 +443,8 @@ switch ($Acao) {
       Write-Host 'Cada base de dados so muda no passo de migracoes. Para voltar atras, restaura o backup antes-atualizacao do hotel afetado e repoe a versao anterior do codigo.'
       exit 1
     }
+    Write-Step 'Proteger as pastas do sistema'
+    Protect-InstallFolder
     Write-Step 'Atualizacao concluida'
   }
   'remover' {

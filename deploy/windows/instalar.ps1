@@ -121,6 +121,9 @@ if ($SemServico) {
   return
 }
 
+Write-Step 'Proteger as pastas do sistema'
+Protect-InstallFolder
+
 Write-Step 'Arranque automatico com o Windows'
 Register-ApiTask $node $paths.Logs
 Start-Api

@@ -329,7 +329,10 @@ A chave de assinatura AT é a do produtor do software e é partilhada por todos 
 .\hoteis.ps1 -Acao atualizar -GitPull          # backup, para todos, compila uma vez, migra cada base e arranca
 .\hoteis.ps1 -Acao atalho                      # volta a criar os atalhos do painel no ambiente de trabalho
 .\hoteis.ps1 -Acao remover -Codigo hotelmar    # tira o servico e o atalho; base de dados e pasta ficam intactas
+.\hoteis.ps1 -Acao proteger                    # volta a aplicar as permissoes seguras da pasta (ver abaixo)
 ```
+
+**Permissões da pasta:** a pasta do sistema deixa de herdar as permissões do disco `C:\` (onde qualquer utilizador pode criar ficheiros). Administradores e SYSTEM têm controlo total; os outros utilizadores só leem. A pasta `dados` (configuração dos hotéis, chave AT, backups e registos) fica só para Administradores e SYSTEM. O instalador, `hoteis.ps1 -Acao novo`/`atualizar` e o posto aplicam isto sozinhos. Assim ninguém sem ser administrador consegue meter ficheiros que os hotéis (a correr como SYSTEM) executem, nem ler as palavras-passe e a chave AT.
 
 Para mudar o SMTP ou outra configuração de um hotel, edita `dados\hoteis\<codigo>\hotel.env` e faz `reiniciar` desse hotel.
 

@@ -9,6 +9,51 @@ $MainJs = Join-Path $Backend 'dist\main.js'
 $NomeTarefa = 'MAVIE-HGest'
 $DadosHoteis = Join-Path $Raiz 'dados\hoteis'
 $ChaveAtPartilhada = Join-Path $Raiz 'dados\keys\at-private.pem'
+$PowerShellExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$CmdExe = Join-Path $env:SystemRoot 'System32\cmd.exe'
+$IcaclsExe = Join-Path $env:SystemRoot 'System32\icacls.exe'
+
+function Protect-InstallFolder([string]$Root = $Raiz) {
+  $sistema = '*S-1-5-18'
+  $admins = '*S-1-5-32-544'
+  $utilizadores = '*S-1-5-32-545'
+  $abertos = @($utilizadores, '*S-1-5-11', '*S-1-1-0', '*S-1-3-0', '*S-1-5-4')
+  & $IcaclsExe $Root '/inheritance:r' '/grant:r' "${sistema}:(OI)(CI)F" "${admins}:(OI)(CI)F" "${utilizadores}:(OI)(CI)RX" '/Q' | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "Nao consegui proteger a pasta $Root (icacls $LASTEXITCODE)." }
+  $dados = Join-Path $Root 'dados'
+  if (Test-Path -LiteralPath $dados) {
+    & $IcaclsExe $dados '/inheritance:r' '/grant:r' "${sistema}:(OI)(CI)F" "${admins}:(OI)(CI)F" '/Q' | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Nao consegui proteger a pasta $dados (icacls $LASTEXITCODE)." }
+  }
+  & $IcaclsExe $Root '/setowner' $admins '/Q' | Out-Null
+  $anterior = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    foreach ($alvo in @(Get-ProtectTargets $Root)) {
+      $recursivo = @()
+      if ($alvo.Recursivo) { $recursivo = @('/T') }
+      & $IcaclsExe $alvo.Caminho '/remove:g' @abertos @recursivo '/C' '/Q' 2>$null | Out-Null
+      & $IcaclsExe $alvo.Caminho '/setowner' $admins @recursivo '/C' '/Q' 2>$null | Out-Null
+    }
+  } finally {
+    $ErrorActionPreference = $anterior
+  }
+}
+
+function Get-ProtectTargets([string]$Dir) {
+  foreach ($item in @(Get-ChildItem -LiteralPath $Dir -Force -ErrorAction SilentlyContinue)) {
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+    if ($item.PSIsContainer -and ($item.Name -eq 'node_modules' -or $item.Name.StartsWith('@'))) {
+      [pscustomobject]@{ Caminho = $item.FullName; Recursivo = $false }
+      Get-ProtectTargets $item.FullName
+    } elseif ($item.PSIsContainer -and (Test-Path -LiteralPath (Join-Path $item.FullName 'node_modules'))) {
+      [pscustomobject]@{ Caminho = $item.FullName; Recursivo = $false }
+      Get-ProtectTargets $item.FullName
+    } else {
+      [pscustomobject]@{ Caminho = $item.FullName; Recursivo = $true }
+    }
+  }
+}
 
 function U([string]$Text) {
   return [regex]::Unescape($Text)
@@ -283,7 +328,7 @@ function Install-PrintAgent([string]$Node, [string[]]$Origins) {
   $safeNode = $Node.Replace("'", "''")
   $safeAgent = $agent.Replace("'", "''")
   $command = "`$env:PRINT_AGENT_ORIGINS='$allowed'; & '$safeNode' '$safeAgent'"
-  $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command `"$command`"" -WorkingDirectory (Split-Path $agent)
+  $action = New-ScheduledTaskAction -Execute $PowerShellExe -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command `"$command`"" -WorkingDirectory (Split-Path $agent)
   $trigger = New-ScheduledTaskTrigger -AtLogOn
   $principal = New-ScheduledTaskPrincipal -GroupId 'S-1-5-32-545' -RunLevel Limited
   $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
@@ -315,7 +360,7 @@ function Grant-SqlServerFolder($Instance, [string]$Path) {
   if (-not $Instance -or -not $Instance.Account) { return }
   $account = "NT Service\$($Instance.Service)"
   if ($Instance.Account -notmatch '^NT Service\\') { $account = $Instance.Account }
-  Invoke-Native 'icacls.exe' @($Path, '/grant', "${account}:(OI)(CI)M", '/Q') $Raiz
+  Invoke-Native $IcaclsExe @($Path, '/grant', "${account}:(OI)(CI)M", '/Q') $Raiz
 }
 
 function Backup-Database([hashtable]$Env, [string]$Prefix) {
@@ -436,7 +481,7 @@ function Register-ApiTask([string]$Node, [string]$LogDir, [string]$TaskName = $N
   $runner = Join-Path $PSScriptRoot 'executar.cmd'
   $arguments = "`"$runner`" `"$LogDir`" `"$Node`""
   if ($EnvPath) { $arguments += " `"$EnvPath`"" }
-  $action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/c `"$arguments`"" -WorkingDirectory $Backend
+  $action = New-ScheduledTaskAction -Execute $CmdExe -Argument "/c `"$arguments`"" -WorkingDirectory $Backend
   $trigger = New-ScheduledTaskTrigger -AtStartup
   $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
   $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)

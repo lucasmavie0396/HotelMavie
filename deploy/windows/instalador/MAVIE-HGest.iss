@@ -75,13 +75,13 @@ Name: "{group}\Pasta do MAVIE-HGest"; Filename: "{app}"
 Name: "{commondesktop}\MAVIE-HGest - Novo hotel"; Filename: "{app}\deploy\windows\Novo hotel.cmd"; WorkingDir: "{app}\deploy\windows"; IconFilename: "{app}\deploy\windows\lam-company.ico"; Tasks: atalho
 
 [Run]
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\deploy\windows\hoteis.ps1"" -Acao atualizar -SemCompilar"; StatusMsg: "A atualizar as bases de dados e a arrancar os hotéis..."; Flags: runhidden waituntilterminated; Check: HasHotels
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\deploy\windows\hoteis.ps1"" -Acao atualizar -SemCompilar"; StatusMsg: "A atualizar as bases de dados e a arrancar os hotéis..."; Flags: runhidden waituntilterminated; Check: HasHotels
 Filename: "{app}\deploy\windows\Novo hotel.cmd"; Description: "Abrir o assistente para criar um hotel"; Flags: postinstall shellexec skipifsilent nowait; Components: sistema; Check: not IsUpdate
 Filename: "{app}\deploy\windows\Atualizar base de dados.cmd"; Description: "Escolher a base de dados a atualizar"; Flags: postinstall shellexec skipifsilent nowait; Components: sistema; Check: IsUpdate
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\deploy\windows\abrir-painel.ps1"" -Url ""{code:PanelUrl}"""; Description: "Abrir o painel em ecrã inteiro"; Flags: postinstall skipifsilent nowait runhidden; Components: posto
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\deploy\windows\abrir-painel.ps1"" -Url ""{code:PanelUrl}"""; Description: "Abrir o painel em ecrã inteiro"; Flags: postinstall skipifsilent nowait runhidden; Components: posto
 
 [UninstallRun]
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\deploy\windows\desinstalar.ps1"""; Flags: runhidden waituntilterminated; RunOnceId: "PararHoteis"
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\deploy\windows\desinstalar.ps1"""; Flags: runhidden waituntilterminated; RunOnceId: "PararHoteis"
 
 [UninstallDelete]
 Type: files; Name: "{app}\posto-atalhos.txt"
@@ -93,6 +93,11 @@ Type: files; Name: "{app}\sqlserver-config.log"
 var
   ServerPage: TInputQueryWizardPage;
   SearchShown: Boolean;
+
+function PowerShellExe: String;
+begin
+  Result := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+end;
 
 function HotelsIn(Dir: String): Boolean;
 var
@@ -207,7 +212,7 @@ begin
   WizardForm.NextButton.Enabled := False;
   WizardForm.BackButton.Enabled := False;
   try
-    Exec('powershell.exe', '-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File "' + ExpandConstant('{tmp}\escolher-servidor.ps1') + '" -Saida "' + Output + '"', ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, Code);
+    Exec(PowerShellExe, '-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File "' + ExpandConstant('{tmp}\escolher-servidor.ps1') + '" -Saida "' + Output + '"', ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, Code);
   finally
     WizardForm.NextButton.Enabled := True;
     WizardForm.BackButton.Enabled := True;
@@ -305,7 +310,7 @@ begin
   if FileExists(Script) and HotelsIn(Dir) then
   begin
     WizardForm.PreparingLabel.Caption := 'A parar os hotéis antes de atualizar os ficheiros...';
-    if not Exec('powershell.exe', '-NoProfile -ExecutionPolicy Bypass -File "' + Script + '" -Acao parar', Dir, SW_HIDE, ewWaitUntilTerminated, Code) or (Code <> 0) then
+    if not Exec(PowerShellExe, '-NoProfile -ExecutionPolicy Bypass -File "' + Script + '" -Acao parar', Dir, SW_HIDE, ewWaitUntilTerminated, Code) or (Code <> 0) then
       Result := 'Não foi possível parar os hotéis desta instalação. Pare-os com hoteis.ps1 -Acao parar e volte a correr o instalador.';
   end;
 end;
@@ -318,7 +323,7 @@ begin
   WizardForm.StatusLabel.Caption := 'A configurar este posto...';
   Params := '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\deploy\windows\posto.ps1') + '" -Servidor "' + ServerAddress + '" -Porta "' + ServerPort + '"';
   if not WizardIsTaskSelected('impressao') then Params := Params + ' -SemImpressao';
-  if not Exec('powershell.exe', Params, ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, Code) or (Code <> 0) then
+  if not Exec(PowerShellExe, Params, ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, Code) or (Code <> 0) then
     SuppressibleMsgBox('Não foi possível configurar este posto. Veja o motivo em ' + ExpandConstant('{app}\posto.log') + '.', mbError, MB_OK, IDOK);
 end;
 
@@ -328,13 +333,23 @@ var
 begin
   if ExpandConstant('{param:SEMSQLCONFIG|0}') = '1' then Exit;
   WizardForm.StatusLabel.Caption := 'A preparar o SQL Server (TCP fixo e autenticação SQL)...';
-  if not Exec('powershell.exe', '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\deploy\windows\preparar-sqlserver.ps1') + '"', ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, Code) or (Code <> 0) then
+  if not Exec(PowerShellExe, '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\deploy\windows\preparar-sqlserver.ps1') + '"', ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, Code) or (Code <> 0) then
     SuppressibleMsgBox('Não foi possível preparar o SQL Server. Veja o motivo em ' + ExpandConstant('{app}\sqlserver-config.log') + '. Pode corrigir depois em Novo hotel, com Instalar o que falta.', mbError, MB_OK, IDOK);
+end;
+
+procedure ProtectFolders;
+var
+  Code: Integer;
+begin
+  WizardForm.StatusLabel.Caption := 'A proteger as pastas do sistema...';
+  if not Exec(PowerShellExe, '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\deploy\windows\hoteis.ps1') + '" -Acao proteger', ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, Code) or (Code <> 0) then
+    SuppressibleMsgBox('Não foi possível proteger as permissões da pasta ' + ExpandConstant('{app}') + '. Corra hoteis.ps1 -Acao proteger como administrador.', mbError, MB_OK, IDOK);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep <> ssPostInstall then Exit;
+  ProtectFolders;
   if WizardIsComponentSelected('posto') then ConfigureWorkstation;
   if WizardIsComponentSelected('sistema') and not IsUpdate then PrepareSqlServer;
 end;

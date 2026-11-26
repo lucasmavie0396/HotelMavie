@@ -45,7 +45,7 @@ function Start-Child([string]$Arguments, [hashtable]$Secrets, [string]$LogFile, 
   foreach ($key in $Secrets.Keys) { Set-Item "Env:\$key" $Secrets[$key] }
   $env:PRISMA_HIDE_UPDATE_MESSAGE = '1'
   try {
-    $process = Start-Process -FilePath 'powershell.exe' -ArgumentList $Arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput $LogFile -RedirectStandardError $ErrFile
+    $process = Start-Process -FilePath $PowerShellExe -ArgumentList $Arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput $LogFile -RedirectStandardError $ErrFile
     $null = $process.Handle
     return $process
   } finally {
@@ -75,7 +75,7 @@ function Read-NewText([string]$Path, [ref]$Position) {
 if ($MyInvocation.InvocationName -eq '.') { return }
 
 if (-not (Test-Administrator)) {
-  Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File `"$PSCommandPath`""
+  Start-Process $PowerShellExe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File `"$PSCommandPath`""
   return
 }
 
@@ -482,7 +482,7 @@ $create.Add_Click({
 
 $open.Add_Click({
   if ($script:panelUrl) {
-    Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $PSScriptRoot 'abrir-painel.ps1')`" -Url `"$($script:panelUrl)`""
+    Start-Process $PowerShellExe -WindowStyle Hidden -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $PSScriptRoot 'abrir-painel.ps1')`" -Url `"$($script:panelUrl)`""
   }
 })
 

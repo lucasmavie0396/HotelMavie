@@ -54,6 +54,7 @@ try {
   }
 
   if (-not $SemImpressao) { Install-PrintAgent (Get-AgentNode) $urls }
+  Protect-InstallFolder
   Remove-Item -LiteralPath $Registo -Force -ErrorAction SilentlyContinue
   Write-Step 'Posto pronto'
   exit 0

@@ -330,7 +330,7 @@ function Assert-MicrosoftSignature([string]$Path) {
 function Install-Msi([string]$Path, [string[]]$Properties = @()) {
   $log = "$Path.log"
   $arguments = @('/i', "`"$Path`"", '/qn', '/norestart', '/l*v', "`"$log`"") + $Properties
-  $process = Start-Process -FilePath 'msiexec.exe' -ArgumentList $arguments -Wait -PassThru
+  $process = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\msiexec.exe') -ArgumentList $arguments -Wait -PassThru
   if ($process.ExitCode -notin @(0, 3010)) { throw "A instalacao de $(Split-Path $Path -Leaf) falhou (codigo $($process.ExitCode)). Registo: $log" }
   if ($process.ExitCode -eq 3010) { Write-Note 'O Windows pede um reinicio para concluir esta instalacao.' }
 }
