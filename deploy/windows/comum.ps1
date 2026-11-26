@@ -20,10 +20,10 @@ function Protect-InstallFolder([string]$Root = $Raiz) {
   $abertos = @($utilizadores, '*S-1-5-11', '*S-1-1-0', '*S-1-3-0', '*S-1-5-4')
   & $IcaclsExe $Root '/inheritance:r' '/grant:r' "${sistema}:(OI)(CI)F" "${admins}:(OI)(CI)F" "${utilizadores}:(OI)(CI)RX" '/Q' | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "Nao consegui proteger a pasta $Root (icacls $LASTEXITCODE)." }
-  $dados = Join-Path $Root 'dados'
-  if (Test-Path -LiteralPath $dados) {
-    & $IcaclsExe $dados '/inheritance:r' '/grant:r' "${sistema}:(OI)(CI)F" "${admins}:(OI)(CI)F" '/Q' | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Nao consegui proteger a pasta $dados (icacls $LASTEXITCODE)." }
+  foreach ($privada in @((Join-Path $Root 'dados'), (Join-Path $Root 'backend\keys'))) {
+    if (-not (Test-Path -LiteralPath $privada)) { continue }
+    & $IcaclsExe $privada '/inheritance:r' '/grant:r' "${sistema}:(OI)(CI)F" "${admins}:(OI)(CI)F" '/Q' | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Nao consegui proteger a pasta $privada (icacls $LASTEXITCODE)." }
   }
   & $IcaclsExe $Root '/setowner' $admins '/Q' | Out-Null
   $anterior = $ErrorActionPreference
