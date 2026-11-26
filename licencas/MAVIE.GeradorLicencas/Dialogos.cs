@@ -95,6 +95,57 @@ internal static class Dialogos
         return null;
     }
 
+    public static LigacaoBase? Ligacao(IWin32Window? dono, LigacaoBase? atual, string? erro)
+    {
+        using var f = Janela("Base de dados das licenças (SQL Server)", 560, 350);
+        f.ShowInTaskbar = dono is null;
+        var instancia = new ComboBox { Location = new Point(190, 12), Width = 350 };
+        var locais = LigacaoBase.InstanciasLocais();
+        instancia.Items.AddRange([.. locais]);
+        instancia.Text = atual?.Instancia ?? locais.FirstOrDefault() ?? @".\SQLEXPRESS";
+        var nomeBase = new TextBox { Location = new Point(190, 48), Width = 200, Text = atual?.Base ?? LigacaoBase.BasePadrao };
+        var windows = new RadioButton { Text = "Autenticação do Windows", Location = new Point(190, 84), AutoSize = true };
+        var sql = new RadioButton { Text = "Utilizador do SQL Server", Location = new Point(190, 110), AutoSize = true };
+        var utilizador = new TextBox { Location = new Point(190, 140), Width = 200, Text = atual?.Utilizador ?? "sa" };
+        var senha = new TextBox { Location = new Point(190, 176), Width = 200, UseSystemPasswordChar = true };
+        var aviso = new Label
+        {
+            Location = new Point(12, 212), Size = new Size(536, 84),
+            ForeColor = erro is null ? Color.FromArgb(71, 85, 105) : Color.FromArgb(185, 28, 28),
+            Text = erro ?? "A base é criada na primeira ligação, com as tabelas dos clientes, pagamentos, licenças e histórico. " +
+                   "A palavra-passe do SQL Server fica guardada cifrada pelo Windows, só para este utilizador.",
+        };
+        f.Controls.AddRange([Rotulo("Instância SQL Server", 12, 12), instancia, Rotulo("Nome da base", 12, 48), nomeBase, Rotulo("Entrar com", 12, 84),
+            windows, sql, Rotulo("Utilizador", 12, 140), utilizador, Rotulo("Palavra-passe", 12, 176), senha, aviso]);
+        Botoes(f, 308);
+        void Atualizar() => utilizador.Enabled = senha.Enabled = sql.Checked;
+        windows.CheckedChanged += (_, _) => Atualizar();
+        sql.CheckedChanged += (_, _) => Atualizar();
+        (string.IsNullOrWhiteSpace(atual?.Utilizador) ? windows : sql).Checked = true;
+        Atualizar();
+        while (f.ShowDialog(dono) == DialogResult.OK)
+        {
+            try
+            {
+                BaseLicencas.ValidarNome(nomeBase.Text);
+                if (string.IsNullOrWhiteSpace(instancia.Text))
+                    throw new ArgumentException("Indique a instância do SQL Server.");
+                if (windows.Checked)
+                    return new LigacaoBase(instancia.Text.Trim(), nomeBase.Text.Trim());
+                if (string.IsNullOrWhiteSpace(utilizador.Text))
+                    throw new ArgumentException("Indique o utilizador do SQL Server.");
+                if (senha.Text.Length == 0 && atual?.Utilizador == utilizador.Text.Trim() && atual.SenhaCifrada is not null)
+                    return atual with { Instancia = instancia.Text.Trim(), Base = nomeBase.Text.Trim() };
+                return LigacaoBase.ComUtilizador(instancia.Text, nomeBase.Text, utilizador.Text, senha.Text);
+            }
+            catch (ArgumentException ex)
+            {
+                MessageBox.Show(f, ex.Message, f.Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+        return null;
+    }
+
     public static (DateOnly ValidaAte, string Motivo)? SemPagamento(IWin32Window? dono, ClienteResumo cliente)
     {
         using var f = Janela($"Licença sem pagamento — «{cliente.Nome}»", 520, 200);

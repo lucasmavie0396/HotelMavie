@@ -16,6 +16,12 @@ internal static class Program
             pasta = p;
             args = resto;
         }
+        LigacaoBase? ligacaoFixa = null;
+        if (args is ["--ligacao", var instancia, var nomeBase, .. var seguintes])
+        {
+            ligacaoFixa = new LigacaoBase(instancia, nomeBase);
+            args = seguintes;
+        }
         var armazem = new ArmazemLicencas(pasta, args is ["--captura", ..] or ["--sem-sistema", ..] ? null : ArmazemLicencas.PublicaEmbutida());
         if (args is ["--sem-sistema", .. var depois])
             args = depois;
@@ -44,8 +50,21 @@ internal static class Program
                 case ["--importar", var ficheiro, var senha]:
                     armazem.ImportarCopia(ficheiro, senha);
                     return 0;
-                case ["--captura", var imagem]:
-                    Captura(armazem, imagem, hoje);
+                case ["--captura", var imagem] when ligacaoFixa is not null:
+                    Captura(armazem, ligacaoFixa, imagem, hoje);
+                    return 0;
+                case ["--migrar", var ficheiro] when ligacaoFixa is not null:
+                {
+                    var b = new BaseLicencas(ligacaoFixa);
+                    b.Preparar();
+                    Console.WriteLine(b.MigrarFicheiro(ficheiro));
+                    return 0;
+                }
+                case ["--copia-base"] when ligacaoFixa is not null:
+                    Console.WriteLine(new BaseLicencas(ligacaoFixa).Copia());
+                    return 0;
+                case ["--apagar-base-testes"] when ligacaoFixa is not null:
+                    new BaseLicencas(ligacaoFixa).ApagarBaseDeTestes();
                     return 0;
                 case []:
                     break;
@@ -53,7 +72,7 @@ internal static class Program
                     return 2;
             }
         }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or IOException or FormatException)
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or IOException or FormatException or Microsoft.Data.SqlClient.SqlException)
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -66,11 +85,19 @@ internal static class Program
             MessageBox.Show("A chave deste computador NÃO é a do sistema MAVIE-HGest: o gerador vai recusar emitir licenças.\n\n" +
                 "Feche, apague a pasta de dados (menu Abrir pasta de dados) e reponha a cópia de segurança certa ao voltar a abrir.",
                 Titulo, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        BaseLicencas baseLicencas;
+        if (AbrirBase(armazem.Pasta, ligacaoFixa) is not { } baseLicencas)
+            return 0;
         try
         {
-            baseLicencas = new BaseLicencas(armazem.Pasta);
-            if (!baseLicencas.TemLicencas && File.Exists(armazem.RegistoLinhaComandos) && armazem.ChaveDoSistema)
+            var antigo = Path.Combine(armazem.Pasta, BaseLicencas.FicheiroAntigo);
+            if (File.Exists(antigo) && baseLicencas.Vazia)
+            {
+                var n = baseLicencas.MigrarFicheiro(antigo);
+                File.Move(antigo, antigo + ".migrado", overwrite: true);
+                MessageBox.Show($"Os dados de {n} clientes passaram do ficheiro para a base {baseLicencas.NomeBase} do SQL Server.\n\n" +
+                    $"O ficheiro antigo ficou como {BaseLicencas.FicheiroAntigo}.migrado.", Titulo, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            else if (!baseLicencas.TemLicencas && File.Exists(armazem.RegistoLinhaComandos) && armazem.ChaveDoSistema)
             {
                 var n = baseLicencas.ImportarLinhaComandos(armazem);
                 if (n > 0)
@@ -78,13 +105,46 @@ internal static class Program
                         Titulo, MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
-        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException or InvalidOperationException)
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException or InvalidOperationException or Microsoft.Data.SqlClient.SqlException)
         {
-            MessageBox.Show("Não consegui abrir os dados das licenças: " + ex.Message, Titulo, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show("Não consegui passar os dados para a base: " + BaseLicencas.ExplicarErro(ex), Titulo, MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
         Application.Run(new JanelaPrincipal(armazem, baseLicencas));
         return 0;
+    }
+
+    private static BaseLicencas? AbrirBase(string pasta, LigacaoBase? fixa)
+    {
+        var ligacao = fixa ?? LigacaoBase.Ler(pasta);
+        string? erro = null;
+        while (true)
+        {
+            if (ligacao is null || erro is not null)
+            {
+                if (fixa is not null)
+                {
+                    MessageBox.Show(erro, Titulo, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return null;
+                }
+                ligacao = Dialogos.Ligacao(null, ligacao, erro);
+                if (ligacao is null)
+                    return null;
+            }
+            try
+            {
+                var b = new BaseLicencas(ligacao);
+                b.Preparar();
+                if (fixa is null)
+                    ligacao.Gravar(pasta);
+                return b;
+            }
+            catch (Exception ex) when (ex is Microsoft.Data.SqlClient.SqlException or InvalidOperationException or ArgumentException
+                or System.Security.Cryptography.CryptographicException or IOException)
+            {
+                erro = BaseLicencas.ExplicarErro(ex);
+            }
+        }
     }
 
     private static bool PrimeiraUtilizacao(ArmazemLicencas armazem)
@@ -126,12 +186,13 @@ internal static class Program
         return false;
     }
 
-    private static void Captura(ArmazemLicencas armazem, string imagem, DateOnly hoje)
+    private static void Captura(ArmazemLicencas armazem, LigacaoBase ligacao, string imagem, DateOnly hoje)
     {
         ApplicationConfiguration.Initialize();
         if (!armazem.TemChave)
             armazem.CriarChave();
-        var dados = new BaseLicencas(armazem.Pasta);
+        var dados = new BaseLicencas(ligacao);
+        dados.Preparar();
         var sol = dados.CriarCliente("Hotel Sol Nascente", "400123456", "84 000 0000", Plano.Mensal, 2500m, null);
         dados.RegistarPagamento(armazem, sol, hoje.AddMonths(-1), 2500m, 1, "M-Pesa 1", hoje);
         dados.RegistarPagamento(armazem, sol, hoje, 2500m, 1, "M-Pesa 2", hoje);
@@ -171,5 +232,6 @@ internal static class Program
         Fotografar("-pagamento", () => Dialogos.Pagamento(null, exemplo));
         Fotografar("-desbloqueio", () => Dialogos.Desbloqueio(null, exemplo));
         Fotografar("-sem-pagamento", () => Dialogos.SemPagamento(null, exemplo));
+        Fotografar("-ligacao", () => Dialogos.Ligacao(null, null, null));
     }
 }

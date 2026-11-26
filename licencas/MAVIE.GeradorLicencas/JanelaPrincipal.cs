@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Data.SqlClient;
 
 namespace Mavie.GeradorLicencas;
 
@@ -60,12 +61,15 @@ public sealed class JanelaPrincipal : Form
 
         var menu = new MenuStrip();
         var menuDados = new ToolStripMenuItem("Dados");
-        menuDados.DropDownItems.Add("Cópia de segurança dos dados…", null, (_, _) => CopiaDados());
+        menuDados.DropDownItems.Add("Cópia de segurança da base (.bak)…", null, (_, _) => CopiaDados());
         menuDados.DropDownItems.Add("Importar o registo da linha de comandos (registo.json)", null, (_, _) => ImportarRegisto());
+        menuDados.DropDownItems.Add(new ToolStripSeparator());
+        menuDados.DropDownItems.Add("Ligação ao SQL Server…", null, (_, _) => MudarLigacao());
         var chave = new ToolStripMenuItem("Chave");
         chave.DropDownItems.Add("Ver chave pública", null, (_, _) => VerChavePublica());
         chave.DropDownItems.Add("Exportar cópia de segurança…", null, (_, _) => ExportarCopia());
-        menu.Items.AddRange([menuDados, chave, new ToolStripMenuItem("Abrir pasta de dados", null, (_, _) => System.Diagnostics.Process.Start("explorer.exe", armazem.Pasta))]);
+        menu.Items.AddRange([menuDados, chave, new ToolStripMenuItem("Abrir pasta da chave", null, (_, _) => System.Diagnostics.Process.Start("explorer.exe", armazem.Pasta)),
+            new ToolStripMenuItem("SQL Server: " + baseLicencas.Descricao) { Alignment = ToolStripItemAlignment.Right, Enabled = false }]);
         MainMenuStrip = menu;
 
         filtro.Items.AddRange(["Todos os clientes", "Em atraso", "A vencer (7 dias)", "Suspensos", "Sem licença", "Cancelados"]);
@@ -222,6 +226,10 @@ public sealed class JanelaPrincipal : Form
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
             MessageBox.Show(this, "Erro ao gravar os dados: " + ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        catch (SqlException ex)
+        {
+            MessageBox.Show(this, "Erro no SQL Server: " + BaseLicencas.ExplicarErro(ex), Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         return false;
     }
@@ -495,12 +503,46 @@ public sealed class JanelaPrincipal : Form
 
     private void CopiaDados()
     {
-        using var d = new FolderBrowserDialog { Description = "Pasta para a cópia dos clientes e licenças (ex.: pen USB)" };
+        using var d = new FolderBrowserDialog { Description = "Pasta para onde copiar a cópia da base (ex.: pen USB)" };
         if (d.ShowDialog(this) != DialogResult.OK)
             return;
-        var ficheiro = "";
-        if (Tentar(() => ficheiro = base_.Copia(d.SelectedPath)))
-            MessageBox.Show(this, $"Cópia gravada em:\n{ficheiro}\n\nGuarde-a fora deste computador.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        var noServidor = "";
+        if (!Tentar(() => noServidor = base_.Copia()))
+            return;
+        try
+        {
+            var destino = Path.Combine(d.SelectedPath, Path.GetFileName(noServidor));
+            File.Copy(noServidor, destino, overwrite: false);
+            MessageBox.Show(this, $"Cópia gravada em:\n{destino}\n\nGuarde-a fora deste computador. Repõe-se no SQL Server com «Restaurar base de dados».",
+                Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, $"O SQL Server gravou a cópia em:\n{noServidor}\n\nNão consegui copiá-la para a pasta escolhida ({ex.Message}). Copie-a à mão.",
+                Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    private void MudarLigacao()
+    {
+        var atual = LigacaoBase.Ler(armazem.Pasta);
+        string? erro = null;
+        while (Dialogos.Ligacao(this, atual, erro) is { } nova)
+        {
+            try
+            {
+                new BaseLicencas(nova).Preparar();
+                nova.Gravar(armazem.Pasta);
+                MessageBox.Show(this, "Ligação gravada. O gerador vai abrir de novo com esta base.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Application.Restart();
+                return;
+            }
+            catch (Exception ex) when (ex is SqlException or InvalidOperationException or ArgumentException)
+            {
+                atual = nova;
+                erro = BaseLicencas.ExplicarErro(ex);
+            }
+        }
     }
 
     private void ImportarRegisto()

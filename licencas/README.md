@@ -33,7 +33,17 @@ Igual ao do LAMGest. É um só ficheiro: não precisa de instalar nada (nem .NET
 - **Histórico** de tudo o que foi feito em cada cliente, com o utilizador do Windows.
 - Antes de entregar cada licença, confirma-a com a chave pública do sistema: uma chave errada neste computador nunca produz licenças que o sistema recusaria.
 
-Os dados ficam em `%APPDATA%\MAVIE-HGest\Licencas\clientes-licencas.json` (com a versão anterior em `.anterior`). Menu **Dados → Cópia de segurança dos dados** grava uma cópia, por exemplo para uma pen. As licenças emitidas antes pela linha de comandos (`registo.json`) são importadas na primeira abertura, ou pelo menu Dados.
+### Base de dados (SQL Server)
+
+Os clientes, pagamentos, licenças, códigos de desbloqueio e o histórico ficam numa base SQL Server (por omissão `MAVIE_Licencas`).
+
+- Na primeira abertura, o gerador pede a instância (ex.: `.\SYSON`, `.\SQLEXPRESS`), o nome da base e a forma de entrar: autenticação do Windows ou utilizador do SQL Server (ex.: `sa`). A base e as tabelas (`Clientes`, `Pagamentos`, `Licencas`, `Desbloqueios`, `Historico`, `Esquema`) são criadas sozinhas.
+- A escolha fica em `%APPDATA%\MAVIE-HGest\Licencas\ligacao-sql.json`. A palavra-passe do SQL Server fica cifrada pelo Windows (DPAPI), só para esse utilizador do Windows. Mudar: menu **Dados → Ligação ao SQL Server**.
+- O gerador recusa usar uma base que já tenha tabelas de outro sistema.
+- Cada pagamento grava o pagamento, a licença e o histórico numa só transação.
+- **Dados → Cópia de segurança da base (.bak)** faz `BACKUP DATABASE … COPY_ONLY` na pasta de cópias do SQL Server e copia o `.bak` para a pasta escolhida (ex.: uma pen). Repõe-se no SQL Server Management Studio com *Restaurar base de dados*.
+- A chave de assinatura **não** vai para a base: continua no ficheiro `chave-privada.pem`.
+- Quem usava a versão anterior (ficheiro `clientes-licencas.json`): na primeira abertura os dados passam para a base, se ela estiver vazia, e o ficheiro fica como `clientes-licencas.json.migrado`. As licenças emitidas pela linha de comandos (`registo.json`) são importadas quando a base não tem licenças, ou pelo menu Dados.
 
 Gerar o `.exe` (precisa do .NET 9 SDK só no computador que compila):
 
@@ -45,10 +55,11 @@ Fica em `licencas\publicar\MAVIE-Licencas.exe` (fora do Git). No fim, o script c
 
 ### Levar o gerador para outro computador
 
-1. Neste computador: menu **Chave → Exportar cópia de segurança** para uma pen (palavra-passe de 10 ou mais caracteres, guardada noutro sítio) e menu **Dados → Cópia de segurança dos dados**.
+1. Neste computador: menu **Chave → Exportar cópia de segurança** para uma pen (palavra-passe de 10 ou mais caracteres, guardada noutro sítio) e menu **Dados → Cópia de segurança da base (.bak)** para a mesma pen.
 2. Copie também `MAVIE-Licencas.exe` para a pen.
-3. No outro computador: abra o `MAVIE-Licencas.exe` e responda **Sim** (repor a partir de uma cópia). Escolha o `.pem` e escreva a palavra-passe. Nunca responda **Não**: cria uma chave nova que os sistemas instalados não aceitam.
-4. Feche o gerador, copie a cópia dos dados para `%APPDATA%\MAVIE-HGest\Licencas\clientes-licencas.json` e volte a abrir.
+3. No outro computador (com SQL Server): restaure o `.bak` como base `MAVIE_Licencas` (SQL Server Management Studio → *Restaurar base de dados*). Se o outro computador usar o mesmo SQL Server pela rede, não é preciso restaurar: basta indicar essa instância.
+4. Abra o `MAVIE-Licencas.exe` e responda **Sim** (repor a partir de uma cópia). Escolha o `.pem` e escreva a palavra-passe. Nunca responda **Não**: cria uma chave nova que os sistemas instalados não aceitam.
+5. Na janela do SQL Server, indique a instância e a base `MAVIE_Licencas`.
 
 A chave fica em `%APPDATA%`, por isso é por utilizador do Windows. A cópia `.pem` serve nos dois sentidos: o gerador com janela lê a da linha de comandos e vice-versa.
 
