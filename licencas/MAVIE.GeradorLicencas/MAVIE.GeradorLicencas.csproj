@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+    <AssemblyName>MAVIE-Licencas</AssemblyName>
+    <RootNamespace>Mavie.GeradorLicencas</RootNamespace>
+    <ApplicationIcon>..\..\deploy\windows\lam-company.ico</ApplicationIcon>
+    <Product>MAVIE-HGest - Gerador de licencas</Product>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\backend\src\license\public-key.ts" LogicalName="public-key.ts" />
+  </ItemGroup>
+
+</Project>
