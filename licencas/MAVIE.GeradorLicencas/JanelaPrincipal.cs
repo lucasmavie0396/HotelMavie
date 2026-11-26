@@ -6,6 +6,7 @@ namespace Mavie.GeradorLicencas;
 
 public sealed class JanelaPrincipal : Form
 {
+    public const string PedidoSenhaExportar = "Palavra-passe da cópia (mín. 10 caracteres). Guarde-a em lugar seguro: sem ela a cópia não serve.";
     private readonly ArmazemLicencas armazem;
     private readonly BaseLicencas base_;
     private readonly TextBox pesquisa = new() { PlaceholderText = "Pesquisar nome ou NUIT…", Dock = DockStyle.Top };
@@ -562,7 +563,7 @@ public sealed class JanelaPrincipal : Form
 
     private void ExportarCopia()
     {
-        var senha = Palavra.Pedir(this, "Palavra-passe da cópia (mín. 10 caracteres). Guarde-a em lugar seguro: sem ela a cópia não serve.", confirmar: true);
+        var senha = Palavra.Pedir(this, PedidoSenhaExportar, confirmar: true);
         if (senha is null)
             return;
         using var dialogo = new SaveFileDialog { Filter = "Cópia da chave (*.pem)|*.pem", FileName = "mavie-chave-licencas.pem" };

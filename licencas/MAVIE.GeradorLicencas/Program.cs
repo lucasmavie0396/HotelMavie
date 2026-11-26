@@ -6,6 +6,13 @@ namespace Mavie.GeradorLicencas;
 internal static class Program
 {
     private const string Titulo = "MAVIE-HGest — Gerador de licenças";
+    private const string PedidoSenhaRepor = "Palavra-passe da cópia:";
+    private const string TextoChaveReposta = "Chave reposta. Este computador já pode emitir licenças.";
+    private const string TextoPrimeiraUtilizacao =
+        "Este computador ainda não tem a chave de assinatura das licenças.\n\n" +
+        "Sim — repor a partir de uma cópia de segurança (.pem).\n" +
+        "Não — criar uma chave NOVA (só se for a primeira vez: o sistema MAVIE-HGest tem de ser compilado com a nova chave pública, " +
+        "e as licenças assinadas com outra chave deixam de servir).";
 
     [STAThread]
     private static int Main(string[] args)
@@ -149,21 +156,16 @@ internal static class Program
 
     private static bool PrimeiraUtilizacao(ArmazemLicencas armazem)
     {
-        var resposta = MessageBox.Show(
-            "Este computador ainda não tem a chave de assinatura das licenças.\n\n" +
-            "Sim — repor a partir de uma cópia de segurança (.pem).\n" +
-            "Não — criar uma chave NOVA (só se for a primeira vez: o sistema MAVIE-HGest tem de ser compilado com a nova chave pública, " +
-            "e as licenças assinadas com outra chave deixam de servir).",
-            Titulo, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+        var resposta = MessageBox.Show(TextoPrimeiraUtilizacao, Titulo, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
         try
         {
             if (resposta == DialogResult.Yes)
             {
                 using var dialogo = new OpenFileDialog { Filter = "Cópia da chave (*.pem)|*.pem" };
-                if (dialogo.ShowDialog() != DialogResult.OK || Palavra.Pedir(null, "Palavra-passe da cópia:", false) is not { } senha)
+                if (dialogo.ShowDialog() != DialogResult.OK || Palavra.Pedir(null, PedidoSenhaRepor, false) is not { } senha)
                     return false;
                 armazem.ImportarCopia(dialogo.FileName, senha);
-                MessageBox.Show("Chave reposta. Este computador já pode emitir licenças.", Titulo, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(TextoChaveReposta, Titulo, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return true;
             }
             if (resposta == DialogResult.No)
@@ -233,5 +235,49 @@ internal static class Program
         Fotografar("-desbloqueio", () => Dialogos.Desbloqueio(null, exemplo));
         Fotografar("-sem-pagamento", () => Dialogos.SemPagamento(null, exemplo));
         Fotografar("-ligacao", () => Dialogos.Ligacao(null, null, null));
+        Fotografar("-senha-exportar", () => Palavra.Pedir(null, JanelaPrincipal.PedidoSenhaExportar, true));
+        Fotografar("-senha-repor", () => Palavra.Pedir(null, PedidoSenhaRepor, false));
+        void FotografarMensagem(string sufixo, Action abrir)
+        {
+            using var relogio = new System.Windows.Forms.Timer { Interval = 900 };
+            relogio.Tick += (_, _) =>
+            {
+                relogio.Stop();
+                var janela = Nativo.FindWindow("#32770", Titulo);
+                if (janela == IntPtr.Zero || !Nativo.GetWindowRect(janela, out var r))
+                    return;
+                using var bmp = new Bitmap(r.Direita - r.Esquerda, r.Fundo - r.Topo);
+                using (var g = Graphics.FromImage(bmp))
+                {
+                    var dc = g.GetHdc();
+                    Nativo.PrintWindow(janela, dc, 2);
+                    g.ReleaseHdc(dc);
+                }
+                bmp.Save(Path.ChangeExtension(imagem, null) + sufixo + ".png", System.Drawing.Imaging.ImageFormat.Png);
+                Nativo.PostMessage(janela, 0x0010, IntPtr.Zero, IntPtr.Zero);
+            };
+            relogio.Start();
+            abrir();
+        }
+        FotografarMensagem("-primeira", () => MessageBox.Show(TextoPrimeiraUtilizacao, Titulo, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question));
+        FotografarMensagem("-reposta", () => MessageBox.Show(TextoChaveReposta, Titulo, MessageBoxButtons.OK, MessageBoxIcon.Information));
+    }
+
+    private static class Nativo
+    {
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        public struct Retangulo { public int Esquerda, Topo, Direita, Fundo; }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        public static extern IntPtr FindWindow(string classe, string titulo);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool GetWindowRect(IntPtr janela, out Retangulo r);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool PrintWindow(IntPtr janela, IntPtr dc, uint opcoes);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool PostMessage(IntPtr janela, uint mensagem, IntPtr w, IntPtr l);
     }
 }

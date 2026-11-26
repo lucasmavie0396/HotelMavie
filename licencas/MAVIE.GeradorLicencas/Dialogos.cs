@@ -170,12 +170,12 @@ internal static class Palavra
     public static string? Pedir(IWin32Window? dono, string mensagem, bool confirmar)
     {
         using var f = new Form { Text = "Palavra-passe", FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent,
-            MinimizeBox = false, MaximizeBox = false, ClientSize = new Size(420, confirmar ? 190 : 150), Font = new Font("Segoe UI", 9.75f), ShowInTaskbar = dono is null };
-        var texto = new Label { Text = mensagem, Location = new Point(12, 12), Size = new Size(396, 44) };
-        var a = new TextBox { UseSystemPasswordChar = true, Location = new Point(12, 60), Width = 396 };
-        var b = new TextBox { UseSystemPasswordChar = true, Location = new Point(12, 96), Width = 396, PlaceholderText = "Confirmar" };
-        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(242, confirmar ? 146 : 106), Width = 80 };
-        var cancelar = new Button { Text = "Cancelar", DialogResult = DialogResult.Cancel, Location = new Point(328, confirmar ? 146 : 106), Width = 80 };
+            MinimizeBox = false, MaximizeBox = false, ClientSize = new Size(520, confirmar ? 220 : 180), Font = new Font("Segoe UI", 9.75f), ShowInTaskbar = dono is null };
+        var texto = new Label { Text = mensagem, Location = new Point(12, 12), Size = new Size(496, 64) };
+        var a = new TextBox { UseSystemPasswordChar = true, Location = new Point(12, 84), Width = 496 };
+        var b = new TextBox { UseSystemPasswordChar = true, Location = new Point(12, 120), Width = 496, PlaceholderText = "Confirmar" };
+        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(320, confirmar ? 172 : 132), Width = 90, Height = 32 };
+        var cancelar = new Button { Text = "Cancelar", DialogResult = DialogResult.Cancel, Location = new Point(418, confirmar ? 172 : 132), Width = 90, Height = 32 };
         f.Controls.AddRange(confirmar ? [texto, a, b, ok, cancelar] : [texto, a, ok, cancelar]);
         f.AcceptButton = ok;
         f.CancelButton = cancelar;
