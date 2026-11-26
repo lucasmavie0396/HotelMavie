@@ -35,6 +35,11 @@ model Hotel {
   roomServiceAutoAccept  Boolean           @default(false)
   roomServiceRestaurantHours String?       @db.VarChar(11)
   roomServiceBarHours    String?           @db.VarChar(11)
+  productionSince        DateTime?
+  licenseText            String?           @db.Text
+  licenseGraceUntil      DateTime?
+  licenseLastSeenAt      DateTime?
+  licenseUnlocks         String?           @db.Text
   city                   String?           @db.VarChar(100)
   postalCode             String?           @db.VarChar(20)
   country                String            @default("PT") @db.VarChar(2)
@@ -84,6 +89,10 @@ model Hotel {
   paymentTypes           PaymentType[]
   diningTables           DiningTable[]
   roomDevices            RoomDevice[]
+  eventCards             EventCard[]
+  eventCardDischarges    EventCardDischarge[]
+  expenseCategories      ExpenseCategory[]
+  expenses               Expense[]
 
   @@map("hotels")
 }
@@ -124,6 +133,9 @@ model User {
   stockMovements    StockMovement[]
   purchases         Purchase[]
   cancelledPurchases Purchase[]   @relation("PurchaseCancelledBy")
+  expenses           Expense[]
+  eventCardMovements EventCardMovement[]
+  eventCardDischarges EventCardDischarge[]
   stockDocuments    StockDocument[]
   employee          Employee?
   timeEntriesEdited TimeEntry[]     @relation("TimeEntryEditedBy")
@@ -290,6 +302,7 @@ model Guest {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   reservations   Reservation[]
+  eventCards     EventCard[]
 
   @@index([hotelId, lastName])
   @@index([hotelId, email])
@@ -500,6 +513,8 @@ model Payment {
   createdBy     User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
   createdAt     DateTime      @default(now())
   depositOf     Reservation?  @relation("DepositPayment")
+  eventCardLoad EventCardMovement? @relation("EventCardLoadPayment")
+  eventCardUse  EventCardMovement? @relation("EventCardUsePayment")
 
   @@index([reservationId])
   @@index([cashSessionId])
@@ -726,6 +741,8 @@ model Product {
   stockDocItems  StockDocumentItem[]
   stockLots      StockLot[]
   recipeItems    RecipeItem[]     @relation("RecipeDish")
+  optionGroups   ProductOptionGroup[]
+  optionUses     ProductOption[]  @relation("OptionIngredient")
   usedIn         RecipeItem[]     @relation("RecipeIngredient")
 
   @@unique([hotelId, sku])
@@ -815,6 +832,7 @@ model OrderItem {
   voidedById  Int?
   voidedBy    User?     @relation("OrderItemVoidedBy", fields: [voidedById], references: [id], onDelete: SetNull)
   createdAt   DateTime  @default(now())
+  options     OrderItemOption[]
 
   @@index([orderId])
   @@map("order_items")
@@ -840,6 +858,7 @@ model Supplier {
   createdAt DateTime   @default(now())
   purchases Purchase[]
   returns   StockDocument[]
+  expenses  Expense[]
 
   @@index([hotelId])
   @@map("suppliers")
@@ -1345,13 +1364,187 @@ model PaymentType {
   kind              PaymentMethod
   mechanism         String?       @db.VarChar(2)
   requiresReference Boolean       @default(false)
+  isEventCard       Boolean       @default(false)
   active            Boolean       @default(true)
   sortOrder         Int           @default(0)
   createdAt         DateTime      @default(now())
   payments          Payment[]
   receipts          Receipt[]
   deposits          Reservation[]
+  expenses          Expense[]
 
   @@unique([hotelId, name])
   @@map("payment_types")
+}
+
+enum EventCardMovementType {
+  LOAD
+  TOPUP
+  PAYMENT
+  REFUND
+  DISCHARGE
+  TRANSFER_OUT
+  TRANSFER_IN
+  GUEST_CHANGE
+}
+
+model EventCard {
+  id          Int                 @id @default(autoincrement())
+  hotelId     Int
+  hotel       Hotel               @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  number      String              @db.VarChar(40)
+  holder      String?             @db.VarChar(120)
+  guestId     Int?
+  guest       Guest?              @relation(fields: [guestId], references: [id], onDelete: SetNull)
+  balance     Decimal             @default(0) @db.Decimal(12, 2)
+  active      Boolean             @default(true)
+  createdById Int?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  movements   EventCardMovement[]
+
+  @@unique([hotelId, number])
+  @@index([guestId])
+  @@map("event_cards")
+}
+
+model EventCardMovement {
+  id             Int                   @id @default(autoincrement())
+  cardId         Int
+  card           EventCard             @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  guestId        Int?
+  type           EventCardMovementType
+  amount         Decimal               @db.Decimal(12, 2)
+  balanceAfter   Decimal               @db.Decimal(12, 2)
+  loadPaymentId  Int?                  @unique
+  loadPayment    Payment?              @relation("EventCardLoadPayment", fields: [loadPaymentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  usePaymentId   Int?                  @unique
+  usePayment     Payment?              @relation("EventCardUsePayment", fields: [usePaymentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orderId        Int?
+  dischargeId    Int?
+  discharge      EventCardDischarge?   @relation(fields: [dischargeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  cashSessionId  Int?
+  reason         String?               @db.VarChar(200)
+  idempotencyKey String?               @unique @db.VarChar(80)
+  createdById    Int?
+  createdBy      User?                 @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime              @default(now())
+
+  @@index([cardId, createdAt])
+  @@index([guestId])
+  @@map("event_card_movements")
+}
+
+model EventCardDischarge {
+  id            Int                 @id @default(autoincrement())
+  hotelId       Int
+  hotel         Hotel               @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  refunded      Boolean
+  paymentTypeId Int?
+  cashSessionId Int?
+  reference     String?             @db.VarChar(100)
+  reason        String              @db.VarChar(200)
+  total         Decimal             @db.Decimal(12, 2)
+  cards         Int
+  createdById   Int?
+  createdBy     User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime            @default(now())
+  movements     EventCardMovement[]
+
+  @@index([hotelId, createdAt])
+  @@map("event_card_discharges")
+}
+
+enum ExpenseStatus {
+  CONFIRMED
+  VOIDED
+}
+
+model ExpenseCategory {
+  id        Int       @id @default(autoincrement())
+  hotelId   Int
+  hotel     Hotel     @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  name      String    @db.VarChar(80)
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  expenses  Expense[]
+
+  @@unique([hotelId, name])
+  @@map("expense_categories")
+}
+
+model Expense {
+  id             Int             @id @default(autoincrement())
+  hotelId        Int
+  hotel          Hotel           @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  categoryId     Int
+  category       ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  description    String          @db.VarChar(200)
+  amount         Decimal         @db.Decimal(12, 2)
+  date           DateTime        @db.Date
+  supplierId     Int?
+  supplier       Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  documentRef    String?         @db.VarChar(60)
+  paymentTypeId  Int?
+  paymentType    PaymentType?    @relation(fields: [paymentTypeId], references: [id], onDelete: SetNull)
+  cashSessionId  Int?
+  cashMovementId Int?
+  status         ExpenseStatus   @default(CONFIRMED)
+  voidReason     String?         @db.VarChar(200)
+  voidedAt       DateTime?
+  voidedById     Int?
+  createdById    Int?
+  createdBy      User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime        @default(now())
+
+  @@index([hotelId, date])
+  @@map("expenses")
+}
+
+model ProductOptionGroup {
+  id         Int             @id @default(autoincrement())
+  productId  Int
+  product    Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name       String          @db.VarChar(60)
+  required   Boolean         @default(true)
+  maxChoices Int             @default(1)
+  sortOrder  Int             @default(0)
+  active     Boolean         @default(true)
+  options    ProductOption[]
+
+  @@index([productId])
+  @@map("product_option_groups")
+}
+
+model ProductOption {
+  id           Int                @id @default(autoincrement())
+  groupId      Int
+  group        ProductOptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name         String             @db.VarChar(60)
+  priceDelta   Decimal            @default(0) @db.Decimal(12, 2)
+  ingredientId Int?
+  ingredient   Product?           @relation("OptionIngredient", fields: [ingredientId], references: [id], onDelete: SetNull)
+  quantity     Decimal            @default(0) @db.Decimal(12, 3)
+  sortOrder    Int                @default(0)
+  active       Boolean            @default(true)
+  uses         OrderItemOption[]
+
+  @@index([groupId])
+  @@map("product_options")
+}
+
+model OrderItemOption {
+  id           Int            @id @default(autoincrement())
+  orderItemId  Int
+  orderItem    OrderItem      @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  optionId     Int?
+  option       ProductOption? @relation(fields: [optionId], references: [id], onDelete: SetNull)
+  groupName    String         @db.VarChar(60)
+  name         String         @db.VarChar(60)
+  priceDelta   Decimal        @default(0) @db.Decimal(12, 2)
+  ingredientId Int?
+  quantity     Decimal        @default(0) @db.Decimal(12, 3)
+
+  @@index([orderItemId])
+  @@map("order_item_options")
 }

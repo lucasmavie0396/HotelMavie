@@ -12,6 +12,7 @@ import {
 } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayNotEmpty,
   IsArray,
   IsEnum,
@@ -36,7 +37,9 @@ import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { sumMoney, toMoney } from '../common/money';
 import { forUpdate, lockHint } from '../prisma/database';
 import { PrismaService } from '../prisma/prisma.service';
+import { EventCardsService } from '../event-cards/event-cards.service';
 import { StockService } from '../stock/stock.service';
+import { resolveOptions } from '../catalog/product-options';
 import { tableLabel } from './tables';
 
 export class OpenOrderDto {
@@ -74,6 +77,12 @@ export class OrderItemDto {
   @IsString()
   @MaxLength(255)
   notes?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(40)
+  @IsInt({ each: true })
+  options?: number[];
 }
 
 export class ItemQuantityDto {
@@ -103,6 +112,11 @@ export class OrderPaymentDto {
   @IsString()
   @MaxLength(100)
   reference?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  eventCardNumber?: string;
 }
 
 export class CloseOrderDto {
@@ -206,6 +220,7 @@ const orderInclude = {
       product: { select: { category: { select: { prepStation: true, printerId: true } } } },
       voidedBy: { select: { name: true } },
       taxRateRef: { select: { rate: true } },
+      options: { select: { id: true, optionId: true, groupName: true, name: true, priceDelta: true, ingredientId: true, quantity: true } },
     },
   },
   reservation: { select: { id: true, code: true, room: { select: { number: true } } } },
@@ -225,6 +240,7 @@ export class PosService {
     private readonly stock: StockService,
     private readonly tickets: TicketPdfService,
     private readonly audit: AuditService,
+    private readonly cards: EventCardsService,
   ) {}
 
   findAll(query: OrderQueryDto, user: JwtPayload) {
@@ -278,17 +294,34 @@ export class PosService {
     if (!product || product.hotelId !== order.hotelId || !product.active || !product.sellable) {
       throw new BadRequestException('Produto indisponivel');
     }
+    const chosen = await resolveOptions(this.prisma, product.id, dto.options ?? []);
+    const unitPrice = Prisma.Decimal.max(chosen.reduce((sum, option) => sum.add(option.priceDelta), new Prisma.Decimal(product.price)), 0);
+    const description = chosen.length ? `${product.name} (${chosen.map((option) => option.name).join(', ')})`.slice(0, 120) : product.name;
     return this.prisma.$transaction(async (tx) => {
       await tx.orderItem.create({
         data: {
           orderId,
           productId: product.id,
-          description: product.name,
+          description,
           quantity: dto.quantity,
-          unitPrice: product.price,
+          unitPrice,
           taxRateId: product.taxRateId,
-          total: toMoney(new Prisma.Decimal(dto.quantity).mul(product.price)),
+          total: toMoney(new Prisma.Decimal(dto.quantity).mul(unitPrice)),
           notes: dto.notes,
+          ...(chosen.length
+            ? {
+                options: {
+                  create: chosen.map((option) => ({
+                    optionId: option.optionId,
+                    groupName: option.groupName,
+                    name: option.name,
+                    priceDelta: option.priceDelta,
+                    ingredientId: option.ingredientId,
+                    quantity: option.quantity,
+                  })),
+                },
+              }
+            : {}),
         },
       });
       return this.recalculate(tx, orderId);
@@ -501,7 +534,7 @@ export class PosService {
       if (locked.length !== 2 || locked.some((order) => order.status !== OrderStatus.OPEN || order.hotelId !== source.hotelId)) {
         throw new ConflictException('As duas contas tem de estar abertas e ser do mesmo hotel');
       }
-      const lines = await tx.orderItem.findMany({ where: { id: { in: ids }, orderId } });
+      const lines = await tx.orderItem.findMany({ where: { id: { in: ids }, orderId }, include: { options: true } });
       for (const request of dto.items) {
         const line = lines.find((item) => item.id === request.itemId);
         if (!line || line.voidedAt) {
@@ -517,8 +550,16 @@ export class PosService {
         }
         const rest = line.quantity.sub(quantity);
         await tx.orderItem.update({ where: { id: line.id }, data: { quantity: rest, total: toMoney(rest.mul(line.unitPrice)) } });
-        const { id: _id, orderId: _from, createdAt: _created, ...copy } = line;
-        await tx.orderItem.create({ data: { ...copy, orderId: targetId, quantity, total: toMoney(quantity.mul(line.unitPrice)) } });
+        const { id: _id, orderId: _from, createdAt: _created, options, ...copy } = line;
+        await tx.orderItem.create({
+          data: {
+            ...copy,
+            orderId: targetId,
+            quantity,
+            total: toMoney(quantity.mul(line.unitPrice)),
+            options: { create: options.map(({ id: _option, orderItemId: _item, ...option }) => option) },
+          },
+        });
       }
       const remaining = await tx.orderItem.count({ where: { orderId, voidedAt: null } });
       if (!remaining) {
@@ -706,10 +747,18 @@ export class PosService {
               cashSessionId: payment.cashSessionId,
               reference: payment.reference,
               createdById: user.sub,
+              allowEventCard: true,
             },
             user,
           );
           await tx.payment.update({ where: { id: created.id }, data: { orderId } });
+          const type = created.paymentTypeId ? await tx.paymentType.findUnique({ where: { id: created.paymentTypeId }, select: { isEventCard: true } }) : null;
+          if (type?.isEventCard) {
+            if (!payment.eventCardNumber?.trim()) {
+              throw new BadRequestException('Leia ou escreva o numero do cartao evento');
+            }
+            await this.cards.charge(tx, { hotelId: order.hotelId, number: payment.eventCardNumber, amount: toMoney(payment.amount), paymentId: created.id, orderId, userId: user.sub });
+          }
         }
       }
 
@@ -723,7 +772,7 @@ export class PosService {
     tx: Prisma.TransactionClient,
     hotelId: number,
     orderId: number,
-    items: { productId: number; quantity: Prisma.Decimal }[],
+    items: { productId: number; quantity: Prisma.Decimal; options?: { ingredientId: number | null; quantity: Prisma.Decimal; name: string }[] }[],
     createdById: number,
   ) {
     const products = await tx.product.findMany({
@@ -754,6 +803,9 @@ export class PosService {
         }
       } else if (product.trackStock) {
         consume(source, product.id, item.quantity, product.name);
+      }
+      for (const option of item.options ?? []) {
+        if (option.ingredientId && option.quantity.greaterThan(0)) consume(source, option.ingredientId, option.quantity.mul(item.quantity), `${product.name}: ${option.name}`);
       }
     }
     if (!consumption.size) {

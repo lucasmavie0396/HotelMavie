@@ -1,10 +1,10 @@
-import { Controller, Get, Global, Injectable, Logger, Module, Query } from '@nestjs/common';
+import { Body, Controller, Get, Global, HttpCode, HttpStatus, Injectable, Logger, Module, Post, Query } from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsDateString, IsInt, IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsOptional, IsString, Length, MaxLength, Min } from 'class-validator';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { Roles } from '../common/decorators/roles.decorator';
+import { Roles, SalesAccess } from '../common/decorators/roles.decorator';
 import { addDays, parseDate } from '../common/dates';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { resolveHotelScope } from '../common/hotel-scope';
@@ -59,6 +59,14 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   AUTH_2FA_DISABLED: '2FA desativado',
   AUTH_PASSWORD_RESET: 'Password reposta por email',
   AUTH_LOGIN_FAILED: 'Tentativa de entrada falhada',
+  AUTH_PIN_FAILED: 'Codigo errado no ecra tactil',
+  USER_PIN: 'Codigo do ecra tactil alterado',
+  EXPORT: 'Lista exportada',
+  PRODUCT_IMPORT: 'Produtos importados de Excel',
+  PURCHASE_RECEIVE: 'Compra recebida',
+  PURCHASE_VOID: 'Compra anulada',
+  ROOM_ORDER_REJECT: 'Pedido do quarto recusado',
+  ROOM_SERVICE_LIMITS: 'Pedidos do quarto bloqueados ou limitados',
 };
 
 @Injectable()
@@ -121,9 +129,49 @@ export class AuditController {
   }
 }
 
+export class ExportLogDto {
+  @IsOptional()
+  @IsInt()
+  hotelId?: number;
+
+  @IsString()
+  @Length(1, 80)
+  list: string;
+
+  @IsIn(['xlsx', 'csv', 'pdf'])
+  format: 'xlsx' | 'csv' | 'pdf';
+
+  @IsInt()
+  @Min(0)
+  rows: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  filters?: string;
+}
+
+@SalesAccess()
+@Controller('exports')
+export class ExportLogController {
+  constructor(private readonly audit: AuditService) {}
+
+  @Post()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async log(@Body() dto: ExportLogDto, @CurrentUser() user: JwtPayload) {
+    await this.audit.log({
+      hotelId: resolveHotelScope(user, dto.hotelId) ?? null,
+      userId: user.sub,
+      action: 'EXPORT',
+      entity: 'export',
+      summary: `${dto.list}: ${dto.rows} linha(s) exportada(s) em ${dto.format.toUpperCase()}${dto.filters ? ` (${dto.filters})` : ''}`,
+    });
+  }
+}
+
 @Global()
 @Module({
-  controllers: [AuditController],
+  controllers: [AuditController, ExportLogController],
   providers: [AuditService],
   exports: [AuditService],
 })

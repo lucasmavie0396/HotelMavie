@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
+import ExportList from '@/components/ExportList.vue';
 import PaperLinks from '@/components/PaperLinks.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -72,6 +73,9 @@ function pdf(id: number) {
 }
 
 onMounted(load);
+
+const exportColumns = () => [t('rooms.number'), t('rooms.type'), t('common.date'), t('invoices.customer'), t('purchases.taxId'), t('common.total'), t('common.status')];
+const exportRows = () => invoices.value.map((invoice) => [invoice.fullNumber, INVOICE_TYPE_LABELS[invoice.type], formatDateTime(invoice.issuedAt), invoice.customerName ?? '', invoice.customerTaxId ?? '', Number(invoice.grossTotal), invoice.status === 'CREDITED' ? t('folio.credited') : '']);
 </script>
 
 <template>
@@ -101,6 +105,7 @@ onMounted(load);
       <div class="card"><p class="text-sm text-slate-500">{{ t('invoices.net') }}</p><p class="text-2xl font-semibold">{{ formatMoney(totals.net, hotels.currency) }}</p></div>
     </div>
 
+    <div class="flex justify-end"><ExportList :title="t('nav.invoices')" :columns="exportColumns()" :rows="exportRows" /></div>
     <div class="card overflow-x-auto p-0">
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">

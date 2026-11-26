@@ -1,7 +1,13 @@
 import { Module } from '@nestjs/common';
 import { AppAndroidController } from './app-android/app-android.controller';
+import { EventCardsController } from './event-cards/event-cards.controller';
+import { ExpensesController, ExpensesService } from './expenses/expenses';
+import { EventCardsService } from './event-cards/event-cards.service';
 import { BillingModule } from './billing/billing.module';
 import { CatalogController } from './catalog/catalog.controller';
+import { ProductOptionsController, ProductOptionsService } from './catalog/product-options';
+import { ProductsExcelController } from './catalog/products-excel.controller';
+import { ProductsExcelService } from './catalog/products-excel.service';
 import { ImageSearchService } from './catalog/image-search';
 import { RecipesService } from './catalog/recipes.service';
 import { KdsController, PosController } from './pos/pos.controller';
@@ -19,7 +25,7 @@ import { StockService } from './stock/stock.service';
 
 @Module({
   imports: [BillingModule, ReportsModule],
-  controllers: [CatalogController, StockController, PurchasesController, PosController, KdsController, TablesController, PrintingController, RoomDeviceController, RoomDevicesController, RoomOrdersController, ReservationRoomServiceController, AppAndroidController],
-  providers: [ImageSearchService, StockService, StockDocumentsService, PurchasesService, PosService, RecipesService, PrintService, RoomServiceService],
+  controllers: [ProductsExcelController, ProductOptionsController, CatalogController, StockController, PurchasesController, PosController, KdsController, TablesController, PrintingController, RoomDeviceController, RoomDevicesController, RoomOrdersController, ReservationRoomServiceController, AppAndroidController, EventCardsController, ExpensesController],
+  providers: [ImageSearchService, StockService, StockDocumentsService, PurchasesService, PosService, RecipesService, PrintService, RoomServiceService, ProductsExcelService, EventCardsService, ExpensesService, ProductOptionsService],
 })
 export class OperationsModule {}

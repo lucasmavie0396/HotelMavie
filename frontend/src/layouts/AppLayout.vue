@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/auth';
 import { setPageIdentity } from '@/services/favicon';
 import { fileUrl } from '@/services/files';
 import { useHotelsStore } from '@/stores/hotels';
+import { useLicenseStore } from '@/stores/license';
 import { allowedRoutes } from '@/utils/access';
 import { SECTIONS } from '@/utils/sections';
 import { KEYBOARD_MODES, SCALES, readKeyboardMode, readMenuCollapsed, readScreen, saveKeyboardMode, saveMenuCollapsed, saveScreen, type KeyboardMode } from '@/utils/screen';
@@ -22,7 +23,7 @@ const route = useRoute();
 const router = useRouter();
 
 const links = computed(() =>
-  (auth.user?.permissions ? [...(auth.isCashier ? [] : ['dashboard']), ...allowedRoutes(auth.user.permissions)] : auth.isCashier ? ['pos', 'cash'] : [
+  (auth.user?.permissions ? [...(auth.isCashier ? [] : ['dashboard']), ...allowedRoutes(auth.user.permissions)] : auth.isCashier ? ['pos', 'cash', 'cards'] : [
     'dashboard',
     'calendar',
     'reservations',
@@ -33,6 +34,8 @@ const links = computed(() =>
     'invoices',
     'accounts',
     'cash',
+    'cards',
+    'expenses',
     'products',
     'stock',
     'hr',
@@ -70,7 +73,15 @@ watch(
   { immediate: true },
 );
 
+const license = useLicenseStore();
+watch(
+  () => hotels.selectedId,
+  () => license.load(true),
+);
+setInterval(() => license.load(true), 5 * 60_000);
+
 onMounted(() => {
+  license.load(true);
   hotels.load();
   auth.refreshPermissions();
 });
@@ -172,6 +183,16 @@ async function logout() {
         </div>
       </header>
       <main ref="content" class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 xl:p-6">
+        <RouterLink
+          v-if="license.status && license.status.state !== 'VALID'"
+          :to="{ name: 'settings', query: { tab: 'system' } }"
+          role="alert"
+          class="mb-3 block rounded-lg px-3 py-2 text-sm font-medium"
+          :class="license.status.blocked ? 'bg-rose-600 text-white' : 'bg-amber-100 text-amber-900'"
+          data-testid="license-banner"
+        >
+          {{ license.status.message }}
+        </RouterLink>
         <RouterView v-if="hotels.selectedId || route.name === 'hotels'" :key="hotels.selectedId ?? 0" />
         <p v-else-if="hotels.loaded" class="text-sm text-slate-500">
           {{ t('layout.noHotel') }}

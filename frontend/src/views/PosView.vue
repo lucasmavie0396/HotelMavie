@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import RoomAccountPanel from '@/components/RoomAccountPanel.vue';
 import RoomOrdersPanel from '@/components/RoomOrdersPanel.vue';
 import CashRequired from '@/components/CashRequired.vue';
+import OptionsDialog from '@/components/OptionsDialog.vue';
 import PaperLinks from '@/components/PaperLinks.vue';
 import PaymentTypeSelect from '@/components/PaymentTypeSelect.vue';
 import { useOwnCash } from '@/composables/cashGuard';
@@ -13,7 +14,7 @@ import { fileUrl } from '@/services/files';
 import { printDocument } from '@/services/print';
 import { useAuthStore } from '@/stores/auth';
 import { useHotelsStore } from '@/stores/hotels';
-import type { CashRegister, DiningTable, Order, OrderItem, Outlet, Product, Reservation, RoomOrder } from '@/types';
+import type { CashRegister, DiningTable, Order, OrderItem, Outlet, Product, ProductOptionGroup, Reservation, RoomOrder } from '@/types';
 import { formatMoney } from '@/utils/format';
 import { localeTag } from '@/i18n';
 
@@ -75,7 +76,7 @@ const close = reactive({
   mode: 'PAY' as 'PAY' | 'ROOM',
   reservationId: 0,
   customerTaxId: '',
-  payments: [{ paymentTypeId: 0, amount: 0, cashSessionId: 0, reference: '' }],
+  payments: [{ paymentTypeId: 0, amount: 0, cashSessionId: 0, reference: '', eventCardNumber: '' }],
 });
 
 const isManager = computed(() => auth.isManager);
@@ -244,10 +245,31 @@ function openTable(table: DiningTable) {
   return run(async () => (await api.post<Order>('/orders', { hotelId: hotels.selectedId, outlet: outlet.value, tableId: table.id })).data);
 }
 
-const addItem = (product: Product) =>
+const choosing = ref<{ product: Product; groups: ProductOptionGroup[] } | null>(null);
+
+async function addItem(product: Product) {
+  if (!product.optionGroups?.length) return addPlain(product);
+  error.value = '';
+  try {
+    const { data } = await api.get<ProductOptionGroup[]>(`/products/${product.id}/options`);
+    const groups = data.filter((group) => group.options.length);
+    if (!groups.length) return addPlain(product);
+    choosing.value = { product, groups };
+  } catch (e) {
+    error.value = errorMessage(e);
+  }
+}
+
+function addWithOptions(options: number[]) {
+  const product = choosing.value!.product;
+  choosing.value = null;
+  return run(async () => (await api.post<Order>(`/orders/${current.value!.id}/items`, { productId: product.id, quantity: 1, options })).data);
+}
+
+const addPlain = (product: Product) =>
   run(async () => {
     const order = current.value!;
-    const line = order.items.find((item) => item.productId === product.id && !item.sentAt && !item.voidedAt && !item.notes);
+    const line = order.items.find((item) => item.productId === product.id && !item.sentAt && !item.voidedAt && !item.notes && !item.options?.length);
     if (line) return (await api.patch<Order>(`/orders/${order.id}/items/${line.id}`, { quantity: Number(line.quantity) + 1 })).data;
     return (await api.post<Order>(`/orders/${order.id}/items`, { productId: product.id, quantity: 1 })).data;
   });
@@ -267,7 +289,8 @@ const addNote = async (item: OrderItem) => {
   run(async () => {
     const order = current.value!;
     await api.delete(`/orders/${order.id}/items/${item.id}`);
-    return (await api.post<Order>(`/orders/${order.id}/items`, { productId: item.productId, quantity: Number(item.quantity), notes: notes || undefined })).data;
+    const options = (item.options ?? []).map((option) => option.optionId).filter((id): id is number => id !== null);
+    return (await api.post<Order>(`/orders/${order.id}/items`, { productId: item.productId, quantity: Number(item.quantity), notes: notes || undefined, options: options.length ? options : undefined })).data;
   });
 };
 
@@ -328,7 +351,7 @@ function startClose() {
     mode: 'PAY',
     reservationId: inHouse.value[0]?.id ?? 0,
     customerTaxId: '',
-    payments: [{ paymentTypeId: 0, amount: Number(current.value!.total), cashSessionId: 0, reference: '' }],
+    payments: [{ paymentTypeId: 0, amount: Number(current.value!.total), cashSessionId: 0, reference: '', eventCardNumber: '' }],
   });
   closing.value = true;
 }
@@ -337,11 +360,12 @@ function splitByPeople() {
   const count = Math.max(2, Math.min(50, Math.floor(people.value || 2)));
   const cents = Math.round(Number(current.value!.total) * 100);
   const share = Math.floor(cents / count);
-  const template = close.payments[0] ?? { paymentTypeId: 0, cashSessionId: 0, reference: '' };
+  const template = close.payments[0] ?? { paymentTypeId: 0, cashSessionId: 0, reference: '', eventCardNumber: '' };
   close.payments = Array.from({ length: count }, (_, index) => ({
     paymentTypeId: template.paymentTypeId,
     cashSessionId: template.cashSessionId,
     reference: '',
+    eventCardNumber: '',
     amount: (index === count - 1 ? cents - share * (count - 1) : share) / 100,
   }));
 }
@@ -384,7 +408,7 @@ function exactAmount(index: number) {
 }
 
 function addPaymentLine() {
-  close.payments.push({ paymentTypeId: 0, amount: Math.max(Number(current.value!.total) - paidTotal.value, 0), cashSessionId: 0, reference: '' });
+  close.payments.push({ paymentTypeId: 0, amount: Math.max(Number(current.value!.total) - paidTotal.value, 0), cashSessionId: 0, reference: '', eventCardNumber: '' });
 }
 
 const confirmClose = () =>
@@ -395,7 +419,7 @@ const confirmClose = () =>
       customerTaxId: close.customerTaxId || undefined,
       payments:
         close.mode === 'PAY'
-          ? close.payments.map((p) => ({ paymentTypeId: p.paymentTypeId, amount: p.amount, cashSessionId: p.cashSessionId || undefined, reference: p.reference || undefined }))
+          ? close.payments.map((p) => ({ paymentTypeId: p.paymentTypeId, amount: p.amount, cashSessionId: p.cashSessionId || undefined, reference: p.reference || undefined, eventCardNumber: p.eventCardNumber || undefined }))
           : undefined,
     });
     closing.value = false;
@@ -677,6 +701,7 @@ onBeforeUnmount(() => {
                     v-model:type-id="payment.paymentTypeId"
                     v-model:cash-session-id="payment.cashSessionId"
                     v-model:reference="payment.reference"
+                    v-model:card-number="payment.eventCardNumber"
                     :registers="registers"
                     buttons
                   />
@@ -793,5 +818,6 @@ onBeforeUnmount(() => {
         </aside>
       </div>
     </template>
+    <OptionsDialog v-if="choosing" :key="choosing.product.id" :product="choosing.product" :groups="choosing.groups" @confirm="addWithOptions" @cancel="choosing = null" />
   </section>
 </template>

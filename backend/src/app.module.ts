@@ -20,6 +20,7 @@ import { ReservationsModule } from './reservations/reservations.module';
 import { RoomsModule } from './rooms/rooms.module';
 import { UploadsModule } from './uploads/uploads';
 import { UsersModule } from './users/users.module';
+import { LicenseModule } from './license/license.service';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { UsersModule } from './users/users.module';
     MailModule,
     UploadsModule,
     AuditModule,
+    LicenseModule,
     AccessModule,
     AuthModule,
     UsersModule,

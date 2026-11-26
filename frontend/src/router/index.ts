@@ -51,6 +51,8 @@ const router = createRouter({
         { path: 'faturacao', name: 'invoices', component: () => import('@/views/InvoicesView.vue') },
         { path: 'contas-correntes', name: 'accounts', component: () => import('@/views/AccountsView.vue') },
         { path: 'caixa', name: 'cash', component: () => import('@/views/CashView.vue') },
+        { path: 'cartoes', name: 'cards', component: () => import('@/views/CardsView.vue') },
+        { path: 'despesas', name: 'expenses', component: () => import('@/views/ExpensesView.vue') },
         { path: 'pos', name: 'pos', component: () => import('@/views/PosView.vue') },
         { path: 'cozinha', name: 'kitchen', component: () => import('@/views/KitchenView.vue') },
         { path: 'produtos', name: 'products', component: () => import('@/views/ProductsView.vue') },
@@ -116,7 +118,7 @@ function hotelForThisDomain() {
   return domainSlug;
 }
 
-const CASHIER_ROUTES = ['pos', 'cash', 'account'];
+const CASHIER_ROUTES = ['pos', 'cash', 'cards', 'account'];
 
 router.beforeEach(async (to) => {
   const slug = await hotelForThisDomain();

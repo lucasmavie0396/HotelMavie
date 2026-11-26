@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
+import ExportList from '@/components/ExportList.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
@@ -96,6 +97,9 @@ function clearFilters() {
 }
 
 onMounted(load);
+
+const exportColumns = () => [t('reservations.code'), t('reservations.guest'), t('calendar.room'), t('newReservation.checkIn'), t('newReservation.checkOut'), t('common.total'), t('newReservation.source'), t('common.status')];
+const exportRows = () => visible.value.map((reservation) => [reservation.code, `${reservation.guest.firstName} ${reservation.guest.lastName}`, reservation.room.number, formatDate(reservation.checkIn), formatDate(reservation.checkOut), Number(reservation.totalAmount), RESERVATION_SOURCE_LABELS[reservation.source], RESERVATION_STATUS_LABELS[reservation.status]]);
 </script>
 
 <template>
@@ -139,6 +143,7 @@ onMounted(load);
       <button class="text-indigo-600 hover:underline" type="button" @click="clearView">{{ t('dashboard.seeAll') }}</button>
     </div>
 
+    <div class="flex justify-end"><ExportList :title="t('nav.reservations')" :columns="exportColumns()" :rows="exportRows" /></div>
     <div class="card overflow-x-auto p-0">
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">

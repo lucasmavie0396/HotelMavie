@@ -79,6 +79,8 @@ export const REPORTS: ReportDefinition[] = [
   { key: 'cash', title: 'Caixa', description: 'Sessoes de caixa: fundo, recebimentos em numerario, entradas, saidas e diferencas no fecho.', group: 'Financeiro', params: 'period', roles: MANAGERS },
   { key: 'purchases', title: 'Compras e fornecedores', description: 'Compras recebidas por fornecedor, IVA das compras por taxa, documentos com vencimento e encomendas por receber.', group: 'Financeiro', params: 'period', roles: MANAGERS },
   { key: 'hr', title: 'Recursos humanos', description: 'Mapa de salarios dos meses do periodo (bruto, descontos, liquido e custo da empresa) e horas do ponto por funcionario.', group: 'Gestao', params: 'period', roles: MANAGERS },
+  { key: 'expenses', title: 'Despesas', description: 'Despesas do periodo por categoria e por forma de pagamento, a lista e as anuladas.', group: 'Financeiro', params: 'period', roles: MANAGERS },
+  { key: 'event-cards', title: 'Cartoes Evento', description: 'Carregamentos e recargas por tipo de pagamento e por operador, consumos, devolucoes, descargas e saldo em circulacao por cartao.', group: 'Financeiro', params: 'period', roles: MANAGERS },
   { key: 'accounts', title: 'Contas correntes', description: 'Divida de clientes por antiguidade (0-30, 31-60, 61-90 e mais de 90 dias).', group: 'Financeiro', params: 'none', roles: MANAGERS },
   { key: 'pos', title: 'Restaurante e bar', description: 'Vendas por produto, categoria e ponto de venda, ticket medio e anulacoes.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
   { key: 'room-service', title: 'Vendas por origem e servico de quartos', description: 'Vendas de mesas, balcao e quartos, pedidos dos tablets recusados e tempo medio ate a entrega.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
@@ -224,6 +226,10 @@ export class ReportBuilderService {
         return this.guestStats(range, context);
       case 'hr':
         return this.hr(range, context);
+      case 'event-cards':
+        return this.eventCards(range, context);
+      case 'expenses':
+        return this.expenses(range, context);
       case 'room-service':
         return this.roomService(range, context);
       case 'occupancy':
@@ -974,6 +980,154 @@ export class ReportBuilderService {
           empty: 'Sem estadias no periodo',
         },
         note: 'Contam as reservas confirmadas, em casa e com saida que tem pelo menos uma noite no periodo. Repetente = hospede com mais de uma estadia no hotel.',
+      },
+    ];
+  }
+
+  private async expenses(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
+    const expenses = await this.prisma.expense.findMany({
+      where: { hotelId: hotel.id, date: { gte: range.from, lt: range.to } },
+      include: { category: { select: { name: true } }, paymentType: { select: { name: true } }, supplier: { select: { name: true } }, createdBy: { select: { name: true } } },
+      orderBy: [{ date: 'asc' }, { id: 'asc' }],
+    });
+    const valid = expenses.filter((expense) => expense.status === 'CONFIRMED');
+    const voided = expenses.filter((expense) => expense.status === 'VOIDED');
+    const total = sumMoney(valid.map((expense) => expense.amount));
+    const group = (key: (expense: (typeof valid)[number]) => string) => {
+      const map = new Map<string, { count: number; total: Prisma.Decimal }>();
+      for (const expense of valid) {
+        const row = map.get(key(expense)) ?? { count: 0, total: new Prisma.Decimal(0) };
+        map.set(key(expense), { count: row.count + 1, total: row.total.add(expense.amount) });
+      }
+      return [...map.entries()].sort((a, b) => b[1].total.comparedTo(a[1].total));
+    };
+    const share = (value: Prisma.Decimal) => percent(total.isZero() ? 0 : Number(value.div(total).mul(100)));
+    return [
+      {
+        title: 'Resumo',
+        kpis: [
+          { label: 'Total de despesas', value: money(total) },
+          { label: 'Despesas', value: String(valid.length) },
+          { label: 'Pagas pelo caixa', value: money(sumMoney(valid.filter((expense) => expense.cashMovementId).map((expense) => expense.amount))) },
+          { label: 'Anuladas', value: `${voided.length} (${money(sumMoney(voided.map((expense) => expense.amount)))})` },
+        ],
+      },
+      {
+        title: 'Por categoria',
+        table: {
+          columns: [{ label: 'Categoria', weight: 2 }, { label: 'Despesas', align: 'right' }, { label: 'Total', align: 'right' }, { label: 'Peso', align: 'right', weight: 0.7 }],
+          rows: group((expense) => expense.category.name).map(([name, row]) => [name, String(row.count), money(row.total), share(row.total)]),
+          totals: ['Total', String(valid.length), money(total), '100%'],
+          empty: 'Sem despesas no periodo',
+        },
+      },
+      {
+        title: 'Por forma de pagamento',
+        table: {
+          columns: [{ label: 'Forma de pagamento', weight: 2 }, { label: 'Despesas', align: 'right' }, { label: 'Total', align: 'right' }],
+          rows: group((expense) => expense.paymentType?.name ?? 'Nao indicada').map(([name, row]) => [name, String(row.count), money(row.total)]),
+          empty: 'Sem despesas no periodo',
+        },
+      },
+      {
+        title: 'Despesas',
+        table: {
+          columns: [{ label: 'Data', weight: 0.8 }, { label: 'Categoria', weight: 1.1 }, { label: 'Descricao', weight: 2 }, { label: 'Fornecedor', weight: 1.2 }, { label: 'Documento', weight: 0.9 }, { label: 'Valor', align: 'right' }],
+          rows: expenses.map((expense) => [
+            day(expense.date),
+            expense.category.name,
+            `${expense.description}${expense.status === 'VOIDED' ? ` (anulada: ${expense.voidReason ?? ''})` : ''}`,
+            expense.supplier?.name ?? '-',
+            expense.documentRef ?? '-',
+            money(expense.amount),
+          ]),
+          empty: 'Sem despesas no periodo',
+        },
+      },
+    ];
+  }
+
+  private async eventCards(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
+    const labels: Record<string, string> = {
+      LOAD: 'Carregamento',
+      TOPUP: 'Recarga',
+      PAYMENT: 'Consumo',
+      REFUND: 'Devolucao ao cartao',
+      DISCHARGE: 'Descarga',
+      TRANSFER_OUT: 'Transferencia (saida)',
+      TRANSFER_IN: 'Transferencia (entrada)',
+      GUEST_CHANGE: 'Mudanca de titular',
+    };
+    const [movements, cards] = [
+      await this.prisma.eventCardMovement.findMany({
+        where: { card: { hotelId: hotel.id }, createdAt: { gte: range.from, lt: range.to } },
+        include: { card: { select: { number: true } }, createdBy: { select: { name: true } }, loadPayment: { select: { paymentType: { select: { name: true } }, method: true } } },
+        orderBy: { id: 'asc' },
+      }),
+      await this.prisma.eventCard.findMany({ where: { hotelId: hotel.id }, include: { guest: { select: { firstName: true, lastName: true } } }, orderBy: { number: 'asc' } }),
+    ];
+    const sum = (types: string[]) => sumMoney(movements.filter((movement) => types.includes(movement.type)).map((movement) => movement.amount));
+    const loaded = sum(['LOAD', 'TOPUP']);
+    const consumed = sum(['PAYMENT']).neg();
+    const refunded = sum(['REFUND']);
+    const discharged = sum(['DISCHARGE']).neg();
+    const circulation = sumMoney(cards.map((card) => card.balance));
+    const byType = new Map<string, { count: number; total: Prisma.Decimal }>();
+    const byOperator = new Map<string, { count: number; total: Prisma.Decimal }>();
+    for (const movement of movements.filter((entry) => entry.type === 'LOAD' || entry.type === 'TOPUP')) {
+      const type = movement.loadPayment?.paymentType?.name ?? movement.loadPayment?.method ?? '-';
+      const row = byType.get(type) ?? { count: 0, total: new Prisma.Decimal(0) };
+      byType.set(type, { count: row.count + 1, total: row.total.add(movement.amount) });
+      const operator = movement.createdBy?.name ?? '-';
+      const op = byOperator.get(operator) ?? { count: 0, total: new Prisma.Decimal(0) };
+      byOperator.set(operator, { count: op.count + 1, total: op.total.add(movement.amount) });
+    }
+    return [
+      {
+        title: 'Resumo',
+        kpis: [
+          { label: 'Carregado e recarregado', value: money(loaded) },
+          { label: 'Consumido', value: money(consumed) },
+          { label: 'Devolvido aos cartoes', value: money(refunded) },
+          { label: 'Descarregado', value: money(discharged) },
+          { label: 'Saldo em circulacao (hoje)', value: money(circulation) },
+          { label: 'Cartoes ativos', value: String(cards.filter((card) => card.active).length) },
+        ],
+      },
+      {
+        title: 'Dinheiro recebido por tipo de pagamento',
+        table: {
+          columns: [{ label: 'Tipo', weight: 2 }, { label: 'Operacoes', align: 'right' }, { label: 'Valor', align: 'right' }],
+          rows: [...byType.entries()].map(([name, row]) => [name, String(row.count), money(row.total)]),
+          totals: ['Total', String([...byType.values()].reduce((total, row) => total + row.count, 0)), money(loaded)],
+          empty: 'Sem carregamentos no periodo',
+        },
+      },
+      {
+        title: 'Por operador',
+        table: {
+          columns: [{ label: 'Operador', weight: 2 }, { label: 'Operacoes', align: 'right' }, { label: 'Valor', align: 'right' }],
+          rows: [...byOperator.entries()].map(([name, row]) => [name, String(row.count), money(row.total)]),
+          empty: 'Sem carregamentos no periodo',
+        },
+      },
+      {
+        title: 'Movimentos',
+        table: {
+          columns: [{ label: 'Data', weight: 1.1 }, { label: 'Cartao', weight: 0.9 }, { label: 'Operacao', weight: 1.2 }, { label: 'Valor', align: 'right' }, { label: 'Saldo', align: 'right' }, { label: 'Operador', weight: 1.2 }],
+          rows: movements.map((movement) => [localParts(movement.createdAt).dateTime.replace('T', ' ').slice(0, 16), movement.card.number, labels[movement.type], money(movement.amount), money(movement.balanceAfter), movement.createdBy?.name ?? '-']),
+          empty: 'Sem movimentos no periodo',
+        },
+      },
+      {
+        title: 'Saldos por cartao',
+        table: {
+          columns: [{ label: 'Cartao', weight: 1 }, { label: 'Titular', weight: 2 }, { label: 'Estado', weight: 0.8 }, { label: 'Saldo', align: 'right' }],
+          rows: cards.filter((card) => !card.balance.isZero()).map((card) => [card.number, card.guest ? `${card.guest.firstName} ${card.guest.lastName}` : (card.holder ?? '-'), card.active ? 'Ativo' : 'Bloqueado', money(card.balance)]),
+          totals: ['Total', '', '', money(circulation)],
+          empty: 'Nenhum cartao com saldo',
+        },
+        note: 'O saldo em circulacao e o dinheiro ja recebido e ainda por consumir (o hotel deve-o aos clientes).',
       },
     ];
   }

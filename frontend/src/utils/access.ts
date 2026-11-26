@@ -12,6 +12,8 @@ export const ROUTE_AREAS: Record<string, string> = {
   invoices: 'invoices',
   accounts: 'accounts',
   cash: 'cash',
+  cards: 'pos',
+  expenses: 'cash',
   products: 'products',
   stock: 'stock',
   hr: 'hr',
@@ -21,7 +23,7 @@ export const ROUTE_AREAS: Record<string, string> = {
   settings: 'settings',
 };
 
-export const MENU_ORDER = ['calendar', 'reservations', 'guests', 'rooms', 'pos', 'kitchen', 'invoices', 'accounts', 'cash', 'products', 'stock', 'hr', 'reports', 'purchases', 'audit', 'settings'];
+export const MENU_ORDER = ['calendar', 'reservations', 'guests', 'rooms', 'pos', 'kitchen', 'invoices', 'accounts', 'cash', 'cards', 'expenses', 'products', 'stock', 'hr', 'reports', 'purchases', 'audit', 'settings'];
 
 export function allowedRoutes(levels: AccessLevels) {
   return MENU_ORDER.filter((name) => (levels[ROUTE_AREAS[name]] ?? 'NONE') !== 'NONE');

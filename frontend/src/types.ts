@@ -329,6 +329,23 @@ export interface Product {
   minStock: string;
   active: boolean;
   imageFile: string | null;
+  optionGroups?: { id: number; required: boolean }[];
+}
+
+export interface ProductOption {
+  id: number;
+  name: string;
+  priceDelta: string;
+  ingredientId: number | null;
+  quantity: string;
+}
+
+export interface ProductOptionGroup {
+  id: number;
+  name: string;
+  required: boolean;
+  maxChoices: number;
+  options: ProductOption[];
 }
 
 export interface ImageSearchResult {
@@ -467,6 +484,7 @@ export interface OrderItem {
   voidReason: string | null;
   voidedBy: { name: string } | null;
   taxRateRef?: { rate: string } | null;
+  options?: { id: number; optionId: number | null; groupName: string; name: string; priceDelta: string }[];
   product: { category: { prepStation: PrepStation } | null };
 }
 
@@ -758,6 +776,7 @@ export interface PaymentType {
   kind: PaymentMethod;
   mechanism: string | null;
   requiresReference: boolean;
+  isEventCard: boolean;
   active: boolean;
   sortOrder: number;
 }

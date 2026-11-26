@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
+import ExportList from '@/components/ExportList.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { api, errorMessage } from '@/services/api';
@@ -51,6 +52,9 @@ async function load() {
 const actionLabel = (key: string, fallback: string) => (te(`audit.actions.${key}`) ? t(`audit.actions.${key}`) : fallback);
 
 onMounted(load);
+
+const exportColumns = () => [t('common.date'), t('audit.action'), t('audit.detail'), t('audit.user')];
+const exportRows = () => shown.value.map((log) => [formatDateTime(log.createdAt), actionLabel(log.action, actions.value[log.action] ?? log.action), log.summary, log.user?.name ?? t('audit.system')]);
 </script>
 
 <template>
@@ -73,6 +77,7 @@ onMounted(load);
 
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
 
+    <div class="flex justify-end"><ExportList :title="t('nav.audit')" :columns="exportColumns()" :rows="exportRows" /></div>
     <div class="card overflow-x-auto p-0">
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">

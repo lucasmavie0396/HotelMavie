@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
+import ExportList from '@/components/ExportList.vue';
 import { onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
@@ -65,6 +66,9 @@ onMounted(async () => {
   const id = Number(route.query.id);
   if (Number.isInteger(id) && id > 0) await open({ id } as Guest);
 });
+
+const exportColumns = () => [t('common.name'), t('common.email'), t('common.phone'), t('guest.document'), t('guest.nationality')];
+const exportRows = () => guests.value.map((guest) => [`${guest.firstName} ${guest.lastName}`, guest.email ?? '', guest.phone ?? '', [guest.documentType, guest.documentNumber].filter(Boolean).join(' '), guest.nationality ?? '']);
 </script>
 
 <template>
@@ -92,6 +96,7 @@ onMounted(async () => {
       </div>
     </div>
 
+    <div class="flex justify-end"><ExportList :title="t('nav.guests')" :columns="exportColumns()" :rows="exportRows" /></div>
     <div class="card overflow-x-auto p-0">
       <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">

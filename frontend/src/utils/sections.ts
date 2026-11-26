@@ -80,6 +80,22 @@ export const SECTIONS: Record<string, Section> = {
     gradient: 'from-cyan-500 via-sky-600 to-blue-600',
     dot: 'bg-gradient-to-br from-cyan-400 to-sky-500',
   },
+  cards: {
+    get label() {
+      return t('nav.cards');
+    },
+    icon: 'M3 7a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2zM3 10h18M7 15h4',
+    gradient: 'from-amber-500 via-orange-500 to-rose-500',
+    dot: 'bg-gradient-to-br from-amber-400 to-rose-500',
+  },
+  expenses: {
+    get label() {
+      return t('nav.expenses');
+    },
+    icon: 'M12 8c-2 0-3 .9-3 2s1 1.6 3 2 3 .9 3 2-1 2-3 2m0-8V6m0 10v2M4 4h16v16H4z',
+    gradient: 'from-rose-500 via-red-500 to-orange-500',
+    dot: 'bg-gradient-to-br from-rose-400 to-orange-500',
+  },
   cash: {
     get label() {
       return t('nav.cash');

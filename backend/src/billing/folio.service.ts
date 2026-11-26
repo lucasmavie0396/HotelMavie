@@ -34,6 +34,7 @@ export interface PaymentInput {
   reference?: string;
   notes?: string;
   createdById?: number;
+  allowEventCard?: boolean;
 }
 
 const ACCOMMODATION_REF = 'accommodation';
@@ -163,6 +164,9 @@ export class FolioService {
       paymentTypeId: input.paymentTypeId,
       reference: amount.isNegative() ? 'estorno' : input.reference,
     });
+    if (type.isEventCard && !input.allowEventCard) {
+      throw new BadRequestException('O Cartao Evento so se usa para pagar no restaurante e bar');
+    }
     const own = await requireOpenCash(tx, input.hotelId, user.sub);
     let cashSessionId: number | null = null;
     if (type.method === PaymentMethod.CASH && input.cashSessionId) {

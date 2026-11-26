@@ -7,9 +7,10 @@ import { posViews } from './pos';
 import { publicSite } from './public';
 import { roomsViews } from './rooms';
 import { roomServiceViews } from './roomService';
+import { extrasViews } from './extras';
 import { stockViews } from './stock';
 
-const modules = [common, app, publicSite, front, roomsViews, posViews, stockViews, financeViews, adminViews, roomServiceViews];
+const modules = [common, app, publicSite, front, roomsViews, posViews, stockViews, financeViews, adminViews, roomServiceViews, extrasViews];
 
 type Tree = Record<string, string>;
 

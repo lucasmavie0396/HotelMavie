@@ -83,16 +83,16 @@ export class PaymentTypesService {
       if (type.requiresReference && !choice.reference?.trim()) {
         throw new BadRequestException(`O pagamento por ${type.name} exige referencia`);
       }
-      return { method: type.kind, paymentTypeId: type.id, name: type.name };
+      return { method: type.kind, paymentTypeId: type.id, name: type.name, isEventCard: type.isEventCard };
     }
     if (!choice.method) {
       throw new BadRequestException('Indica o tipo de pagamento');
     }
     const fallback = await tx.paymentType.findFirst({
-      where: { hotelId, kind: choice.method, active: true },
+      where: { hotelId, kind: choice.method, active: true, isEventCard: false },
       orderBy: { sortOrder: 'asc' },
     });
-    return { method: choice.method, paymentTypeId: fallback?.id ?? null, name: fallback?.name ?? choice.method };
+    return { method: choice.method, paymentTypeId: fallback?.id ?? null, name: fallback?.name ?? choice.method, isEventCard: false };
   }
 }
 

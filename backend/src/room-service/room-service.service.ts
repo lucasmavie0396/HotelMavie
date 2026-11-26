@@ -316,7 +316,7 @@ export class RoomServiceService {
 
   async menu(device: Device) {
     const products = await this.prisma.product.findMany({
-      where: { hotelId: device.hotelId, active: true, sellable: true, roomService: true },
+      where: { hotelId: device.hotelId, active: true, sellable: true, roomService: true, optionGroups: { none: { active: true, required: true } } },
       select: {
         id: true,
         name: true,
@@ -359,7 +359,7 @@ export class RoomServiceService {
     }
     const ids = [...new Set(dto.items.map((line) => line.productId))];
     const products = await this.prisma.product.findMany({
-      where: { id: { in: ids }, hotelId: device.hotelId, active: true, sellable: true, roomService: true },
+      where: { id: { in: ids }, hotelId: device.hotelId, active: true, sellable: true, roomService: true, optionGroups: { none: { active: true, required: true } } },
       include: { category: { select: { outlet: true } } },
     });
     const byId = new Map(products.map((product) => [product.id, product]));

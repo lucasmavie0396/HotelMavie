@@ -65,7 +65,7 @@ export class CatalogController {
         ...(query.outlet ? { OR: [{ category: { outlet: query.outlet } }, { category: { outlet: null } }, { categoryId: null }] } : {}),
         ...(q ? { AND: [{ OR: [{ name: { contains: q } }, { sku: { contains: q } }] }] } : {}),
       },
-      include: { category: { select: { id: true, name: true, outlet: true } } },
+      include: { category: { select: { id: true, name: true, outlet: true } }, optionGroups: { where: { active: true, options: { some: { active: true } } }, select: { id: true, required: true } } },
       orderBy: [{ active: 'desc' }, { name: 'asc' }],
     });
   }

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import PageHeader from '@/components/PageHeader.vue';
+import ProductsExcelPanel from '@/components/ProductsExcelPanel.vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { translated } from '@/i18n';
 import ProductImagePicker from '@/components/ProductImagePicker.vue';
+import ProductOptionsEditor from '@/components/ProductOptionsEditor.vue';
 import RecipeEditor from '@/components/RecipeEditor.vue';
 import { api, errorMessage } from '@/services/api';
 import { fileUrl } from '@/services/files';
@@ -21,6 +23,12 @@ const error = ref('');
 const busy = ref(false);
 const editingId = ref<number | null>(null);
 const recipeFor = ref<Product | null>(null);
+const optionsFor = ref<Product | null>(null);
+
+function closeOptions(saved: boolean) {
+  optionsFor.value = null;
+  if (saved) load();
+}
 const q = ref('');
 
 const canManage = computed(() => auth.isManager);
@@ -173,6 +181,8 @@ onMounted(load);
     <p v-if="error" class="text-sm text-rose-600">{{ error }}</p>
     <p v-if="notice" class="text-sm text-emerald-700">{{ notice }}</p>
 
+    <ProductsExcelPanel v-if="canManage" @imported="load" />
+
     <div v-if="canManage" class="grid gap-6 lg:grid-cols-3">
       <form class="card grid gap-3 sm:grid-cols-2 lg:col-span-2" @submit.prevent="saveProduct">
         <h2 class="font-semibold sm:col-span-2">{{ editingId ? t('products.edit') : t('products.new') }}</h2>
@@ -258,6 +268,7 @@ onMounted(load);
     </div>
 
     <RecipeEditor v-if="recipeFor" :key="recipeFor.id" :product="recipeFor" :ingredients="products" @close="recipeFor = null" />
+    <ProductOptionsEditor v-if="optionsFor" :key="optionsFor.id" :product="optionsFor" :ingredients="products" @close="closeOptions" />
 
     <div class="card overflow-x-auto p-0">
       <table class="w-full text-left text-sm">
@@ -295,6 +306,9 @@ onMounted(load);
                 @click="recipeFor = product"
               >
                 {{ t('products.recipe') }}
+              </button>
+              <button v-if="canManage && product.sellable" class="mr-3 text-xs text-indigo-600 hover:underline" type="button" @click="optionsFor = product">
+                {{ t('options.button') }}<span v-if="product.optionGroups?.length"> ({{ product.optionGroups.length }})</span>
               </button>
               <button v-if="canManage" class="text-xs text-indigo-600 hover:underline" type="button" @click="edit(product)">{{ t('common.edit') }}</button>
             </td>
