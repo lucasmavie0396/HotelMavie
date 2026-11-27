@@ -3,7 +3,7 @@ import { InvoiceType, Prisma, QuoteStatus } from '@prisma/client';
 import { localParts } from '../at/at-format';
 import { AuditService } from '../audit/audit';
 import { JwtPayload } from '../auth/jwt-payload';
-import { addDays, parseDate, todayUtc } from '../common/dates';
+import { localDayWindow, parseDate, todayUtc } from '../common/dates';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { sumMoney } from '../common/money';
 import { PrismaService } from '../prisma/prisma.service';
@@ -36,10 +36,7 @@ export class QuotesService {
       where: {
         hotelId: resolveHotelScope(user, query.hotelId),
         status: query.status,
-        issuedAt: {
-          ...(query.from ? { gte: parseDate(query.from) } : {}),
-          ...(query.to ? { lt: addDays(parseDate(query.to), 1) } : {}),
-        },
+        issuedAt: localDayWindow(query.from, query.to),
         ...(q ? { OR: [{ fullNumber: { contains: q } }, { customerName: { contains: q } }, { customerTaxId: { contains: q } }] } : {}),
       },
       include: { invoice: { select: { id: true, fullNumber: true } } },

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Invoice, InvoiceLine, InvoiceType, Prisma, Receipt, ReceiptStatus, TaxCategory } from '@prisma/client';
-import { addDays, parseDate } from '../common/dates';
+import { addDays, localDayStart, parseDate } from '../common/dates';
 import { PrismaService } from '../prisma/prisma.service';
 import { AtSigningService } from './at-signing.service';
 import { DOC_TYPE, FINAL_CONSUMER_TAX_ID, localParts, PAYMENT_MECHANISM } from './at-format';
@@ -51,8 +51,8 @@ export class SaftService {
   ) {}
 
   async export(hotelId: number, fromValue: string, toValue: string) {
-    const from = parseDate(fromValue);
-    const to = addDays(parseDate(toValue), 1);
+    const from = localDayStart(fromValue);
+    const to = localDayStart(addDays(parseDate(toValue), 1));
     if (to <= from) {
       throw new BadRequestException('Periodo invalido');
     }

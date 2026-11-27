@@ -10,9 +10,54 @@ export function parseDate(value: string) {
   return date;
 }
 
+export function businessTimeZone() {
+  return process.env.AT_TIMEZONE || 'Europe/Lisbon';
+}
+
+function zoneParts(instant: Date) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: businessTimeZone(),
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(instant)
+      .map((part) => [part.type, part.value]),
+  );
+  return parts as Record<'year' | 'month' | 'day' | 'hour' | 'minute' | 'second', string>;
+}
+
+export function localDate(instant: Date) {
+  const parts = zoneParts(instant);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function zoneOffset(instant: Date) {
+  const parts = zoneParts(instant);
+  const asUtc = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute), Number(parts.second));
+  return asUtc - Math.floor(instant.getTime() / 1000) * 1000;
+}
+
+export function localDayStart(day: string | Date) {
+  const midnight = typeof day === 'string' ? parseDate(day) : day;
+  const guess = new Date(midnight.getTime() - zoneOffset(midnight));
+  return new Date(midnight.getTime() - zoneOffset(guess));
+}
+
+export function localDayWindow(from?: string, to?: string) {
+  return {
+    ...(from ? { gte: localDayStart(from) } : {}),
+    ...(to ? { lt: localDayStart(addDays(parseDate(to), 1)) } : {}),
+  };
+}
+
 export function todayUtc() {
-  const now = new Date();
-  return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  return parseDate(localDate(new Date()));
 }
 
 export function addDays(date: Date, days: number) {

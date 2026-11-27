@@ -5,7 +5,7 @@ import { IsDateString, IsIn, IsInt, IsOptional, IsString, Length, MaxLength, Min
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles, SalesAccess } from '../common/decorators/roles.decorator';
-import { addDays, parseDate } from '../common/dates';
+import { localDayWindow } from '../common/dates';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { resolveHotelScope } from '../common/hotel-scope';
 import { jsonRead, jsonValue } from '../prisma/database';
@@ -117,8 +117,7 @@ export class AuditController {
         action: query.action,
         userId: query.userId,
         createdAt: {
-          gte: query.from ? parseDate(query.from) : undefined,
-          lt: query.to ? addDays(parseDate(query.to), 1) : undefined,
+          ...localDayWindow(query.from, query.to),
         },
       },
       include: { user: { select: { id: true, name: true } } },

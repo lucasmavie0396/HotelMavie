@@ -4,7 +4,7 @@ import { Type } from 'class-transformer';
 import { IsInt, IsOptional } from 'class-validator';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { addDays, todayUtc } from '../common/dates';
+import { addDays, localDate, localDayStart, todayUtc } from '../common/dates';
 import { resolveHotelScope } from '../common/hotel-scope';
 import { toMoney } from '../common/money';
 import { PrismaService } from '../prisma/prisma.service';
@@ -66,7 +66,7 @@ export class DashboardController {
         }),
         this.prisma.reservation.groupBy({
           by: ['source'],
-          where: { hotelId, createdAt: { gte: addDays(today, -(SOURCE_DAYS - 1)) } },
+          where: { hotelId, createdAt: { gte: localDayStart(addDays(today, -(SOURCE_DAYS - 1))) } },
           _count: { _all: true },
         }),
         this.prisma.reservation.count({ where: { hotelId, status: ReservationStatus.PENDING } }),
@@ -77,7 +77,7 @@ export class DashboardController {
         this.prisma.cashSession.count({ where: { closedAt: null, register: { hotelId } } }),
         seesMoney
           ? this.prisma.charge.findMany({
-              where: { hotelId, createdAt: { gte: revenueStart, lt: tomorrow } },
+              where: { hotelId, createdAt: { gte: localDayStart(revenueStart), lt: localDayStart(tomorrow) } },
               select: { createdAt: true, type: true, total: true },
             })
           : Promise.resolve([]),
@@ -113,7 +113,7 @@ export class DashboardController {
             EXTRA: new Prisma.Decimal(0),
           };
           for (const charge of charges) {
-            if (iso(charge.createdAt) === date) totals[charge.type] = totals[charge.type].add(charge.total);
+            if (localDate(charge.createdAt) === date) totals[charge.type] = totals[charge.type].add(charge.total);
           }
           return {
             date,

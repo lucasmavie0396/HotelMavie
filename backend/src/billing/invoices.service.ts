@@ -4,7 +4,7 @@ import { DOC_TYPE, localParts, signatureMessage } from '../at/at-format';
 import { AtSigningService } from '../at/at-signing.service';
 import { AuditService } from '../audit/audit';
 import { JwtPayload } from '../auth/jwt-payload';
-import { addDays, parseDate } from '../common/dates';
+import { localDayWindow, parseDate } from '../common/dates';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { splitGross, sumMoney, toMoney } from '../common/money';
 import { forUpdate, lockHint } from '../prisma/database';
@@ -94,10 +94,7 @@ export class InvoicesService {
           : {
               type: query.type,
               status: query.status,
-              issuedAt: {
-                ...(query.from ? { gte: parseDate(query.from) } : {}),
-                ...(query.to ? { lt: addDays(parseDate(query.to), 1) } : {}),
-              },
+              issuedAt: localDayWindow(query.from, query.to),
             }),
         ...(q ? { OR: [{ fullNumber: { contains: q } }, { customerName: { contains: q } }, { customerTaxId: { contains: q } }] } : {}),
       },

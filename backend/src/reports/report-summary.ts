@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { OrderStatus, Prisma, ReservationStatus, StockMovementType } from '@prisma/client';
-import { addDays, nightsBetween, parseDate } from '../common/dates';
+import { addDays, localDayStart, nightsBetween, parseDate } from '../common/dates';
 import { toMoney } from '../common/money';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -13,12 +13,12 @@ export function reportPeriod(fromValue: string, toValue: string) {
   if (days < 1 || days > 366) {
     throw new BadRequestException('O periodo tem de ter entre 1 e 366 dias');
   }
-  return { from, to, days };
+  return { from, to, days, start: localDayStart(from), end: localDayStart(to) };
 }
 
 export async function summaryData(prisma: PrismaService, hotelId: number | undefined, fromValue: string, toValue: string) {
-  const { from, to, days } = reportPeriod(fromValue, toValue);
-  const period = { gte: from, lt: to };
+  const { from, to, days, start, end } = reportPeriod(fromValue, toValue);
+  const period = { gte: start, lt: end };
 
   const [roomCount, reservations, charges, payments, invoices, orderItems, sources, cancellations, sales] = await Promise.all([
     prisma.room.count({ where: { hotelId } }),

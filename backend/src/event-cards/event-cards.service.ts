@@ -6,7 +6,7 @@ import { AuditService } from '../audit/audit';
 import { JwtPayload } from '../auth/jwt-payload';
 import { FolioService } from '../billing/folio.service';
 import { isManagerRole } from '../common/decorators/roles.decorator';
-import { addDays, parseDate } from '../common/dates';
+import { localDayWindow } from '../common/dates';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { toMoney } from '../common/money';
@@ -278,8 +278,7 @@ export class EventCardsService {
 
   async movements(id: number, query: CardMovementsQueryDto, user: JwtPayload) {
     const card = await this.findOne(id, user);
-    const from = query.from ? parseDate(query.from) : undefined;
-    const to = query.to ? addDays(parseDate(query.to), 1) : undefined;
+    const { gte: from, lt: to } = localDayWindow(query.from, query.to);
     const items = await this.prisma.eventCardMovement.findMany({
       where: { cardId: card.id, createdAt: { gte: from, lt: to } },
       include: movementInclude,

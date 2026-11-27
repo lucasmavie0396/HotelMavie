@@ -158,6 +158,8 @@ docker compose exec backend npm run db:seed
 
 Regras de negócio a manter: preços são sempre com IVA incluído (base calculada na fatura); documentos emitidos nunca se alteram nem apagam (corrige-se com nota de crédito); valores monetários usam `Prisma.Decimal` via `common/money.ts`.
 
+Datas: o dia do negócio é o do fuso `AT_TIMEZONE` (Africa/Maputo nos hotéis; Europe/Lisbon por omissão). Campos só de data (`@db.Date`: entradas, saídas, vencimentos, despesas) comparam com `parseDate` (meia-noite UTC). Campos com hora (emissão, fecho, pagamentos, movimentos) filtram-se por dia com `localDayWindow`/`localDayStart` e formatam-se com `localDate`, de `common/dates.ts`; `todayUtc()` devolve o dia de hoje nesse fuso. Nos relatórios, `range.from`/`range.to` são para datas e `range.start`/`range.end` para momentos. Nos testes, `day()` usa o mesmo fuso (`test/fuso-horario.e2e-spec.ts` cobre uma fatura às 00:30 de Maputo).
+
 ## Receitas, emails e AT
 
 - **Receitas** (`catalog/recipes.service.ts`): um prato com receita não controla stock próprio; ao vender descontam-se os ingredientes (um só nível, ingredientes têm de controlar stock). O relatório mostra o food cost.

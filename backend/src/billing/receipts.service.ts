@@ -14,7 +14,7 @@ import { FolioService } from './folio.service';
 import { InvoicesService, openAmount, seriesCode } from './invoices.service';
 import { PaymentTypesService } from './payment-types';
 import { ReceiptQueryDto } from './documents.dto';
-import { addDays, parseDate } from '../common/dates';
+import { localDayWindow } from '../common/dates';
 
 export class ReceiptLineDto {
   @IsInt()
@@ -133,10 +133,7 @@ export class ReceiptsService {
       where: {
         hotelId: resolveHotelScope(user, query.hotelId),
         status: query.status,
-        issuedAt: {
-          ...(query.from ? { gte: parseDate(query.from) } : {}),
-          ...(query.to ? { lt: addDays(parseDate(query.to), 1) } : {}),
-        },
+        issuedAt: localDayWindow(query.from, query.to),
         ...(q ? { OR: [{ fullNumber: { contains: q } }, { customerName: { contains: q } }, { customerTaxId: { contains: q } }] } : {}),
       },
       include: receiptInclude,

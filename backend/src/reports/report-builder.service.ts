@@ -24,7 +24,7 @@ import { paymentLabel } from '../billing/documents.service';
 import { ON_GUEST_ACCOUNT } from '../billing/folio.service';
 import { localParts } from '../at/at-format';
 import { Ticket } from '../billing/ticket-pdf.service';
-import { addDays, nightsBetween, parseDate, todayUtc } from '../common/dates';
+import { addDays, localDate, localDayStart, nightsBetween, parseDate, todayUtc } from '../common/dates';
 import { HotelQueryDto } from '../common/hotel-query.dto';
 import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { formatCurrency, sumMoney, toMoney } from '../common/money';
@@ -113,6 +113,10 @@ type Money = Prisma.Decimal | number | string;
 
 function day(date: Date) {
   return date.toISOString().slice(0, 10).split('-').reverse().join('/');
+}
+
+function localDay(date: Date) {
+  return localDate(date).split('-').reverse().join('/');
 }
 
 function iso(date: Date) {
@@ -204,7 +208,7 @@ export class ReportBuilderService {
     };
   }
 
-  private periodReport(key: string, range: { from: Date; to: Date; days: number }, from: string, to: string, context: Context) {
+  private periodReport(key: string, range: Range, from: string, to: string, context: Context) {
     switch (key) {
       case 'reservations':
         return this.reservations(range, context);
@@ -446,11 +450,11 @@ export class ReportBuilderService {
 
   private async roomService(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
     const orders = await this.prisma.order.findMany({
-      where: { hotelId: hotel.id, status: OrderStatus.CLOSED, closedAt: { gte: range.from, lt: range.to } },
+      where: { hotelId: hotel.id, status: OrderStatus.CLOSED, closedAt: { gte: range.start, lt: range.end } },
       include: { items: { select: { total: true, voidedAt: true } } },
     });
     const rejected = await this.prisma.order.findMany({
-      where: { hotelId: hotel.id, roomServiceStatus: 'REJECTED', closedAt: { gte: range.from, lt: range.to } },
+      where: { hotelId: hotel.id, roomServiceStatus: 'REJECTED', closedAt: { gte: range.start, lt: range.end } },
       include: { room: { select: { number: true } } },
       orderBy: { closedAt: 'asc' },
     });
@@ -522,7 +526,7 @@ export class ReportBuilderService {
       where: {
         hotelId: hotel.id,
         status: { in: [PurchaseStatus.PARTIAL, PurchaseStatus.RECEIVED, PurchaseStatus.CANCELLED] },
-        OR: [{ documentDate: inPeriod }, { documentDate: null, receivedAt: inPeriod }],
+        OR: [{ documentDate: inPeriod }, { documentDate: null, receivedAt: { gte: range.start, lt: range.end } }],
       },
       include: { supplier: { select: { name: true, taxId: true } }, items: { select: { taxRate: true, taxAmount: true, total: true, discount: true } } },
       orderBy: [{ documentDate: 'asc' }, { id: 'asc' }],
@@ -629,7 +633,7 @@ export class ReportBuilderService {
           columns: [{ label: 'Encomenda', weight: 1 }, { label: 'Data', weight: 0.9 }, { label: 'Fornecedor', weight: 2 }, { label: 'Estado' }, { label: 'Falta receber (s/ IVA)', align: 'right', weight: 1.2 }],
           rows: pending.map((purchase) => [
             `ENC ${purchase.orderedAt.getUTCFullYear()}/${purchase.id}`,
-            day(purchase.orderedAt),
+            localDay(purchase.orderedAt),
             purchase.supplier.name,
             purchase.status === PurchaseStatus.PARTIAL ? 'Recebida em parte' : 'Rascunho',
             money(missing(purchase)),
@@ -745,7 +749,7 @@ export class ReportBuilderService {
 
   private async margin(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
     const items = await this.prisma.orderItem.findMany({
-      where: { voidedAt: null, order: { hotelId: hotel.id, status: OrderStatus.CLOSED, closedAt: { gte: range.from, lt: range.to } } },
+      where: { voidedAt: null, order: { hotelId: hotel.id, status: OrderStatus.CLOSED, closedAt: { gte: range.start, lt: range.end } } },
       select: {
         productId: true,
         description: true,
@@ -842,7 +846,7 @@ export class ReportBuilderService {
 
   private async stockMovements(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
     const movements = await this.prisma.stockMovement.findMany({
-      where: { warehouse: { hotelId: hotel.id }, createdAt: { gte: range.from, lt: range.to } },
+      where: { warehouse: { hotelId: hotel.id }, createdAt: { gte: range.start, lt: range.end } },
       select: { type: true, quantity: true, unitCost: true, warehouse: { select: { name: true } }, product: { select: { id: true, name: true, unit: true, cost: true } } },
     });
     const labels: Record<StockMovementType, string> = {
@@ -1060,7 +1064,7 @@ export class ReportBuilderService {
     };
     const [movements, cards] = [
       await this.prisma.eventCardMovement.findMany({
-        where: { card: { hotelId: hotel.id }, createdAt: { gte: range.from, lt: range.to } },
+        where: { card: { hotelId: hotel.id }, createdAt: { gte: range.start, lt: range.end } },
         include: { card: { select: { number: true } }, createdBy: { select: { name: true } }, loadPayment: { select: { paymentType: { select: { name: true } }, method: true } } },
         orderBy: { id: 'asc' },
       }),
@@ -1145,7 +1149,7 @@ export class ReportBuilderService {
     const [employees, entries] = [
       await this.prisma.employee.count({ where: { hotelId: hotel.id, active: true } }),
       await this.prisma.timeEntry.findMany({
-        where: { hotelId: hotel.id, clockIn: { gte: range.from, lt: range.to } },
+        where: { hotelId: hotel.id, clockIn: { gte: range.start, lt: range.end } },
         select: { clockIn: true, clockOut: true, employee: { select: { fullName: true, jobTitle: true } } },
       }),
     ];
@@ -1225,7 +1229,7 @@ export class ReportBuilderService {
 
   private async staff(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
     const orders = await this.prisma.order.findMany({
-      where: { hotelId: hotel.id, status: OrderStatus.CLOSED, closedAt: { gte: range.from, lt: range.to } },
+      where: { hotelId: hotel.id, status: OrderStatus.CLOSED, closedAt: { gte: range.start, lt: range.end } },
       include: { openedBy: { select: { name: true } }, items: { select: { quantity: true, total: true, voidedAt: true } } },
     });
     const byStaff = new Map<string, { orders: number; quantity: Prisma.Decimal; total: Prisma.Decimal; voided: number; voidedTotal: Prisma.Decimal }>();
@@ -1365,7 +1369,7 @@ export class ReportBuilderService {
 
   private async daily(date: Date, { hotel, money }: Context): Promise<ReportSection[]> {
     const next = addDays(date, 1);
-    const window = { gte: date, lt: next };
+    const window = { gte: localDayStart(date), lt: localDayStart(next) };
     const [rooms, staying, arrivals, departures, charges, payments, invoices, sessions] = await Promise.all([
       this.prisma.room.count({ where: { hotelId: hotel.id } }),
       this.prisma.reservation.count({ where: { hotelId: hotel.id, status: { in: SOLD_STATUSES }, checkIn: { lte: date }, checkOut: { gt: date } } }),
@@ -1753,7 +1757,7 @@ export class ReportBuilderService {
   }
 
   private async sales(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
-    const window = { gte: range.from, lt: range.to };
+    const window = { gte: range.start, lt: range.end };
     const [invoices, receipts] = await Promise.all([
       this.prisma.invoice.findMany({ where: { hotelId: hotel.id, issuedAt: window }, orderBy: [{ issuedAt: 'asc' }, { id: 'asc' }] }),
       this.prisma.receipt.findMany({
@@ -1813,7 +1817,7 @@ export class ReportBuilderService {
           ],
           rows: invoices.map((invoice) => [
             `${invoice.fullNumber}${invoice.status === InvoiceStatus.CREDITED ? ' (creditada)' : ''}`,
-            day(invoice.issuedAt),
+            localDay(invoice.issuedAt),
             invoice.customerName,
             invoice.customerTaxId ?? 'Cons. final',
             money(signed(invoice.netTotal, invoice.type)),
@@ -1837,7 +1841,7 @@ export class ReportBuilderService {
           ],
           rows: receipts.map((receipt) => [
             receipt.fullNumber,
-            day(receipt.issuedAt),
+            localDay(receipt.issuedAt),
             receipt.customerName,
             paymentLabel(receipt),
             receipt.status === ReceiptStatus.ISSUED ? 'Emitido' : 'Anulado',
@@ -1852,7 +1856,7 @@ export class ReportBuilderService {
 
   private async vat(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
     const lines = await this.prisma.invoiceLine.findMany({
-      where: { invoice: { hotelId: hotel.id, issuedAt: { gte: range.from, lt: range.to } } },
+      where: { invoice: { hotelId: hotel.id, issuedAt: { gte: range.start, lt: range.end } } },
       select: { taxRate: true, taxCategory: true, exemptionCode: true, exemptionReason: true, netAmount: true, taxAmount: true, grossAmount: true, invoice: { select: { type: true } } },
     });
     const groups = new Map<string, { rate: Prisma.Decimal; category: string; exemption: string; net: Prisma.Decimal; tax: Prisma.Decimal; gross: Prisma.Decimal; lines: number }>();
@@ -1911,7 +1915,7 @@ export class ReportBuilderService {
 
   private async payments(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
     const payments = await this.prisma.payment.findMany({
-      where: { hotelId: hotel.id, createdAt: { gte: range.from, lt: range.to } },
+      where: { hotelId: hotel.id, createdAt: { gte: range.start, lt: range.end } },
       include: {
         paymentType: { select: { name: true } },
         reservation: { select: { code: true, room: { select: { number: true } } } },
@@ -1976,7 +1980,7 @@ export class ReportBuilderService {
 
   private async cash(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
     const sessions = await this.prisma.cashSession.findMany({
-      where: { register: { hotelId: hotel.id }, openedAt: { gte: range.from, lt: range.to } },
+      where: { register: { hotelId: hotel.id }, openedAt: { gte: range.start, lt: range.end } },
       include: {
         register: true,
         openedBy: { select: { name: true } },
@@ -2122,7 +2126,7 @@ export class ReportBuilderService {
             { label: 'Valor', align: 'right' },
             { label: 'Em divida', align: 'right' },
           ],
-          rows: open.map((row) => [row.invoice.fullNumber, day(row.invoice.issuedAt), row.invoice.customerName, String(row.days), money(row.invoice.grossTotal), money(row.open)]),
+          rows: open.map((row) => [row.invoice.fullNumber, localDay(row.invoice.issuedAt), row.invoice.customerName, String(row.days), money(row.invoice.grossTotal), money(row.open)]),
           totals: ['Total', '', '', '', '', money(total)],
           empty: 'Nao ha faturas por receber',
         },
@@ -2131,7 +2135,7 @@ export class ReportBuilderService {
   }
 
   private async pos(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
-    const window = { gte: range.from, lt: range.to };
+    const window = { gte: range.start, lt: range.end };
     const [orders, voided] = await Promise.all([
       this.prisma.order.findMany({
         where: { hotelId: hotel.id, status: OrderStatus.CLOSED, closedAt: window },
@@ -2284,9 +2288,9 @@ export class ReportBuilderService {
     return toMoney(movement.quantity.mul(movement.unitCost ?? 0));
   }
 
-  private async inventory(range: { from: Date; to: Date }, { hotel, money }: Context): Promise<ReportSection[]> {
+  private async inventory(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
     const movements = await this.prisma.stockMovement.findMany({
-      where: { type: StockMovementType.ADJUSTMENT, createdAt: { gte: range.from, lt: range.to }, warehouse: { hotelId: hotel.id }, document: { type: StockDocumentType.INVENTORY } },
+      where: { type: StockMovementType.ADJUSTMENT, createdAt: { gte: range.start, lt: range.end }, warehouse: { hotelId: hotel.id }, document: { type: StockDocumentType.INVENTORY } },
       include: { product: { select: { name: true, unit: true } }, warehouse: { select: { name: true } }, document: { select: { id: true, type: true, year: true, number: true } } },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
@@ -2345,9 +2349,9 @@ export class ReportBuilderService {
     ];
   }
 
-  private async waste(range: { from: Date; to: Date }, { hotel, money }: Context): Promise<ReportSection[]> {
+  private async waste(range: Range, { hotel, money }: Context): Promise<ReportSection[]> {
     const movements = await this.prisma.stockMovement.findMany({
-      where: { type: { in: [StockMovementType.WASTE, StockMovementType.RETURN] }, createdAt: { gte: range.from, lt: range.to }, warehouse: { hotelId: hotel.id } },
+      where: { type: { in: [StockMovementType.WASTE, StockMovementType.RETURN] }, createdAt: { gte: range.start, lt: range.end }, warehouse: { hotelId: hotel.id } },
       include: {
         product: { select: { name: true, unit: true } },
         document: { select: { id: true, type: true, year: true, number: true, reason: true, supplier: { select: { name: true } } } },
@@ -2717,4 +2721,4 @@ interface Context {
   money: (value: Money) => string;
 }
 
-type Range = { from: Date; to: Date; days: number };
+type Range = { from: Date; to: Date; days: number; start: Date; end: Date };

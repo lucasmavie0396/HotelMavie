@@ -6,6 +6,7 @@ import { randomBytes, randomInt } from 'node:crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
+import { addDays, localDate, parseDate } from '../src/common/dates';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 export const PASSWORD = 'Teste-1234';
@@ -30,9 +31,7 @@ export function uid() {
 }
 
 export function day(offset = 0) {
-  const date = new Date();
-  date.setDate(date.getDate() + offset);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  return addDays(parseDate(localDate(new Date())), offset).toISOString().slice(0, 10);
 }
 
 export async function createHotel(prisma: PrismaClient, options: { rooms?: number; accommodationRate?: number | null; depositPercent?: number } = {}) {

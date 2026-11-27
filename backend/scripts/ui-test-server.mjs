@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 config({ path: join(backend, '.env'), quiet: true });
+process.env.AT_TIMEZONE ||= Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 const source = process.env.UI_TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!source) throw new Error('Define DATABASE_URL ou UI_TEST_DATABASE_URL no backend/.env');
