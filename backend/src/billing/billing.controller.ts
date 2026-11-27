@@ -23,6 +23,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles, SalesAccess } from '../common/decorators/roles.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateChargeDto, CreatePaymentDto, CreditNoteDto, InvoiceQueryDto, IssueInvoiceDto } from './billing.dto';
+import { CreateManualInvoiceDto, ReceiptQueryDto } from './documents.dto';
 import {
   CashMovementDto,
   CashService,
@@ -115,9 +116,19 @@ export class BillingController {
     return this.invoices.findAll(query, user);
   }
 
+  @Post('invoices')
+  issueManual(@Body() dto: CreateManualInvoiceDto, @CurrentUser() user: JwtPayload) {
+    return this.invoices.issueManual(dto, user);
+  }
+
   @Get('invoices/:id')
   findInvoice(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
     return this.invoices.findOne(id, user);
+  }
+
+  @Get('invoices/:id/detail')
+  invoiceDetail(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.invoices.detail(id, user);
   }
 
   @Get('reservations/:id/statement')
@@ -194,8 +205,13 @@ export class BillingController {
   }
 
   @Get('receipts')
-  findReceipts(@Query() query: HotelQueryDto, @CurrentUser() user: JwtPayload) {
+  findReceipts(@Query() query: ReceiptQueryDto, @CurrentUser() user: JwtPayload) {
     return this.receipts.findAll(query, user);
+  }
+
+  @Get('receipts/:id')
+  findReceipt(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.receipts.findOne(id, user);
   }
 
   @Post('receipts')

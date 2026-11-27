@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Hotel, Invoice, InvoiceLine, InvoiceType, Prisma, Receipt } from '@prisma/client';
+import { Hotel, Invoice, InvoiceLine, InvoiceType, Prisma, Quote, QuoteLine, Receipt } from '@prisma/client';
 import PDFDocument from 'pdfkit';
 import { printedHash } from '../at/at-format';
 import { AtSigningService } from '../at/at-signing.service';
@@ -9,6 +9,19 @@ import { UploadsService } from '../uploads/uploads';
 import { A4, COLORS, Column, drawFooter, drawHeader, drawSmallHeader, infoCard, loadLogo, rowHeight, sectionTitle, tableHeader, tableRow, totalsBox } from './a4-layout';
 
 type FullInvoice = Invoice & { lines: InvoiceLine[]; creditOf: { fullNumber: string } | null };
+
+type FullQuote = Quote & { lines: QuoteLine[] };
+
+type PrintableLine = {
+  description: string;
+  quantity: Prisma.Decimal;
+  unitPrice: Prisma.Decimal;
+  taxRate: Prisma.Decimal;
+  netAmount: Prisma.Decimal;
+  taxAmount: Prisma.Decimal;
+  grossAmount: Prisma.Decimal;
+  exemptionReason: string | null;
+};
 
 type FullReceipt = Receipt & { lines: { amount: Prisma.Decimal; invoice: { fullNumber: string; issuedAt: Date; grossTotal: Prisma.Decimal } }[] };
 
@@ -49,6 +62,12 @@ const LABELS = {
     vatSummary: 'Resumo do IVA',
     totalNet: 'Total sem IVA',
     totalVat: 'Total IVA',
+    dueDate: 'Vencimento',
+    notes: 'Observacoes',
+    quote: 'Cotacao',
+    validUntil: 'Valida ate',
+    discount: 'desconto',
+    quoteNotice: 'Este documento nao serve de fatura nem de recibo.',
     page: (index: number, count: number) => `Pagina ${index} de ${count}`,
   },
   en: {
@@ -87,6 +106,12 @@ const LABELS = {
     vatSummary: 'VAT summary',
     totalNet: 'Total excl. VAT',
     totalVat: 'Total VAT',
+    dueDate: 'Due date',
+    notes: 'Notes',
+    quote: 'Cotacao / Quotation',
+    validUntil: 'Valid until',
+    discount: 'discount',
+    quoteNotice: 'Este documento nao serve de fatura nem de recibo. / This document is not an invoice or a receipt.',
     page: (index: number, count: number) => `Page ${index} of ${count}`,
   },
 };
@@ -210,20 +235,83 @@ export class InvoicePdfService {
 
   async render(invoice: FullInvoice, hotel: Hotel, lang: MailLang = 'pt') {
     const text = LABELS[lang];
-    const hashMark = printedHash(invoice.hash);
     const certified = this.signing.certified;
     const certificate = this.signing.certificateNumber;
+    const title = text.titles[invoice.type];
+    const meta: string[] = [];
+    if (invoice.creditOf) meta.push(`${text.creditOf}: ${invoice.creditOf.fullNumber}`);
+    const documentRows: [string, string][] = [];
+    if (invoice.creditOf) documentRows.push([text.creditOf, invoice.creditOf.fullNumber]);
+    if (invoice.reason) documentRows.push([text.reason, invoice.reason]);
+    if (invoice.dueDate) documentRows.push([text.dueDate, this.day(invoice.dueDate, lang)]);
+    const fiscal: { text: string; strong?: boolean }[] = [];
+    if (invoice.notes) fiscal.push({ text: `${text.notes}: ${invoice.notes}` });
+    if (hotel.invoiceFooter) fiscal.push({ text: hotel.invoiceFooter });
+    if (certified) fiscal.push({ text: `${printedHash(invoice.hash)}-Processado por programa certificado n.o ${certificate}/AT`, strong: true });
+    if (invoice.type === 'INVOICE') fiscal.push({ text: lang === 'en' ? 'Este documento nao serve de recibo. / This document is not a receipt.' : 'Este documento nao serve de recibo.' });
+    return this.renderDocument(hotel, lang, { title, invoice, meta, documentRows, fiscal });
+  }
+
+  async renderQuote(quote: FullQuote, hotel: Hotel, lang: MailLang = 'pt') {
+    const text = LABELS[lang];
+    const documentRows: [string, string][] = [[text.validUntil, this.day(quote.validUntil, lang)]];
+    if (quote.status === 'CANCELLED') documentRows.push([text.cancelled, quote.cancelReason ?? '']);
+    const fiscal: { text: string; strong?: boolean }[] = [];
+    if (quote.notes) fiscal.push({ text: `${text.notes}: ${quote.notes}` });
+    fiscal.push({ text: text.quoteNotice, strong: true });
+    const lines = quote.lines.map((line) => ({
+      ...line,
+      description: Number(line.discount) > 0 ? `${line.description} (${text.discount} ${Number(line.discount).toFixed(2)})` : line.description,
+      exemptionReason: null as string | null,
+    }));
+    return this.renderDocument(hotel, lang, {
+      title: text.quote,
+      invoice: { ...quote, lines },
+      meta: [`${text.validUntil}: ${this.day(quote.validUntil, lang)}`],
+      documentRows,
+      fiscal,
+    });
+  }
+
+  private day(date: Date, lang: MailLang) {
+    return date.toLocaleDateString(lang === 'en' ? 'en-GB' : 'pt-PT', { timeZone: 'UTC' });
+  }
+
+  private async renderDocument(
+    hotel: Hotel,
+    lang: MailLang,
+    view: {
+      title: string;
+      invoice: {
+        fullNumber: string;
+        issuedAt: Date;
+        currency: string;
+        customerName: string;
+        customerTaxId: string | null;
+        customerAddress: string | null;
+        netTotal: Prisma.Decimal;
+        taxTotal: Prisma.Decimal;
+        grossTotal: Prisma.Decimal;
+        lines: PrintableLine[];
+      };
+      lines?: PrintableLine[];
+      meta: string[];
+      documentRows: [string, string][];
+      fiscal: { text: string; strong?: boolean }[];
+    },
+  ) {
+    const text = LABELS[lang];
+    const { invoice, title } = view;
+    const lines = view.lines ?? invoice.lines;
     const timeZone = process.env.AT_TIMEZONE ?? 'Europe/Lisbon';
     const logo = await loadLogo(this.uploads, hotel);
-    const title = text.titles[invoice.type];
     const { tag, money } = this.formats(lang, invoice.currency);
 
     const { doc, done } = this.document(`${title} ${invoice.fullNumber}`, hotel.name);
     const left = A4.margin;
     const width = doc.page.width - A4.margin * 2;
 
-    const meta = [`${text.number} ${invoice.fullNumber}`, `${text.date}: ${invoice.issuedAt.toLocaleString(tag, { timeZone })}`];
-    if (invoice.creditOf) meta.push(`${text.creditOf}: ${invoice.creditOf.fullNumber}`);
+    const meta = [`${text.number} ${invoice.fullNumber}`, `${text.date}: ${invoice.issuedAt.toLocaleString(tag, { timeZone })}`, ...view.meta];
     let y = drawHeader(doc, { hotel, logo, title, meta });
 
     const customerRows: [string, string][] = [
@@ -234,9 +322,8 @@ export class InvoicePdfService {
     const documentRows: [string, string][] = [
       [text.document, `${title} ${invoice.fullNumber}`],
       [text.currency, currencySymbol(invoice.currency)],
+      ...view.documentRows,
     ];
-    if (invoice.creditOf) documentRows.push([text.creditOf, invoice.creditOf.fullNumber]);
-    if (invoice.reason) documentRows.push([text.reason, invoice.reason]);
     const half = (width - 14) / 2;
     y = Math.max(infoCard(doc, left, y, half, text.customer, customerRows), infoCard(doc, left + half + 14, y, half, text.document, documentRows)) + 18;
 
@@ -254,7 +341,7 @@ export class InvoicePdfService {
       return drawSmallHeader(doc, hotel.name, `${title} ${invoice.fullNumber}`);
     };
     y = tableHeader(doc, left, y, columns);
-    invoice.lines.forEach((line, index) => {
+    lines.forEach((line, index) => {
       const cells = [
         line.description,
         Number(line.quantity).toLocaleString(tag),
@@ -272,8 +359,8 @@ export class InvoicePdfService {
       }
     });
 
-    const byRate = new Map<string, InvoiceLine[]>();
-    for (const line of invoice.lines) {
+    const byRate = new Map<string, PrintableLine[]>();
+    for (const line of lines) {
       const key = Number(line.taxRate).toString();
       byRate.set(key, [...(byRate.get(key) ?? []), line]);
     }
@@ -288,8 +375,8 @@ export class InvoicePdfService {
     ];
     let ty = sectionTitle(doc, text.vatSummary, left, y, 260);
     ty = tableHeader(doc, left, ty, taxColumns, 8);
-    [...byRate].forEach(([rate, lines], index) => {
-      ty = tableRow(doc, left, ty, taxColumns, [`${rate}%`, money(sumMoney(lines.map((l) => l.netAmount))), money(sumMoney(lines.map((l) => l.taxAmount)))], index, { fontSize: 8 });
+    [...byRate].forEach(([rate, rateLines], index) => {
+      ty = tableRow(doc, left, ty, taxColumns, [`${rate}%`, money(sumMoney(rateLines.map((l) => l.netAmount))), money(sumMoney(rateLines.map((l) => l.taxAmount)))], index, { fontSize: 8 });
     });
 
     totalsBox(doc, left + width - 220, y, 220, [
@@ -298,11 +385,7 @@ export class InvoicePdfService {
       { label: text.total, value: money(invoice.grossTotal), strong: true },
     ]);
 
-    const fiscal: { text: string; strong?: boolean }[] = [];
-    if (hotel.invoiceFooter) fiscal.push({ text: hotel.invoiceFooter });
-    if (certified) fiscal.push({ text: `${hashMark}-Processado por programa certificado n.o ${certificate}/AT`, strong: true });
-    if (invoice.type === 'INVOICE') fiscal.push({ text: lang === 'en' ? 'Este documento nao serve de recibo. / This document is not a receipt.' : 'Este documento nao serve de recibo.' });
-    this.fiscalBlock(doc, fiscal);
+    this.fiscalBlock(doc, view.fiscal);
     this.footers(doc, hotel, lang);
     doc.end();
     return done;

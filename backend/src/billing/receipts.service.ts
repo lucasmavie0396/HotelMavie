@@ -11,8 +11,10 @@ import { sumMoney, toMoney } from '../common/money';
 import { forUpdate, lockHint } from '../prisma/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { FolioService } from './folio.service';
-import { InvoicesService, seriesCode } from './invoices.service';
+import { InvoicesService, openAmount, seriesCode } from './invoices.service';
 import { PaymentTypesService } from './payment-types';
+import { ReceiptQueryDto } from './documents.dto';
+import { addDays, parseDate } from '../common/dates';
 
 export class ReceiptLineDto {
   @IsInt()
@@ -92,13 +94,13 @@ export class ReceiptsService {
     const hotelId = resolveHotelScope(user, query.hotelId);
     const invoices = await this.prisma.invoice.findMany({
       where: { hotelId, type: InvoiceType.INVOICE, status: InvoiceStatus.ISSUED },
-      include: { receiptLines: { where: { receipt: { status: ReceiptStatus.ISSUED } }, select: { amount: true } } },
+      include: { receiptLines: { where: { receipt: { status: ReceiptStatus.ISSUED } }, select: { amount: true } }, creditNotes: { select: { grossTotal: true } } },
       orderBy: { issuedAt: 'asc' },
     });
     return invoices
-      .map(({ receiptLines, ...invoice }) => {
+      .map(({ receiptLines, creditNotes, ...invoice }) => {
         const settled = sumMoney(receiptLines.map((line) => line.amount));
-        return { ...invoice, settled, open: toMoney(invoice.grossTotal).sub(settled), customerKey: customerKey(invoice) };
+        return { ...invoice, settled, open: openAmount({ ...invoice, receiptLines, creditNotes }), customerKey: customerKey(invoice) };
       })
       .filter((invoice) => invoice.open.greaterThan(0) && (!query.customer || invoice.customerKey === query.customer));
   }
@@ -125,9 +127,18 @@ export class ReceiptsService {
     return [...accounts.values()].sort((a, b) => b.open.comparedTo(a.open));
   }
 
-  findAll(query: HotelQueryDto, user: JwtPayload) {
+  findAll(query: ReceiptQueryDto, user: JwtPayload) {
+    const q = query.q?.trim();
     return this.prisma.receipt.findMany({
-      where: { hotelId: resolveHotelScope(user, query.hotelId) },
+      where: {
+        hotelId: resolveHotelScope(user, query.hotelId),
+        status: query.status,
+        issuedAt: {
+          ...(query.from ? { gte: parseDate(query.from) } : {}),
+          ...(query.to ? { lt: addDays(parseDate(query.to), 1) } : {}),
+        },
+        ...(q ? { OR: [{ fullNumber: { contains: q } }, { customerName: { contains: q } }, { customerTaxId: { contains: q } }] } : {}),
+      },
       include: receiptInclude,
       orderBy: { issuedAt: 'desc' },
       take: 300,
@@ -154,7 +165,7 @@ export class ReceiptsService {
       await tx.$queryRaw`SELECT id FROM invoices ${lockHint()} WHERE id IN (${Prisma.join(invoiceIds)}) ${forUpdate()}`;
       const invoices = await tx.invoice.findMany({
         where: { id: { in: invoiceIds } },
-        include: { receiptLines: { where: { receipt: { status: ReceiptStatus.ISSUED } }, select: { amount: true } } },
+        include: { receiptLines: { where: { receipt: { status: ReceiptStatus.ISSUED } }, select: { amount: true } }, creditNotes: { select: { grossTotal: true } } },
       });
       if (invoices.length !== invoiceIds.length || invoices.some((invoice) => invoice.hotelId !== hotelId)) {
         throw new NotFoundException('Fatura nao encontrada neste hotel');
@@ -168,7 +179,7 @@ export class ReceiptsService {
         if (invoice.type !== InvoiceType.INVOICE || invoice.status !== InvoiceStatus.ISSUED) {
           throw new ConflictException(`${invoice.fullNumber} nao esta em aberto`);
         }
-        const open = toMoney(invoice.grossTotal).sub(sumMoney(invoice.receiptLines.map((l) => l.amount)));
+        const open = openAmount(invoice);
         if (toMoney(line.amount).greaterThan(open)) {
           throw new BadRequestException(`O valor para ${invoice.fullNumber} excede o montante em divida (${open.toFixed(2)})`);
         }

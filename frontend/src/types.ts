@@ -245,6 +245,76 @@ export interface InvoiceSummary {
   customerTaxId?: string | null;
   currency?: string;
   reservationId?: number | null;
+  dueDate?: string | null;
+  open?: string;
+  credited?: string;
+  quote?: { id: number; fullNumber: string } | null;
+  creditOf?: { id: number; fullNumber: string } | null;
+}
+
+export type QuoteStatus = 'OPEN' | 'CONVERTED' | 'CANCELLED';
+
+export interface QuoteLine {
+  id: number;
+  position: number;
+  productId: number | null;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  discount: string;
+  taxRate: string;
+  netAmount: string;
+  taxAmount: string;
+  grossAmount: string;
+}
+
+export interface Quote {
+  id: number;
+  fullNumber: string;
+  status: QuoteStatus;
+  expired: boolean;
+  issuedAt: string;
+  validUntil: string;
+  customerName: string;
+  customerTaxId: string | null;
+  customerAddress: string | null;
+  customerEmail: string | null;
+  notes: string | null;
+  currency: string;
+  netTotal: string;
+  taxTotal: string;
+  grossTotal: string;
+  cancelReason: string | null;
+  invoice: { id: number; fullNumber: string } | null;
+  lines?: QuoteLine[];
+  createdBy?: { name: string } | null;
+}
+
+export interface InvoiceDetailLine {
+  id: number;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  taxRate: string;
+  netAmount: string;
+  taxAmount: string;
+  grossAmount: string;
+  creditedQuantity: string;
+}
+
+export interface InvoiceDetail extends InvoiceSummary {
+  netTotal: string;
+  taxTotal: string;
+  customerAddress: string | null;
+  customerEmail: string | null;
+  notes: string | null;
+  reason: string | null;
+  open: string;
+  lines: InvoiceDetailLine[];
+  creditNotes: { id: number; fullNumber: string; grossTotal: string; issuedAt: string; reason: string | null }[];
+  receipts: { id: number; fullNumber: string; issuedAt: string; status: 'ISSUED' | 'CANCELLED'; amount: string }[];
+  reservation: { id: number; code: string } | null;
+  createdBy: { name: string } | null;
 }
 
 export interface Folio {

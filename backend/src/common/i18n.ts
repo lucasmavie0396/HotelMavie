@@ -85,6 +85,13 @@ const EXACT: Record<string, string> = {
   'Esta mesa pertence a outro ponto de venda': 'This table belongs to another outlet',
   'Esta reserva ja nao pode ser alterada': 'This booking can no longer be changed',
   'Este documento ja foi creditado': 'This document has already been credited',
+  'Indique o cliente: a fatura fica a credito na conta dele': 'Choose the customer: the invoice is charged to their account',
+  'So as faturas a credito (FT) aceitam nota de credito parcial': 'Only credit invoices (FT) accept a partial credit note',
+  'Linha da fatura nao encontrada': 'Invoice line not found',
+  'Nada a creditar nesta fatura': 'Nothing left to credit on this invoice',
+  'Cotacao nao encontrada': 'Quotation not found',
+  'A validade da cotacao nao pode ser anterior a hoje': 'The quotation cannot expire before today',
+  'Esta cotacao ja nao esta em aberto': 'This quotation is no longer open',
   'Este documento ja foi lancado ou cancelado': 'This document has already been posted or cancelled',
   'Este hotel nao tem dominio proprio': 'This hotel has no custom domain',
   'Este pedido ja foi fechado': 'This order has already been closed',
@@ -286,6 +293,12 @@ const EXACT: Record<string, string> = {
 };
 
 const PATTERNS: [RegExp, string][] = [
+  [/^Linha (\d+): produto nao encontrado$/, 'Line $1: product not found'],
+  [/^Linha (\d+): indique a descricao$/, 'Line $1: enter the description'],
+  [/^Linha (\d+): escolha a taxa de IVA$/, 'Line $1: choose the VAT rate'],
+  [/^Linha (\d+): o desconto nao pode ser maior que o valor da linha$/, 'Line $1: the discount cannot exceed the line amount'],
+  [/^So pode creditar (.+) de (.+)$/, 'You can only credit $1 of $2'],
+  [/^A taxa de IVA de (.+) mudou ou foi desativada: faca uma cotacao nova$/, 'The VAT rate of $1 changed or was deactivated: create a new quotation'],
   [/^(.+) nao esta em aberto$/, '$1 is not open'],
   [/^A conta do hospede tem (.+) por pagar$/, 'The guest bill has $1 outstanding'],
   [/^A impressora (.+) \((.+)\) nao respondeu: (.*)$/, 'Printer $1 ($2) did not respond: $3'],

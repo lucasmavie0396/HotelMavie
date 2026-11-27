@@ -68,6 +68,7 @@ model Hotel {
   payments               Payment[]
   invoiceSeries          InvoiceSeries[]
   invoices               Invoice[]
+  quotes                 Quote[]
   cashRegisters          CashRegister[]
   productCategories      ProductCategory[]
   products               Product[]
@@ -125,6 +126,7 @@ model User {
   charges           Charge[]
   payments          Payment[]
   invoices          Invoice[]
+  quotes            Quote[]
   openedSessions    CashSession[]   @relation("OpenedBy")
   closedSessions    CashSession[]   @relation("ClosedBy")
   cashMovements     CashMovement[]
@@ -454,6 +456,7 @@ model TaxRate {
   rooms               Room[]      @relation("RoomTaxRate")
   orderItems          OrderItem[]
   charges             Charge[]
+  quoteLines          QuoteLine[]
 
   @@index([hotelId])
   @@map("tax_rates")
@@ -557,6 +560,8 @@ model Invoice {
   creditOf        Invoice?      @relation("CreditNotes", fields: [creditOfId], references: [id], onDelete: Restrict)
   creditNotes     Invoice[]     @relation("CreditNotes")
   reason          String?       @db.VarChar(255)
+  dueDate         DateTime?     @db.Date
+  notes           String?       @db.VarChar(1000)
   customerName    String        @db.VarChar(200)
   customerTaxId   String?       @db.VarChar(30)
   customerAddress String?       @db.VarChar(255)
@@ -575,6 +580,7 @@ model Invoice {
   charges         Charge[]
   payments        Payment[]
   receiptLines    ReceiptLine[]
+  quote           Quote?
 
   @@unique([seriesId, number])
   @@index([hotelId, issuedAt])
@@ -596,8 +602,12 @@ model InvoiceLine {
   netAmount       Decimal     @db.Decimal(12, 2)
   taxAmount       Decimal     @db.Decimal(12, 2)
   grossAmount     Decimal     @db.Decimal(12, 2)
+  creditOfLineId  Int?
+  creditOfLine    InvoiceLine?  @relation("LineCredits", fields: [creditOfLineId], references: [id], onDelete: Restrict)
+  creditLines     InvoiceLine[] @relation("LineCredits")
 
   @@index([invoiceId])
+  @@index([creditOfLineId])
   @@map("invoice_lines")
 }
 
@@ -743,6 +753,7 @@ model Product {
   recipeItems    RecipeItem[]     @relation("RecipeDish")
   optionGroups   ProductOptionGroup[]
   optionUses     ProductOption[]  @relation("OptionIngredient")
+  quoteLines     QuoteLine[]
   usedIn         RecipeItem[]     @relation("RecipeIngredient")
 
   @@unique([hotelId, sku])
@@ -1547,4 +1558,64 @@ model OrderItemOption {
 
   @@index([orderItemId])
   @@map("order_item_options")
+}
+
+enum QuoteStatus {
+  OPEN
+  CONVERTED
+  CANCELLED
+}
+
+model Quote {
+  id              Int         @id @default(autoincrement())
+  hotelId         Int
+  hotel           Hotel       @relation(fields: [hotelId], references: [id], onDelete: Restrict)
+  year            Int
+  number          Int
+  fullNumber      String      @db.VarChar(40)
+  status          QuoteStatus @default(OPEN)
+  issuedAt        DateTime    @default(now())
+  validUntil      DateTime    @db.Date
+  customerName    String      @db.VarChar(200)
+  customerTaxId   String?     @db.VarChar(30)
+  customerAddress String?     @db.VarChar(255)
+  customerEmail   String?     @db.VarChar(150)
+  notes           String?     @db.VarChar(1000)
+  currency        String      @db.VarChar(3)
+  netTotal        Decimal     @db.Decimal(12, 2)
+  taxTotal        Decimal     @db.Decimal(12, 2)
+  grossTotal      Decimal     @db.Decimal(12, 2)
+  invoiceId       Int?        @unique
+  invoice         Invoice?    @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  cancelReason    String?     @db.VarChar(255)
+  createdById     Int?
+  createdBy       User?       @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  lines           QuoteLine[]
+
+  @@unique([hotelId, year, number])
+  @@index([hotelId, issuedAt])
+  @@map("quotes")
+}
+
+model QuoteLine {
+  id          Int      @id @default(autoincrement())
+  quoteId     Int
+  quote       Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  position    Int
+  productId   Int?
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productCode String?  @db.VarChar(60)
+  description String   @db.VarChar(200)
+  quantity    Decimal  @db.Decimal(10, 3)
+  unitPrice   Decimal  @db.Decimal(12, 2)
+  discount    Decimal  @default(0) @db.Decimal(12, 2)
+  taxRateId   Int?
+  taxRateRef  TaxRate? @relation(fields: [taxRateId], references: [id], onDelete: SetNull)
+  taxRate     Decimal  @db.Decimal(5, 2)
+  netAmount   Decimal  @db.Decimal(12, 2)
+  taxAmount   Decimal  @db.Decimal(12, 2)
+  grossAmount Decimal  @db.Decimal(12, 2)
+
+  @@index([quoteId])
+  @@map("quote_lines")
 }

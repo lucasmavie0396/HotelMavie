@@ -127,6 +127,55 @@ export class DocumentsService {
     return { ticket, hotelId: invoice.hotelId };
   }
 
+  private async loadQuote(id: number, user: JwtPayload) {
+    const quote = await this.prisma.quote.findUnique({
+      where: { id },
+      include: { hotel: true, lines: { orderBy: { position: 'asc' } }, createdBy: { select: { name: true } } },
+    });
+    if (!quote || !canAccessHotel(user, quote.hotelId)) {
+      throw new NotFoundException('Cotacao nao encontrada');
+    }
+    return quote;
+  }
+
+  async quoteA4(id: number, user: JwtPayload) {
+    const quote = await this.loadQuote(id, user);
+    return this.pdf.renderQuote(quote, quote.hotel);
+  }
+
+  async quote(id: number, user: JwtPayload) {
+    const quote = await this.loadQuote(id, user);
+    const ticket = new Ticket(quote.currency).header(quote.hotel);
+    ticket.text(`COTACAO ${quote.fullNumber}`, { bold: true, align: 'center' });
+    ticket.text(Ticket.when(quote.issuedAt), { align: 'center', size: 8 });
+    ticket.text(`Valida ate ${Ticket.day(quote.validUntil)}`, { align: 'center', size: 8 });
+    if (quote.status === 'CANCELLED') ticket.text(`ANULADA: ${quote.cancelReason ?? ''}`, { bold: true, align: 'center' });
+    ticket.rule();
+    ticket.text(`Cliente: ${quote.customerName}`, { size: 8 });
+    ticket.text(`NUIT: ${quote.customerTaxId ?? 'Consumidor final'}`, { size: 8 });
+    ticket.rule();
+    ticket.lines(
+      quote.lines.map((line) => ({
+        quantity: line.quantity,
+        description: `${line.description} (${Number(line.taxRate)}%)${Number(line.discount) > 0 ? ` desc. ${Number(line.discount).toFixed(2)}` : ''}`,
+        unitPrice: line.unitPrice,
+        total: line.grossAmount,
+      })),
+    );
+    ticket.rule();
+    ticket.cols('Total sem IVA', ticket.money(quote.netTotal), { size: 8 });
+    ticket.cols('IVA', ticket.money(quote.taxTotal), { size: 8 });
+    ticket.cols('TOTAL', ticket.money(quote.grossTotal), { bold: true, size: 13 });
+    if (quote.notes) {
+      ticket.rule();
+      ticket.text(quote.notes, { size: 8 });
+    }
+    ticket.space();
+    ticket.text('Este documento nao serve de fatura nem de recibo.', { size: 7, align: 'center' });
+    ticket.footer(quote.hotel, quote.createdBy?.name);
+    return { ticket, hotelId: quote.hotelId };
+  }
+
   async receipt(id: number, user: JwtPayload) {
     const receipt = await this.prisma.receipt.findUnique({
       where: { id },

@@ -10,7 +10,7 @@ const ROUTE_AREAS: [RegExp, AccessArea][] = [
   [/^\/guests(\/|$)/, 'guests'],
   [/^\/rooms(\/|$)/, 'rooms'],
   [/^\/(orders|kds|dining-tables|room-orders|event-cards)(\/|$)/, 'pos'],
-  [/^\/(invoices|charges|payments|invoice-series|at|saft)(\/|$)/, 'invoices'],
+  [/^\/(invoices|charges|payments|invoice-series|at|saft|quotes)(\/|$)/, 'invoices'],
   [/^\/(accounts|invoices-open|receipts)(\/|$)/, 'accounts'],
   [/^\/(cash-registers|cash-sessions|expenses|expense-categories)(\/|$)/, 'cash'],
   [/^\/(products|product-categories)(\/|$)/, 'products'],

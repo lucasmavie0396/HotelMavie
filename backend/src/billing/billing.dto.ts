@@ -1,6 +1,7 @@
 import { ChargeType, InvoiceType, PaymentMethod } from '@prisma/client';
 import { Type } from 'class-transformer';
 import { ArrayNotEmpty, IsArray, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, Length, MaxLength, Min, NotEquals } from 'class-validator';
+import { CreditNoteLinesDto, InvoiceFiltersDto } from './documents.dto';
 
 export class CreateChargeDto {
   @IsString()
@@ -82,13 +83,13 @@ export class IssueInvoiceDto {
   customerEmail?: string;
 }
 
-export class CreditNoteDto {
+export class CreditNoteDto extends CreditNoteLinesDto {
   @IsString()
   @Length(3, 255)
   reason: string;
 }
 
-export class InvoiceQueryDto {
+export class InvoiceQueryDto extends InvoiceFiltersDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()

@@ -12,9 +12,11 @@ import { PaymentTypesController, PaymentTypesService } from './payment-types';
 import { ReceiptsService } from './receipts.service';
 import { DocumentsService } from './documents.service';
 import { TicketPdfService } from './ticket-pdf.service';
+import { QuotesController } from './quotes.controller';
+import { QuotesService } from './quotes.service';
 
 @Module({
-  controllers: [BillingController, TaxRatesController, AtController, PaymentTypesController],
+  controllers: [BillingController, TaxRatesController, AtController, PaymentTypesController, QuotesController],
   providers: [
     FolioService,
     InvoicesService,
@@ -26,6 +28,7 @@ import { TicketPdfService } from './ticket-pdf.service';
     TicketPdfService,
     PaymentTypesService,
     DocumentsService,
+    QuotesService,
   ],
   exports: [FolioService, InvoicesService, AtSigningService, TicketPdfService, PaymentTypesService, DocumentsService],
 })

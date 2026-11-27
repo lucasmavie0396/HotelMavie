@@ -34,7 +34,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ReportBuilderService } from '../reports/report-builder.service';
 import { ReportRenderService } from '../reports/report-render.service';
 
-export const DOCUMENTS = ['ORDER', 'VOID', 'PREBILL', 'STATEMENT', 'INVOICE', 'RECEIPT', 'PAYMENT', 'TEST', 'REPORT'] as const;
+export const DOCUMENTS = ['ORDER', 'VOID', 'PREBILL', 'STATEMENT', 'INVOICE', 'RECEIPT', 'PAYMENT', 'TEST', 'REPORT', 'QUOTE'] as const;
 export type PrintDocument = (typeof DOCUMENTS)[number];
 const CASHIER_DOCUMENTS: PrintDocument[] = ['ORDER', 'VOID', 'PREBILL', 'INVOICE', 'REPORT'];
 
@@ -119,6 +119,7 @@ export class PrintDto {
   @IsOptional() @Type(() => Number) @IsInt() reservationId?: number;
   @IsOptional() @Type(() => Number) @IsInt() invoiceId?: number;
   @IsOptional() @Type(() => Number) @IsInt() receiptId?: number;
+  @IsOptional() @Type(() => Number) @IsInt() quoteId?: number;
   @IsOptional() @Type(() => Number) @IsInt() paymentId?: number;
   @IsOptional() @Transform(nullableInt) @IsInt() printerId?: number | null;
   @IsOptional() @IsEnum(PrepStation) station?: PrepStation;
@@ -193,6 +194,8 @@ export class PrintService {
         return { ...(await this.documents.invoice(need(dto.invoiceId, 'invoiceId'), user)), purpose: PrinterPurpose.RECEIPT, name: `fatura-${dto.invoiceId}` };
       case 'RECEIPT':
         return { ...(await this.documents.receipt(need(dto.receiptId, 'receiptId'), user)), purpose: PrinterPurpose.RECEIPT, name: `recibo-${dto.receiptId}` };
+      case 'QUOTE':
+        return { ...(await this.documents.quote(need(dto.quoteId, 'quoteId'), user)), purpose: PrinterPurpose.RECEIPT, name: `cotacao-${dto.quoteId}` };
       case 'PAYMENT':
         return { ...(await this.documents.payment(need(dto.paymentId, 'paymentId'), user)), purpose: PrinterPurpose.RECEIPT, name: `pagamento-${dto.paymentId}` };
       case 'REPORT': {
@@ -280,6 +283,7 @@ export class PrintService {
     const paper = dto.paper ?? printer?.paperWidth ?? PaperWidth.MM80;
     if (paper === PaperWidth.A4 && dto.document === 'INVOICE') return { buffer: await this.documents.invoiceA4(dto.invoiceId!, user), name: built.name };
     if (paper === PaperWidth.A4 && dto.document === 'RECEIPT') return { buffer: await this.documents.receiptA4(dto.receiptId!, user), name: built.name };
+    if (paper === PaperWidth.A4 && dto.document === 'QUOTE') return { buffer: await this.documents.quoteA4(dto.quoteId!, user), name: built.name };
     return { buffer: await this.tickets.render(built.ticket, paper), name: built.name };
   }
 
