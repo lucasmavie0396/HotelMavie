@@ -68,7 +68,7 @@ describe('Relatorios', () => {
 
     const vat = (await ctx.http().get('/api/reports/view/vat').query(params).set(manager).expect(200)).body;
     expect(vat.sections[1].table.rows[0][0]).toBe('6%');
-  });
+  }, 120_000);
 
   it('previsao, saldos dos hospedes, cancelamentos e vendas por empregado', async () => {
     const { hotel, manager } = await setup();

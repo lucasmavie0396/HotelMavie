@@ -30,6 +30,7 @@ import { canAccessHotel, resolveHotelScope } from '../common/hotel-scope';
 import { formatCurrency, sumMoney, toMoney } from '../common/money';
 import { PrismaService } from '../prisma/prisma.service';
 import { Report, ReportDefinition, ReportSection } from './report-model';
+import { ExtraReports } from './report-extra';
 import { reportPeriod, SOLD_STATUSES, summaryData } from './report-summary';
 
 export class ReportParamsDto extends HotelQueryDto {
@@ -91,6 +92,18 @@ export const REPORTS: ReportDefinition[] = [
   { key: 'inventory', title: 'Diferencas de inventario', description: 'Acertos dos inventarios lancados no periodo, por produto, com o valor das faltas e sobras.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
   { key: 'waste', title: 'Quebras e devolucoes', description: 'Quebras por motivo e por produto e devolucoes a fornecedores, ao custo medio.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
   { key: 'expiry', title: 'Validades', description: 'Lotes em stock com a data de validade, assinalando os expirados e os que expiram em 30 dias.', group: 'Restauracao e stocks', params: 'stock', roles: MANAGERS },
+  { key: 'results', title: 'Demonstracao resumida', description: 'Vendas faturadas sem IVA, custo estimado das vendas, despesas e salarios, com o resultado estimado do periodo.', group: 'Gestao', params: 'period', roles: MANAGERS },
+  { key: 'quotes', title: 'Cotacoes', description: 'Cotacoes emitidas por estado (em aberto, expiradas, convertidas, anuladas), valor e taxa de conversao.', group: 'Financeiro', params: 'period', roles: MANAGERS },
+  { key: 'credit-invoices', title: 'Faturas a credito e vencidas', description: 'Faturas a credito do periodo com o creditado, o recebido e o que falta, e as faturas vencidas hoje com os dias de atraso.', group: 'Financeiro', params: 'period', roles: MANAGERS },
+  { key: 'statements', title: 'Extrato de clientes', description: 'Conta corrente de cada cliente a credito: saldo inicial, faturas, notas de credito, recibos e saldo final.', group: 'Financeiro', params: 'period', roles: MANAGERS },
+  { key: 'daily-sales', title: 'Vendas por dia e produtos sem vendas', description: 'Restaurante e bar dia a dia (contas, ticket medio, total) e os produtos ativos que nao se venderam.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
+  { key: 'sales-hours', title: 'Vendas por hora e dia da semana', description: 'Vendas por dia da semana e mapa hora x dia da semana, para preparar as escalas.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
+  { key: 'sales-list', title: 'Lista de vendas', description: 'Conta a conta do restaurante e bar: fecho, mesa, empregado, linhas, pagamento e total.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
+  { key: 'tables', title: 'Mesas', description: 'Contas, ticket medio, tempo medio de ocupacao e total por mesa, balcao e quartos.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
+  { key: 'kitchen', title: 'Tempos da cozinha e do bar', description: 'Tempo entre o envio e o pronto, por estacao e por prato (mais lentos primeiro).', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
+  { key: 'options', title: 'Opcoes e acompanhamentos', description: 'Opcoes escolhidas nos pratos vendidos, com quantidades e acrescimos de preco.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
+  { key: 'voids', title: 'Anulacoes detalhadas', description: 'Linhas anuladas antes e depois de enviadas a cozinha/bar, contas canceladas e recibos anulados, com motivo e utilizador.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
+  { key: 'transfers', title: 'Transferencias entre armazens', description: 'Documentos de transferencia lancados no periodo e quantidades por artigo, ao custo medio.', group: 'Restauracao e stocks', params: 'period', roles: MANAGERS },
   { key: 'cash-close', title: 'Fecho de caixa', description: 'Documento de fecho de uma sessao de caixa: movimentos, vendas, formas de pagamento e produtos por categoria.', group: 'Financeiro', params: 'session', roles: [...EVERYONE, UserRole.CASHIER], hidden: true },
 ];
 
@@ -133,7 +146,11 @@ function percent(value: number) {
 
 @Injectable()
 export class ReportBuilderService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly extra: ExtraReports;
+
+  constructor(private readonly prisma: PrismaService) {
+    this.extra = new ExtraReports(prisma);
+  }
 
   catalog(user: JwtPayload) {
     return REPORTS.filter((report) => !report.hidden && report.roles.includes(user.role));
@@ -252,6 +269,30 @@ export class ReportBuilderService {
         return this.inventory(range, context);
       case 'waste':
         return this.waste(range, context);
+      case 'results':
+        return this.extra.results(range, context);
+      case 'quotes':
+        return this.extra.quotes(range, context);
+      case 'credit-invoices':
+        return this.extra.creditInvoices(range, context);
+      case 'statements':
+        return this.extra.statements(range, context);
+      case 'daily-sales':
+        return this.extra.dailySales(range, context);
+      case 'sales-hours':
+        return this.extra.salesHours(range, context);
+      case 'sales-list':
+        return this.extra.salesList(range, context);
+      case 'tables':
+        return this.extra.tables(range, context);
+      case 'kitchen':
+        return this.extra.kitchen(range, context);
+      case 'options':
+        return this.extra.options(range, context);
+      case 'voids':
+        return this.extra.voids(range, context);
+      case 'transfers':
+        return this.extra.transfers(range, context);
       default:
         return this.pos(range, context);
     }
@@ -2716,9 +2757,9 @@ export class ReportBuilderService {
   }
 }
 
-interface Context {
+export interface Context {
   hotel: Hotel;
   money: (value: Money) => string;
 }
 
-type Range = { from: Date; to: Date; days: number; start: Date; end: Date };
+export type Range = { from: Date; to: Date; days: number; start: Date; end: Date };
